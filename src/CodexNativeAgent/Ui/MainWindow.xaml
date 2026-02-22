@@ -1,6 +1,7 @@
 <Window x:Class="CodexNativeAgent.Ui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:CodexNativeAgent.Ui"
         Title="Codex Native Agent"
         Width="1540"
         Height="980"
@@ -14,11 +15,16 @@
         Background="{DynamicResource AppBackgroundBrush}">
     <Window.Resources />
 
-    <Grid Background="{DynamicResource MainBackgroundGradient}">
+    <Grid Background="{DynamicResource AppShellBackgroundImageBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+
+        <Border Grid.RowSpan="2"
+                Background="{DynamicResource MainBackgroundGradient}"
+                Opacity="0.72"
+                IsHitTestVisible="False" />
 
         <Grid Grid.RowSpan="2" IsHitTestVisible="False">
             <Ellipse Width="420"
@@ -46,718 +52,31 @@
                 <ColumnDefinition Width="472" MinWidth="368" />
                 <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="RightGitPaneSplitterColumn" Width="0" />
+                <ColumnDefinition x:Name="RightGitPaneColumn" Width="0" MinWidth="0" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0"
-                    Style="{StaticResource CardBorderStyle}"
-                    Background="{DynamicResource SidebarBackgroundBrush}"
-                    Padding="{DynamicResource SidebarShellPadding}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+            <Grid Grid.Column="0" ClipToBounds="True">
+                <Border IsHitTestVisible="False"
+                        CornerRadius="18"
+                        Background="{DynamicResource AppShellBackgroundImageBrush}"
+                        Opacity="0.9"
+                        Effect="{DynamicResource SidebarBackdropBlurEffect}" />
 
-                    <Border Grid.Row="0"
-                            Padding="0"
-                            Margin="0,0,0,10">
-                        <StackPanel>
-                            <Button x:Name="BtnSidebarNewThread" Style="{StaticResource SidebarButtonStyle}">
-                                <Button.ContextMenu>
-                                    <ContextMenu x:Name="SidebarNewThreadContextMenu"
-                                                 Background="{DynamicResource SurfaceRaisedBrush}"
-                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
-                                                 BorderThickness="1"
-                                                 Padding="6">
-                                        <ContextMenu.Resources>
-                                            <Style TargetType="MenuItem">
-                                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                                <Setter Property="Padding" Value="10,7" />
-                                                <Setter Property="Margin" Value="2" />
-                                                <Setter Property="FontSize" Value="12.8" />
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="MenuItem">
-                                                            <Border x:Name="ItemChrome"
-                                                                    Background="Transparent"
-                                                                    BorderBrush="Transparent"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="8"
-                                                                    Padding="{TemplateBinding Padding}">
-                                                                <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsHighlighted" Value="True">
-                                                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                                    <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsEnabled" Value="False">
-                                                                    <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </Style>
-                                        </ContextMenu.Resources>
-                                        <MenuItem x:Name="MnuSidebarNewThreadChooseFolder" Header="Choose folder..." />
-                                    </ContextMenu>
-                                </Button.ContextMenu>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0"
-                                               Text="&#xE70F;"
-                                               FontFamily="Segoe MDL2 Assets"
-                                               Margin="0,0,8,0"
-                                               VerticalAlignment="Center" />
-                                    <TextBlock x:Name="LblSidebarNewThreadText"
-                                               Grid.Column="1"
-                                               Text="New thread"
-                                               VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis" />
-                                </Grid>
-                            </Button>
+                <Border IsHitTestVisible="False"
+                        CornerRadius="18"
+                        Background="{DynamicResource MainBackgroundGradient}"
+                        Opacity="0.46" />
 
-                            <Button x:Name="BtnSidebarAutomations" Style="{StaticResource SidebarButtonStyle}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE7C1;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Automations" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
+                <Border IsHitTestVisible="False"
+                        CornerRadius="18"
+                        Background="{DynamicResource SidebarBackgroundBrush}"
+                        Opacity="0.34"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" />
 
-                            <Button x:Name="BtnSidebarSkills" Style="{StaticResource SidebarButtonStyle}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE7BE;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Skills" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-
-                            <Button x:Name="BtnSidebarSettings" Style="{StaticResource SidebarButtonStyle}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Settings" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </Border>
-
-                    <Grid Grid.Row="1">
-                        <Grid x:Name="LeftMainView">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-
-                            <Border Grid.Row="0"
-                                    Style="{StaticResource CardBorderStyle}"
-                                    Background="{DynamicResource SurfaceBrush}"
-                                    Padding="13"
-                                    Margin="0,0,0,8">
-                                <Border.Resources>
-                                    <Style x:Key="ThreadToolbarMenuItemStyle" TargetType="MenuItem">
-                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                        <Setter Property="Padding" Value="10,7" />
-                                        <Setter Property="Margin" Value="2" />
-                                        <Setter Property="FontSize" Value="12.8" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="MenuItem">
-                                                    <Border x:Name="ItemChrome"
-                                                            Background="Transparent"
-                                                            BorderBrush="Transparent"
-                                                            BorderThickness="1"
-                                                            CornerRadius="8"
-                                                            Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsChecked" Value="True">
-                                                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                            <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                        </Trigger>
-                                                        <Trigger Property="IsHighlighted" Value="True">
-                                                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                            <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                        </Trigger>
-                                                        <Trigger Property="IsEnabled" Value="False">
-                                                            <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </Border.Resources>
-                                <StackPanel>
-                                    <DockPanel Margin="0,0,0,10" LastChildFill="False">
-                                        <TextBlock DockPanel.Dock="Left"
-                                                   Text="Threads"
-                                                   VerticalAlignment="Center"
-                                                   Style="{StaticResource SectionTitleTextStyle}" />
-
-                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                            <Button x:Name="BtnThreadFilterMenu"
-                                                    Style="{StaticResource ButtonBaseStyle}"
-                                                    Width="34"
-                                                    MinWidth="34"
-                                                    Padding="0"
-                                                    Margin="0,0,6,0"
-                                                    ToolTip="Filter threads">
-                                                <Button.ContextMenu>
-                                                    <ContextMenu x:Name="ThreadFilterContextMenu"
-                                                                 Placement="Bottom"
-                                                                 Background="{DynamicResource SurfaceRaisedBrush}"
-                                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
-                                                                 BorderThickness="1"
-                                                                 Padding="6">
-                                                        <ContextMenu.Resources>
-                                                            <Style TargetType="MenuItem" BasedOn="{StaticResource ThreadToolbarMenuItemStyle}" />
-                                                        </ContextMenu.Resources>
-                                                        <MenuItem x:Name="MnuThreadFilterArchived"
-                                                                  Header="Archived"
-                                                                  IsCheckable="True"
-                                                                  StaysOpenOnClick="True" />
-                                                        <MenuItem x:Name="MnuThreadFilterWorkingDir"
-                                                                  Header="Working dir"
-                                                                  IsCheckable="True"
-                                                                  StaysOpenOnClick="True" />
-                                                    </ContextMenu>
-                                                </Button.ContextMenu>
-                                                <TextBlock Text="&#xE71C;"
-                                                           FontFamily="Segoe MDL2 Assets"
-                                                           FontSize="14"
-                                                           LineHeight="14"
-                                                           LineStackingStrategy="BlockLineHeight"
-                                                           TextAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           HorizontalAlignment="Center" />
-                                            </Button>
-
-                                            <Button x:Name="BtnThreadSortMenu"
-                                                    Style="{StaticResource ButtonBaseStyle}"
-                                                    Width="34"
-                                                    MinWidth="34"
-                                                    Padding="0"
-                                                    ToolTip="Sort threads">
-                                                <Button.ContextMenu>
-                                                    <ContextMenu x:Name="ThreadSortContextMenu"
-                                                                 Placement="Bottom"
-                                                                 Background="{DynamicResource SurfaceRaisedBrush}"
-                                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
-                                                                 BorderThickness="1"
-                                                                 Padding="6">
-                                                        <ContextMenu.Resources>
-                                                            <Style TargetType="MenuItem" BasedOn="{StaticResource ThreadToolbarMenuItemStyle}" />
-                                                        </ContextMenu.Resources>
-                                                        <MenuItem x:Name="MnuThreadSortNewest" Header="Newest first" IsCheckable="True" />
-                                                        <MenuItem x:Name="MnuThreadSortOldest" Header="Oldest first" IsCheckable="True" />
-                                                        <MenuItem x:Name="MnuThreadSortPreviewAz" Header="Preview A-Z" IsCheckable="True" />
-                                                        <MenuItem x:Name="MnuThreadSortPreviewZa" Header="Preview Z-A" IsCheckable="True" />
-                                                    </ContextMenu>
-                                                </Button.ContextMenu>
-                                                <TextBlock Text="&#xE8CB;"
-                                                           FontFamily="Segoe MDL2 Assets"
-                                                           FontSize="14"
-                                                           LineHeight="14"
-                                                           LineStackingStrategy="BlockLineHeight"
-                                                           TextAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           HorizontalAlignment="Center" />
-                                            </Button>
-                                        </StackPanel>
-                                    </DockPanel>
-
-                                    <Grid>
-                                        <Border CornerRadius="12"
-                                                BorderThickness="1"
-                                                Padding="0">
-                                            <Border.Style>
-                                                <Style TargetType="Border">
-                                                    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=TxtThreadSearch}" Value="True">
-                                                            <Setter Property="Background" Value="{DynamicResource InputFocusedBackgroundBrush}" />
-                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding IsEnabled, ElementName=TxtThreadSearch}" Value="False">
-                                                            <Setter Property="Opacity" Value="0.7" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Border.Style>
-
-                                            <TextBox x:Name="TxtThreadSearch"
-                                                     Background="Transparent"
-                                                     BorderBrush="Transparent"
-                                                     BorderThickness="0"
-                                                     Padding="12,8" />
-                                        </Border>
-
-                                        <TextBlock Text="Search threads..."
-                                                   Margin="12,0,12,0"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                                   IsHitTestVisible="False">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Text, ElementName=TxtThreadSearch}" Value="">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-
-                                    <!-- Hidden controls retained for existing thread filtering/sorting logic and settings persistence. -->
-                                    <StackPanel Visibility="Collapsed">
-                                        <CheckBox x:Name="ChkShowArchivedThreads" Content="Show archived" />
-                                        <CheckBox x:Name="ChkFilterThreadsByWorkingDir" Content="Filter by working dir" />
-                                        <ComboBox x:Name="CmbThreadSort">
-                                            <ComboBoxItem Content="Newest first" />
-                                            <ComboBoxItem Content="Oldest first" />
-                                            <ComboBoxItem Content="Preview A-Z" />
-                                            <ComboBoxItem Content="Preview Z-A" />
-                                        </ComboBox>
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-
-                            <Border Grid.Row="1"
-                                    Background="{DynamicResource SurfaceBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="11"
-                                    Padding="11,8"
-                                    Margin="0,0,0,8">
-                                <TextBlock x:Name="LblThreadsState" Text="No threads loaded yet." Style="{StaticResource CaptionTextStyle}" TextWrapping="Wrap" />
-                            </Border>
-
-                            <Border Grid.Row="2"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Padding="0">
-                                <ListBox x:Name="LstThreads"
-                                         HorizontalContentAlignment="Stretch"
-                                         BorderThickness="0"
-                                         Background="Transparent"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                    <ListBox.Resources>
-                                        <Style x:Key="ThreadListScrollBarRepeatButtonStyle" TargetType="RepeatButton">
-                                            <Setter Property="Background" Value="Transparent" />
-                                            <Setter Property="BorderThickness" Value="0" />
-                                            <Setter Property="Focusable" Value="False" />
-                                            <Setter Property="IsTabStop" Value="False" />
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="RepeatButton">
-                                                        <Border Background="Transparent" />
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                        </Style>
-
-                                        <Style x:Key="ThreadListScrollThumbStyle" TargetType="Thumb">
-                                            <Setter Property="Background" Value="{DynamicResource TextTertiaryBrush}" />
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="Thumb">
-                                                        <Border x:Name="ThumbChrome"
-                                                                Background="{TemplateBinding Background}"
-                                                                CornerRadius="5"
-                                                                Margin="2"
-                                                                MinHeight="26"
-                                                                Opacity="0.9" />
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="ThumbChrome" Property="Background" Value="{DynamicResource TextSecondaryBrush}" />
-                                                                <Setter TargetName="ThumbChrome" Property="Opacity" Value="1" />
-                                                            </Trigger>
-                                                            <Trigger Property="IsDragging" Value="True">
-                                                                <Setter TargetName="ThumbChrome" Property="Background" Value="{DynamicResource AccentBrush}" />
-                                                                <Setter TargetName="ThumbChrome" Property="Opacity" Value="1" />
-                                                            </Trigger>
-                                                            <Trigger Property="IsEnabled" Value="False">
-                                                                <Setter TargetName="ThumbChrome" Property="Opacity" Value="0.35" />
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                        </Style>
-
-                                        <Style TargetType="ScrollBar">
-                                            <Setter Property="Background" Value="Transparent" />
-                                            <Setter Property="Width" Value="12" />
-                                            <Setter Property="Margin" Value="0,2,0,2" />
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="ScrollBar">
-                                                        <Grid Background="Transparent" SnapsToDevicePixels="True">
-                                                            <Border x:Name="TrackChrome"
-                                                                    Margin="1,2,1,2"
-                                                                    CornerRadius="6"
-                                                                    Background="{DynamicResource SurfaceRaisedBrush}"
-                                                                    BorderBrush="{DynamicResource BorderBrush}"
-                                                                    BorderThickness="1"
-                                                                    Opacity="0.5" />
-                                                            <Track x:Name="PART_Track"
-                                                                   Margin="1,2,1,2"
-                                                                   IsDirectionReversed="True">
-                                                                <Track.DecreaseRepeatButton>
-                                                                    <RepeatButton Command="ScrollBar.PageUpCommand"
-                                                                                  Style="{StaticResource ThreadListScrollBarRepeatButtonStyle}" />
-                                                                </Track.DecreaseRepeatButton>
-                                                                <Track.Thumb>
-                                                                    <Thumb Style="{StaticResource ThreadListScrollThumbStyle}" />
-                                                                </Track.Thumb>
-                                                                <Track.IncreaseRepeatButton>
-                                                                    <RepeatButton Command="ScrollBar.PageDownCommand"
-                                                                                  Style="{StaticResource ThreadListScrollBarRepeatButtonStyle}" />
-                                                                </Track.IncreaseRepeatButton>
-                                                            </Track>
-                                                        </Grid>
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="Orientation" Value="Horizontal">
-                                                                <Setter Property="Width" Value="Auto" />
-                                                                <Setter Property="Height" Value="12" />
-                                                                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
-                                                            </Trigger>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="TrackChrome" Property="Opacity" Value="0.8" />
-                                                            </Trigger>
-                                                            <Trigger Property="IsEnabled" Value="False">
-                                                                <Setter TargetName="TrackChrome" Property="Opacity" Value="0.2" />
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                            <Style.Triggers>
-                                                <Trigger Property="Orientation" Value="Horizontal">
-                                                    <Setter Property="Width" Value="Auto" />
-                                                    <Setter Property="Height" Value="12" />
-                                                    <Setter Property="Margin" Value="2,0,2,0" />
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ListBox.Resources>
-                                    <ListBox.ContextMenu>
-                                        <ContextMenu x:Name="ThreadItemContextMenu"
-                                                     Background="{DynamicResource SurfaceRaisedBrush}"
-                                                     BorderBrush="{DynamicResource BorderStrongBrush}"
-                                                     BorderThickness="1"
-                                                     Padding="6">
-                                            <ContextMenu.Resources>
-                                                <Style TargetType="MenuItem">
-                                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                                    <Setter Property="Padding" Value="10,7" />
-                                                    <Setter Property="Margin" Value="2" />
-                                                    <Setter Property="FontSize" Value="12.8" />
-                                                    <Setter Property="Template">
-                                                        <Setter.Value>
-                                                            <ControlTemplate TargetType="MenuItem">
-                                                                <Border x:Name="ItemChrome"
-                                                                        Background="Transparent"
-                                                                        BorderBrush="Transparent"
-                                                                        BorderThickness="1"
-                                                                        CornerRadius="8"
-                                                                        Padding="{TemplateBinding Padding}">
-                                                                    <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
-                                                                </Border>
-                                                                <ControlTemplate.Triggers>
-                                                                    <Trigger Property="IsHighlighted" Value="True">
-                                                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                                        <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                                    </Trigger>
-                                                                    <Trigger Property="IsEnabled" Value="False">
-                                                                        <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
-                                                                    </Trigger>
-                                                                </ControlTemplate.Triggers>
-                                                            </ControlTemplate>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                </Style>
-                                            </ContextMenu.Resources>
-                                            <MenuItem x:Name="MnuThreadGroupNewThreadHere" Header="New Thread Here" Visibility="Collapsed" />
-                                            <Separator x:Name="SepThreadGroupContextTop" Visibility="Collapsed" />
-                                            <MenuItem x:Name="MnuThreadSelect" Header="Select" />
-                                            <Separator x:Name="SepThreadContextSelectRefresh" />
-                                            <MenuItem x:Name="MnuThreadRefreshSingle" Header="Refresh Thread" />
-                                            <Separator x:Name="SepThreadContextRefreshActions" />
-                                            <MenuItem x:Name="MnuThreadFork" Header="Fork" />
-                                            <MenuItem x:Name="MnuThreadArchive" Header="Archive" />
-                                            <MenuItem x:Name="MnuThreadUnarchive" Header="Unarchive" />
-                                        </ContextMenu>
-                                    </ListBox.ContextMenu>
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-
-                                                <TextBlock Grid.Column="0"
-                                                           Text="{Binding ListLeftText}"
-                                                           Margin="{Binding ListLeftMargin}"
-                                                           FontWeight="{Binding ListLeftFontWeight}"
-                                                           TextWrapping="NoWrap"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           VerticalAlignment="Center" />
-
-                                                <TextBlock Grid.Column="1"
-                                                           Text="{Binding ListRightText}"
-                                                           Margin="10,0,0,0"
-                                                           VerticalAlignment="Center"
-                                                           HorizontalAlignment="Right"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           FontSize="{DynamicResource CaptionTextSize}"
-                                                           Opacity="0.9"
-                                                           TextWrapping="NoWrap" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Border>
-                        </Grid>
-
-                        <Grid x:Name="LeftSettingsView" Visibility="Collapsed">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-
-                            <Border Grid.Row="0"
-                                    Style="{StaticResource CardBorderStyle}"
-                                    Background="{DynamicResource SurfaceBrush}"
-                                    Padding="11"
-                                    Margin="0,0,0,8">
-                                <DockPanel>
-                                    <Button x:Name="BtnSettingsBack" Content="Go Back" Style="{StaticResource ButtonBaseStyle}" Width="110" DockPanel.Dock="Left" />
-                                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                                        <TextBlock Text="Settings" FontSize="16" FontWeight="SemiBold" />
-                                        <TextBlock Text="Connection, auth, and reliability" Style="{StaticResource CaptionTextStyle}" />
-                                    </StackPanel>
-                                </DockPanel>
-                            </Border>
-
-                            <ScrollViewer Grid.Row="1"
-                                          VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel>
-                                    <GroupBox Header="Appearance">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="140" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-
-                                            <TextBlock Grid.Row="0"
-                                                       Grid.Column="0"
-                                                       Text="Theme"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,8,8"
-                                                       Style="{StaticResource CaptionTextStyle}" />
-                                            <StackPanel Grid.Row="0"
-                                                        Grid.Column="1"
-                                                        Orientation="Horizontal"
-                                                        VerticalAlignment="Center"
-                                                        Margin="0,0,0,8">
-                                                <TextBlock x:Name="LblThemeState"
-                                                           Text="Current: Light"
-                                                           VerticalAlignment="Center"
-                                                           Margin="0,0,10,0"
-                                                           Style="{StaticResource CaptionTextStyle}" />
-                                                <Button x:Name="BtnToggleTheme"
-                                                        Content="Switch to Dark Mode"
-                                                        Style="{StaticResource ButtonBaseStyle}" />
-                                            </StackPanel>
-
-                                            <TextBlock Grid.Row="1"
-                                                       Grid.Column="0"
-                                                       Text="Density"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,8,0"
-                                                       Style="{StaticResource CaptionTextStyle}" />
-                                            <ComboBox x:Name="CmbDensity" Grid.Row="1" Grid.Column="1">
-                                                <ComboBoxItem Content="comfortable" />
-                                                <ComboBoxItem Content="compact" />
-                                            </ComboBox>
-                                        </Grid>
-                                    </GroupBox>
-
-                                    <GroupBox Header="Connection">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="140" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Codex path" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtCodexPath" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Args" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtServerArgs" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Working dir" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtWorkingDir" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Codex home" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtWindowsCodexHome" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Connection" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <WrapPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,8">
-                                                <Button x:Name="BtnConnect" Content="Connect" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,6" />
-                                                <Button x:Name="BtnDisconnect" Content="Disconnect" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                            </WrapPanel>
-
-                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Reliability" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <WrapPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,8">
-                                                <CheckBox x:Name="ChkAutoReconnect" Content="Auto reconnect" Margin="0,0,12,6" />
-                                                <Button x:Name="BtnReconnectNow" Content="Reconnect now" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                                <Button x:Name="BtnExportDiagnostics" Content="Export diagnostics" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                            </WrapPanel>
-
-                                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Reconnect" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock x:Name="LblReconnectCountdown" Grid.Row="6" Grid.Column="1" Text="Reconnect: not scheduled." VerticalAlignment="Center" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="7" Grid.Column="0" Text="State" VerticalAlignment="Center" Margin="0,0,8,0" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock x:Name="LblConnectionState" Grid.Row="7" Grid.Column="1" Text="Disconnected" VerticalAlignment="Center" />
-                                        </Grid>
-                                    </GroupBox>
-
-                                    <GroupBox Header="OpenAI Auth">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="140" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Status" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock x:Name="LblAccountState" Grid.Row="0" Grid.Column="1" Text="Account: unknown" VerticalAlignment="Center" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Actions" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <WrapPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
-                                                <Button x:Name="BtnAccountRead" Content="Read account" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                                <Button x:Name="BtnLoginChatGpt" Content="Login ChatGPT" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,6" />
-                                                <Button x:Name="BtnCancelLogin" Content="Cancel login" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                                <Button x:Name="BtnLogout" Content="Logout" Style="{StaticResource DangerButtonStyle}" Margin="0,0,6,6" />
-                                                <Button x:Name="BtnReadRateLimits" Content="Rate limits" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                            </WrapPanel>
-
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="API key" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtApiKey" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="3" Grid.Column="0" />
-                                            <Button x:Name="BtnLoginApiKey" Grid.Row="3" Grid.Column="1" Content="Login API key" HorizontalAlignment="Left" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="External token" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtExternalAccessToken" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Account id" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtExternalAccountId" Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Plan type" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <ComboBox x:Name="CmbExternalPlanType" Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="7" Grid.Column="0" />
-                                            <Button x:Name="BtnLoginExternalTokens" Grid.Row="7" Grid.Column="1" Content="Login tokens" HorizontalAlignment="Left" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,0,8" />
-
-                                            <TextBlock Grid.Row="8" Grid.Column="0" Text="Rate limits" VerticalAlignment="Top" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtRateLimits"
-                                                     Grid.Row="8"
-                                                     Grid.Column="1"
-                                                     Margin="0,0,0,8"
-                                                     Height="140"
-                                                     IsReadOnly="True"
-                                                     AcceptsReturn="True"
-                                                     TextWrapping="Wrap"
-                                                     VerticalScrollBarVisibility="Auto" />
-
-                                            <TextBlock Grid.Row="9" Grid.Column="0" Text="API key prefs" VerticalAlignment="Top" Margin="0,0,8,0" Style="{StaticResource CaptionTextStyle}" />
-                                            <StackPanel Grid.Row="9" Grid.Column="1">
-                                                <CheckBox x:Name="ChkRememberApiKey" Content="Remember API key (encrypted)" Margin="0,0,0,4" />
-                                                <CheckBox x:Name="ChkAutoLoginApiKey" Content="Auto login API key on connect" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </GroupBox>
-
-                                    <GroupBox Header="Keybinds">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="150" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl+Enter" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Send turn input" Margin="0,0,0,8" VerticalAlignment="Center" />
-
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl+Shift+N" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="Start a new thread" Margin="0,0,0,8" VerticalAlignment="Center" />
-
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl+F" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock Grid.Row="2" Grid.Column="1" Text="Focus thread search" Margin="0,0,0,8" VerticalAlignment="Center" />
-
-                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Ctrl+," Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock Grid.Row="3" Grid.Column="1" Text="Open Settings" Margin="0,0,0,8" VerticalAlignment="Center" />
-
-                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="F5" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock Grid.Row="4" Grid.Column="1" Text="Refresh thread list" Margin="0,0,0,8" VerticalAlignment="Center" />
-
-                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="F6" Margin="0,0,10,0" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock Grid.Row="5" Grid.Column="1" Text="Refresh models" VerticalAlignment="Center" />
-                                        </Grid>
-                                    </GroupBox>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Grid>
-                    </Grid>
-                </Grid>
-            </Border>
-
+                <ui:SidebarPaneControl x:Name="SidebarPaneHost" />
+            </Grid>
             <GridSplitter Grid.Column="1"
                           Width="8"
                           HorizontalAlignment="Stretch"
@@ -766,232 +85,45 @@
                           Background="{DynamicResource AccentGlowBrush}"
                           Opacity="0.55" />
 
-            <Border Grid.Column="2"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Padding="{DynamicResource MainShellPadding}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+            <ui:WorkspacePaneControl x:Name="WorkspacePaneHost" Grid.Column="2" />
 
-                    <Border Grid.Row="0"
-                            Background="{DynamicResource SurfaceMutedBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            Padding="14,12"
-                            Margin="0,0,0,12">
-                        <DockPanel>
-                            <StackPanel DockPanel.Dock="Left">
-                                <TextBlock x:Name="LblCurrentThread" Text="New Thread" FontSize="20" FontWeight="SemiBold" />
-                                <TextBlock x:Name="LblCurrentTurn" Text="Turn: 0" Margin="0,3,0,0" Style="{StaticResource CaptionTextStyle}" />
-                            </StackPanel>
+            <GridSplitter x:Name="RightGitPaneSplitter"
+                          Grid.Column="3"
+                          Width="8"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          ShowsPreview="True"
+                          Background="{DynamicResource AccentGlowBrush}"
+                          Opacity="0.55"
+                          Visibility="Collapsed" />
 
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
-                                <Button x:Name="BtnQuickOpenVsc" Content="Open VSC" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,0" />
-                                <Button x:Name="BtnQuickOpenTerminal" Content="Open Terminal" Style="{StaticResource ButtonBaseStyle}" />
-                            </StackPanel>
-                        </DockPanel>
-                    </Border>
+            <Grid x:Name="RightGitPaneShell"
+                  Grid.Column="4"
+                  Visibility="Collapsed"
+                  ClipToBounds="True">
+                <Border IsHitTestVisible="False"
+                        CornerRadius="18"
+                        Background="{DynamicResource AppShellBackgroundImageBrush}"
+                        Opacity="0.9"
+                        Effect="{DynamicResource SidebarBackdropBlurEffect}" />
 
-                    <Border Grid.Row="1"
-                            Background="{DynamicResource AccentSubtleBrush}"
-                            BorderBrush="{DynamicResource AccentGlowBrush}"
-                            BorderThickness="1"
-                            CornerRadius="10"
-                            Padding="11,8"
-                            Margin="0,0,0,12">
-                        <TextBlock x:Name="LblWorkspaceHint"
-                                   Text="Connect to begin."
-                                   TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TextSecondaryBrush}" />
-                    </Border>
+                <Border IsHitTestVisible="False"
+                        CornerRadius="18"
+                        Background="{DynamicResource MainBackgroundGradient}"
+                        Opacity="0.46" />
 
-                    <Border Grid.Row="2"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Padding="10"
-                            Margin="0,0,0,12">
-                        <Grid>
-                            <TextBox x:Name="TxtTranscript"
-                                     IsReadOnly="True"
-                                     AcceptsReturn="True"
-                                     TextWrapping="Wrap"
-                                     VerticalScrollBarVisibility="Auto"
-                                     HorizontalScrollBarVisibility="Auto"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     FontFamily="Cascadia Code" />
+                <Border IsHitTestVisible="False"
+                        CornerRadius="18"
+                        Background="{DynamicResource SidebarBackgroundBrush}"
+                        Opacity="0.28"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1" />
 
-                            <!-- Hidden protocol buffer is retained for logging/export and the protocol dialog. -->
-                            <TextBox x:Name="TxtProtocol"
-                                     Visibility="Collapsed"
-                                     IsReadOnly="True"
-                                     AcceptsReturn="True"
-                                     TextWrapping="Wrap"
-                                     VerticalScrollBarVisibility="Auto"
-                                     HorizontalScrollBarVisibility="Auto"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     FontFamily="Cascadia Code" />
-
-                            <Border x:Name="TranscriptLoadingOverlay"
-                                    Panel.ZIndex="10"
-                                    Visibility="Collapsed"
-                                    Background="{DynamicResource SurfaceRaisedBrush}"
-                                    BorderBrush="{DynamicResource BorderStrongBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="12"
-                                    Padding="16"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center">
-                                <StackPanel Width="230">
-                                    <ProgressBar IsIndeterminate="True"
-                                                 Height="7"
-                                                 Foreground="{DynamicResource AccentBrush}"
-                                                 Background="{DynamicResource SurfaceContrastBrush}" />
-                                    <TextBlock x:Name="LblTranscriptLoading"
-                                               Margin="0,10,0,0"
-                                               HorizontalAlignment="Center"
-                                               Text="Loading thread..."
-                                               Style="{StaticResource CaptionTextStyle}" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                    </Border>
-
-                    <Border Grid.Row="3"
-                            Style="{StaticResource CardBorderStyle}"
-                            Background="{DynamicResource SurfaceMutedBrush}"
-                            Padding="12">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <Border x:Name="InlineApprovalCard"
-                                    Grid.Row="0"
-                                    BorderBrush="{DynamicResource ApprovalCardBorderBrush}"
-                                    BorderThickness="1"
-                                    Background="{DynamicResource ApprovalCardBackgroundBrush}"
-                                    CornerRadius="10"
-                                    Padding="10"
-                                    Margin="0,0,0,12"
-                                    Visibility="Collapsed">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <TextBox x:Name="TxtApproval"
-                                             Grid.Row="0"
-                                             Height="118"
-                                             IsReadOnly="True"
-                                             AcceptsReturn="True"
-                                             TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto"
-                                             Background="{DynamicResource ApprovalInputBackgroundBrush}"
-                                             BorderBrush="{DynamicResource ApprovalCardBorderBrush}" />
-
-                                    <WrapPanel Grid.Row="1" Margin="0,10,0,0">
-                                        <Button x:Name="BtnApprovalAccept" Content="Accept" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,6" />
-                                        <Button x:Name="BtnApprovalAcceptSession" Content="Accept Session" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                        <Button x:Name="BtnApprovalDecline" Content="Decline" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                        <Button x:Name="BtnApprovalCancel" Content="Cancel Turn" Style="{StaticResource DangerButtonStyle}" Margin="0,0,6,6" />
-                                    </WrapPanel>
-                                </Grid>
-                            </Border>
-
-                            <Grid Grid.Row="1">
-                                <TextBox x:Name="TxtTurnInput"
-                                         MinHeight="128"
-                                         AcceptsReturn="True"
-                                         TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto"
-                                         Background="Transparent"
-                                         BorderBrush="Transparent"
-                                         BorderThickness="0"
-                                         Padding="0" />
-
-                                <TextBlock Text="Type a prompt for Codex..."
-                                           Margin="2,1,14,0"
-                                           VerticalAlignment="Top"
-                                           Foreground="{DynamicResource TextTertiaryBrush}"
-                                           IsHitTestVisible="False">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Text, ElementName=TxtTurnInput}" Value="">
-                                                    <Setter Property="Visibility" Value="Visible" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-
-                            <Grid Grid.Row="2" Margin="0,10,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <WrapPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <ComboBox x:Name="CmbModel" Width="260" Margin="0,0,12,6" />
-
-                                    <ComboBox x:Name="CmbReasoningEffort" Width="150" Margin="0,0,12,6">
-                                        <ComboBoxItem Content="minimal" />
-                                        <ComboBoxItem Content="low" />
-                                        <ComboBoxItem Content="medium" />
-                                        <ComboBoxItem Content="high" />
-                                        <ComboBoxItem Content="xhigh" />
-                                    </ComboBox>
-                                </WrapPanel>
-
-                                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <Button x:Name="BtnTurnSteer" Content="Steer Active Turn" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                    <Button x:Name="BtnTurnStart"
-                                            Style="{StaticResource PrimaryButtonStyle}"
-                                            Width="42"
-                                            MinWidth="42"
-                                            Padding="0"
-                                            Margin="0,0,0,6"
-                                            ToolTip="Send (Ctrl+Enter)">
-                                        <Image Source="pack://application:,,,/Assets/send-input.png"
-                                               Width="16"
-                                               Height="16"
-                                               Stretch="Uniform" />
-                                    </Button>
-                                    <Button x:Name="BtnTurnInterrupt"
-                                            Style="{StaticResource DangerButtonStyle}"
-                                            Width="42"
-                                            MinWidth="42"
-                                            Padding="0"
-                                            Margin="0,0,0,6"
-                                            Visibility="Collapsed"
-                                            ToolTip="Interrupt">
-                                        <Image Source="pack://application:,,,/Assets/interrupt.png"
-                                               Width="14"
-                                               Height="14"
-                                               Stretch="Uniform" />
-                                    </Button>
-                                </WrapPanel>
-                            </Grid>
-                        </Grid>
-                    </Border>
-                </Grid>
-            </Border>
+                <ui:GitPaneControl x:Name="GitPaneHost" />
+            </Grid>
 
             <Border x:Name="ToastOverlay"
-                    Grid.ColumnSpan="3"
+                    Grid.ColumnSpan="5"
                     Background="{DynamicResource ToastInfoBackgroundBrush}"
                     BorderBrush="{DynamicResource ToastInfoBorderBrush}"
                     BorderThickness="1"
@@ -1002,48 +134,34 @@
                     Margin="16"
                     Effect="{DynamicResource FloatingShadowEffect}"
                     Visibility="Collapsed">
-                <TextBlock x:Name="LblToastText" TextWrapping="Wrap" MaxWidth="620" />
+                <DockPanel LastChildFill="True">
+                    <Button x:Name="BtnToastClose"
+                            DockPanel.Dock="Right"
+                            Width="18"
+                            Height="18"
+                            MinWidth="18"
+                            MinHeight="18"
+                            Margin="8,0,0,0"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            ToolTip="Dismiss">
+                        <TextBlock Text="x"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Button>
+                    <TextBlock x:Name="LblToastText"
+                               TextWrapping="Wrap"
+                               MaxWidth="620"
+                               VerticalAlignment="Center" />
+                </DockPanel>
             </Border>
         </Grid>
 
-        <Border Grid.Row="1"
-                Background="{DynamicResource SurfaceContrastBrush}"
-                BorderBrush="{DynamicResource BorderStrongBrush}"
-                BorderThickness="1,1,0,0"
-                CornerRadius="10,10,0,0"
-                Padding="12,7"
-                Margin="{DynamicResource StatusBarMargin}">
-            <DockPanel>
-                <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <ComboBox x:Name="CmbApprovalPolicy"
-                              Width="150"
-                              Margin="0,0,8,0"
-                              ToolTip="Approval policy">
-                        <ComboBoxItem Content="untrusted" />
-                        <ComboBoxItem Content="on-failure" />
-                        <ComboBoxItem Content="on-request" />
-                        <ComboBoxItem Content="never" />
-                    </ComboBox>
-
-                    <ComboBox x:Name="CmbSandbox"
-                              Width="175"
-                              ToolTip="Sandbox mode">
-                        <ComboBoxItem Content="workspace-write" />
-                        <ComboBoxItem Content="read-only" />
-                        <ComboBoxItem Content="danger-full-access" />
-                    </ComboBox>
-                </WrapPanel>
-
-                <TextBlock Text="Status" Style="{StaticResource CaptionTextStyle}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                <TextBlock x:Name="LblStatus" Text="Ready." VerticalAlignment="Center" />
-                <Button x:Name="BtnOpenProtocolDialog"
-                        Content="Protocol"
-                        Style="{StaticResource ButtonBaseStyle}"
-                        Margin="10,0,0,0"
-                        Padding="10,4"
-                        MinHeight="28"
-                        VerticalAlignment="Center" />
-            </DockPanel>
-        </Border>
+        <ui:StatusBarPaneControl x:Name="StatusBarPaneHost" Grid.Row="1" />
     </Grid>
 </Window>

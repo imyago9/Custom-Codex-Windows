@@ -1,0 +1,912 @@
+<UserControl x:Class="CodexNativeAgent.Ui.SidebarPaneControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent">
+            <Border
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="{DynamicResource SidebarShellPadding}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0"
+                            Padding="0"
+                            Margin="0,0,0,10">
+                        <StackPanel>
+                            <Button x:Name="BtnSidebarNewThread"
+                                    Style="{StaticResource SidebarButtonStyle}"
+                                    IsEnabled="{Binding IsSidebarNewThreadEnabled}"
+                                    Tag="{Binding SidebarNewThreadNavTag}"
+                                    ToolTip="{Binding SidebarNewThreadToolTip}">
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="SidebarNewThreadContextMenu"
+                                                 Background="{DynamicResource SurfaceRaisedBrush}"
+                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                 BorderThickness="1"
+                                                 Padding="6">
+                                        <ContextMenu.Resources>
+                                            <Style TargetType="MenuItem">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                <Setter Property="Padding" Value="10,7" />
+                                                <Setter Property="Margin" Value="2" />
+                                                <Setter Property="FontSize" Value="12.8" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="MenuItem">
+                                                            <Border x:Name="ItemChrome"
+                                                                    Background="Transparent"
+                                                                    BorderBrush="Transparent"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="8"
+                                                                    Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsHighlighted" Value="True">
+                                                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                                    <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsEnabled" Value="False">
+                                                                    <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ContextMenu.Resources>
+                                        <MenuItem x:Name="MnuSidebarNewThreadChooseFolder" Header="Choose folder..." />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="&#xE70F;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock x:Name="LblSidebarNewThreadText"
+                                               Grid.Column="1"
+                                               Text="{Binding SidebarNewThreadButtonText}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </Button>
+
+                            <Button x:Name="BtnSidebarAutomations"
+                                    Style="{StaticResource SidebarButtonStyle}"
+                                    IsEnabled="{Binding IsSidebarAutomationsEnabled}"
+                                    Tag="{Binding SidebarAutomationsNavTag}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE7C1;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Automations" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="BtnSidebarSkills"
+                                    Style="{StaticResource SidebarButtonStyle}"
+                                    IsEnabled="{Binding IsSidebarSkillsEnabled}"
+                                    Tag="{Binding SidebarSkillsNavTag}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE7BE;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Skills" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="BtnSidebarSettings"
+                                    Style="{StaticResource SidebarButtonStyle}"
+                                    IsEnabled="{Binding IsSidebarSettingsEnabled}"
+                                    Tag="{Binding SidebarSettingsNavTag}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Settings" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Grid Margin="8,12,8,0"
+                                  Height="10">
+                                <Border Style="{x:Null}"
+                                        Height="1"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource BorderBrush}"
+                                        Opacity="0.8" />
+                                <Border Style="{x:Null}"
+                                        Width="34"
+                                        Height="2"
+                                        CornerRadius="1"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource AccentBrush}"
+                                        Opacity="0.55" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Grid.Row="1">
+                        <Grid x:Name="LeftMainView"
+                              Visibility="{Binding SidebarMainViewVisibility}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0"
+                                    Style="{x:Null}"
+                                    Background="Transparent"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="0"
+                                    Padding="13"
+                                    Margin="0,0,0,8">
+                                <Border.Resources>
+                                    <Style x:Key="ThreadToolbarMenuItemStyle" TargetType="MenuItem">
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                        <Setter Property="Padding" Value="10,7" />
+                                        <Setter Property="Margin" Value="2" />
+                                        <Setter Property="FontSize" Value="12.8" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="MenuItem">
+                                                    <Border x:Name="ItemChrome"
+                                                            Background="Transparent"
+                                                            BorderBrush="Transparent"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                            <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsHighlighted" Value="True">
+                                                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                            <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Border.Resources>
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,10" LastChildFill="False">
+                                        <TextBlock DockPanel.Dock="Left"
+                                                   Text="Threads"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource SectionTitleTextStyle}" />
+
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button x:Name="BtnThreadFilterMenu"
+                                                    Style="{StaticResource ButtonBaseStyle}"
+                                                    Width="34"
+                                                    MinWidth="34"
+                                                    Padding="0"
+                                                    Margin="0,0,6,0"
+                                                    IsEnabled="{Binding ThreadsPanel.IsFilterMenuEnabled}"
+                                                    Command="{Binding ThreadsPanel.OpenFilterMenuCommand}"
+                                                    ToolTip="Filter threads">
+                                                <Button.ContextMenu>
+                                                    <ContextMenu x:Name="ThreadFilterContextMenu"
+                                                                 Placement="Bottom"
+                                                                 Background="{DynamicResource SurfaceRaisedBrush}"
+                                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                                 BorderThickness="1"
+                                                                 Padding="6">
+                                                        <ContextMenu.Resources>
+                                                            <Style TargetType="MenuItem" BasedOn="{StaticResource ThreadToolbarMenuItemStyle}" />
+                                                        </ContextMenu.Resources>
+                                                        <MenuItem x:Name="MnuThreadFilterArchived"
+                                                                  Header="Archived"
+                                                                  IsCheckable="True"
+                                                                  Command="{Binding ThreadsPanel.ApplyFilterMenuToggleCommand}"
+                                                                  StaysOpenOnClick="True" />
+                                                        <MenuItem x:Name="MnuThreadFilterWorkingDir"
+                                                                  Header="Working dir"
+                                                                  IsCheckable="True"
+                                                                  Command="{Binding ThreadsPanel.ApplyFilterMenuToggleCommand}"
+                                                                  StaysOpenOnClick="True" />
+                                                    </ContextMenu>
+                                                </Button.ContextMenu>
+                                                <TextBlock Text="&#xE71C;"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="14"
+                                                           LineHeight="14"
+                                                           LineStackingStrategy="BlockLineHeight"
+                                                           TextAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Center" />
+                                            </Button>
+
+                                            <Button x:Name="BtnThreadSortMenu"
+                                                    Style="{StaticResource ButtonBaseStyle}"
+                                                    Width="34"
+                                                    MinWidth="34"
+                                                    Padding="0"
+                                                    IsEnabled="{Binding ThreadsPanel.IsSortMenuEnabled}"
+                                                    Command="{Binding ThreadsPanel.OpenSortMenuCommand}"
+                                                    ToolTip="Sort threads">
+                                                <Button.ContextMenu>
+                                                    <ContextMenu x:Name="ThreadSortContextMenu"
+                                                                 Placement="Bottom"
+                                                                 Background="{DynamicResource SurfaceRaisedBrush}"
+                                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                                 BorderThickness="1"
+                                                                 Padding="6">
+                                                        <ContextMenu.Resources>
+                                                            <Style TargetType="MenuItem" BasedOn="{StaticResource ThreadToolbarMenuItemStyle}" />
+                                                        </ContextMenu.Resources>
+                                                        <MenuItem x:Name="MnuThreadSortNewest" Header="Newest first" IsCheckable="True" Command="{Binding ThreadsPanel.SetSortFromMenuCommand}" CommandParameter="0" />
+                                                        <MenuItem x:Name="MnuThreadSortOldest" Header="Oldest first" IsCheckable="True" Command="{Binding ThreadsPanel.SetSortFromMenuCommand}" CommandParameter="1" />
+                                                        <MenuItem x:Name="MnuThreadSortPreviewAz" Header="Preview A-Z" IsCheckable="True" Command="{Binding ThreadsPanel.SetSortFromMenuCommand}" CommandParameter="2" />
+                                                        <MenuItem x:Name="MnuThreadSortPreviewZa" Header="Preview Z-A" IsCheckable="True" Command="{Binding ThreadsPanel.SetSortFromMenuCommand}" CommandParameter="3" />
+                                                    </ContextMenu>
+                                                </Button.ContextMenu>
+                                                <TextBlock Text="&#xE8CB;"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="14"
+                                                           LineHeight="14"
+                                                           LineStackingStrategy="BlockLineHeight"
+                                                           TextAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Center" />
+                                            </Button>
+                                        </StackPanel>
+                                    </DockPanel>
+
+                                    <Grid>
+                                        <Border CornerRadius="12"
+                                                BorderThickness="1"
+                                                Padding="0">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=TxtThreadSearch}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource InputFocusedBackgroundBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsEnabled, ElementName=TxtThreadSearch}" Value="False">
+                                                            <Setter Property="Opacity" Value="0.7" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+
+                                            <TextBox x:Name="TxtThreadSearch"
+                                                     Text="{Binding ThreadsPanel.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                     IsEnabled="{Binding ThreadsPanel.IsSearchEnabled}"
+                                                     Background="Transparent"
+                                                     BorderBrush="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="12,8" />
+                                        </Border>
+
+                                        <TextBlock Text="Search threads..."
+                                                   Margin="12,0,12,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   IsHitTestVisible="False">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Text, ElementName=TxtThreadSearch}" Value="">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+
+                                    <!-- Hidden controls retained for existing thread filtering/sorting logic and settings persistence. -->
+                                    <StackPanel Visibility="Collapsed">
+                                        <CheckBox x:Name="ChkShowArchivedThreads"
+                                                  Content="Show archived"
+                                                  IsEnabled="{Binding AreThreadLegacyFilterControlsEnabled}"
+                                                  IsChecked="{Binding ThreadsPanel.ShowArchived, Mode=TwoWay}" />
+                                        <CheckBox x:Name="ChkFilterThreadsByWorkingDir"
+                                                  Content="Filter by working dir"
+                                                  IsEnabled="{Binding AreThreadLegacyFilterControlsEnabled}"
+                                                  IsChecked="{Binding ThreadsPanel.FilterByWorkingDir, Mode=TwoWay}" />
+                                        <ComboBox x:Name="CmbThreadSort"
+                                                  IsEnabled="{Binding AreThreadLegacyFilterControlsEnabled}"
+                                                  SelectedIndex="{Binding ThreadsPanel.SortIndex, Mode=TwoWay}">
+                                            <ComboBoxItem Content="Newest first" />
+                                            <ComboBoxItem Content="Oldest first" />
+                                            <ComboBoxItem Content="Preview A-Z" />
+                                            <ComboBoxItem Content="Preview Z-A" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="ThreadsStateHintBubble"
+                                    Grid.Row="1"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="11"
+                                    Padding="11,8"
+                                    Margin="0,0,0,8">
+                                <DockPanel LastChildFill="True">
+                                    <Button x:Name="BtnDismissThreadsStateHint"
+                                            DockPanel.Dock="Right"
+                                            Width="18"
+                                            Height="18"
+                                            MinWidth="18"
+                                            MinHeight="18"
+                                            Margin="8,0,0,0"
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderBrush="Transparent"
+                                            BorderThickness="0"
+                                            Cursor="Hand"
+                                            ToolTip="Dismiss hint"
+                                            Visibility="Collapsed">
+                                        <TextBlock Text="x"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Button>
+                                    <TextBlock x:Name="LblThreadsState"
+                                               Text="{Binding ThreadsPanel.StateText}"
+                                               Style="{StaticResource CaptionTextStyle}"
+                                               TextWrapping="Wrap" />
+                                </DockPanel>
+                            </Border>
+
+                            <Border Grid.Row="2"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0">
+                                <ListBox x:Name="LstThreads"
+                                         ItemsSource="{Binding ThreadsPanel.Items}"
+                                         SelectedItem="{Binding ThreadsPanel.SelectedListItem, Mode=TwoWay}"
+                                         IsEnabled="{Binding ThreadsPanel.IsThreadListEnabled}"
+                                         HorizontalContentAlignment="Stretch"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.Resources>
+                                        <Style x:Key="ThreadListScrollBarRepeatButtonStyle" TargetType="RepeatButton">
+                                            <Setter Property="Background" Value="Transparent" />
+                                            <Setter Property="BorderThickness" Value="0" />
+                                            <Setter Property="Focusable" Value="False" />
+                                            <Setter Property="IsTabStop" Value="False" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="RepeatButton">
+                                                        <Border Background="Transparent" />
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+
+                                        <Style x:Key="ThreadListScrollThumbStyle" TargetType="Thumb">
+                                            <Setter Property="Background" Value="{DynamicResource TextTertiaryBrush}" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Thumb">
+                                                        <Border x:Name="ThumbChrome"
+                                                                Background="{TemplateBinding Background}"
+                                                                CornerRadius="5"
+                                                                Margin="2"
+                                                                MinHeight="26"
+                                                                Opacity="0.9" />
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="ThumbChrome" Property="Background" Value="{DynamicResource TextSecondaryBrush}" />
+                                                                <Setter TargetName="ThumbChrome" Property="Opacity" Value="1" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsDragging" Value="True">
+                                                                <Setter TargetName="ThumbChrome" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter TargetName="ThumbChrome" Property="Opacity" Value="1" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsEnabled" Value="False">
+                                                                <Setter TargetName="ThumbChrome" Property="Opacity" Value="0.35" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+
+                                        <Style TargetType="ScrollBar">
+                                            <Setter Property="Background" Value="Transparent" />
+                                            <Setter Property="Width" Value="12" />
+                                            <Setter Property="Margin" Value="0,2,0,2" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ScrollBar">
+                                                        <Grid Background="Transparent" SnapsToDevicePixels="True">
+                                                            <Border x:Name="TrackChrome"
+                                                                    Margin="1,2,1,2"
+                                                                    CornerRadius="6"
+                                                                    Background="{DynamicResource SurfaceRaisedBrush}"
+                                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                                    BorderThickness="1"
+                                                                    Opacity="0.5" />
+                                                            <Track x:Name="PART_Track"
+                                                                   Margin="1,2,1,2"
+                                                                   IsDirectionReversed="True">
+                                                                <Track.DecreaseRepeatButton>
+                                                                    <RepeatButton Command="ScrollBar.PageUpCommand"
+                                                                                  Style="{StaticResource ThreadListScrollBarRepeatButtonStyle}" />
+                                                                </Track.DecreaseRepeatButton>
+                                                                <Track.Thumb>
+                                                                    <Thumb Style="{StaticResource ThreadListScrollThumbStyle}" />
+                                                                </Track.Thumb>
+                                                                <Track.IncreaseRepeatButton>
+                                                                    <RepeatButton Command="ScrollBar.PageDownCommand"
+                                                                                  Style="{StaticResource ThreadListScrollBarRepeatButtonStyle}" />
+                                                                </Track.IncreaseRepeatButton>
+                                                            </Track>
+                                                        </Grid>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="Orientation" Value="Horizontal">
+                                                                <Setter Property="Width" Value="Auto" />
+                                                                <Setter Property="Height" Value="12" />
+                                                                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="TrackChrome" Property="Opacity" Value="0.8" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsEnabled" Value="False">
+                                                                <Setter TargetName="TrackChrome" Property="Opacity" Value="0.2" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <Trigger Property="Orientation" Value="Horizontal">
+                                                    <Setter Property="Width" Value="Auto" />
+                                                    <Setter Property="Height" Value="12" />
+                                                    <Setter Property="Margin" Value="2,0,2,0" />
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ListBox.Resources>
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu x:Name="ThreadItemContextMenu"
+                                                     Background="{DynamicResource SurfaceRaisedBrush}"
+                                                     BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                     BorderThickness="1"
+                                                     Padding="6">
+                                            <ContextMenu.Resources>
+                                                <Style TargetType="MenuItem">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                    <Setter Property="Padding" Value="10,7" />
+                                                    <Setter Property="Margin" Value="2" />
+                                                    <Setter Property="FontSize" Value="12.8" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="MenuItem">
+                                                                <Border x:Name="ItemChrome"
+                                                                        Background="Transparent"
+                                                                        BorderBrush="Transparent"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="8"
+                                                                        Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsHighlighted" Value="True">
+                                                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                                        <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsEnabled" Value="False">
+                                                                        <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </ContextMenu.Resources>
+                                            <MenuItem x:Name="MnuThreadGroupNewThreadHere"
+                                                      Header="New Thread Here"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuGroupNewThreadVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuGroupNewThreadEnabled}"
+                                                      Command="{Binding ThreadsPanel.NewThreadFromGroupContextCommand}" />
+                                            <Separator x:Name="SepThreadGroupContextTop"
+                                                       Visibility="{Binding ThreadsPanel.ThreadMenuGroupTopSeparatorVisibility}" />
+                                            <MenuItem x:Name="MnuThreadSelect"
+                                                      Header="Select"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuSelectVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuSelectEnabled}"
+                                                      Command="{Binding ThreadsPanel.SelectThreadContextCommand}" />
+                                            <Separator x:Name="SepThreadContextSelectRefresh"
+                                                       Visibility="{Binding ThreadsPanel.ThreadMenuSelectRefreshSeparatorVisibility}" />
+                                            <MenuItem x:Name="MnuThreadRefreshSingle"
+                                                      Header="Refresh Thread"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuRefreshVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuRefreshEnabled}"
+                                                      Command="{Binding ThreadsPanel.RefreshThreadContextCommand}" />
+                                            <Separator x:Name="SepThreadContextRefreshActions"
+                                                       Visibility="{Binding ThreadsPanel.ThreadMenuRefreshActionsSeparatorVisibility}" />
+                                            <MenuItem x:Name="MnuThreadFork"
+                                                      Header="Fork"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuForkVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuForkEnabled}"
+                                                      Command="{Binding ThreadsPanel.ForkThreadContextCommand}" />
+                                            <MenuItem x:Name="MnuThreadArchive"
+                                                      Header="Archive"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuArchiveVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuArchiveEnabled}"
+                                                      Command="{Binding ThreadsPanel.ArchiveThreadContextCommand}" />
+                                            <MenuItem x:Name="MnuThreadUnarchive"
+                                                      Header="Unarchive"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuUnarchiveVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuUnarchiveEnabled}"
+                                                      Command="{Binding ThreadsPanel.UnarchiveThreadContextCommand}" />
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding ListLeftText}"
+                                                           Margin="{Binding ListLeftMargin}"
+                                                           FontWeight="{Binding ListLeftFontWeight}"
+                                                           TextWrapping="NoWrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center" />
+
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding ListRightText}"
+                                                           Margin="10,0,0,0"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Right"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource CaptionTextSize}"
+                                                           Opacity="0.9"
+                                                           TextWrapping="NoWrap" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                        </Grid>
+
+                        <Grid x:Name="LeftSettingsView"
+                              Visibility="{Binding SidebarSettingsViewVisibility}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0"
+                                    Style="{StaticResource CardBorderStyle}"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    Padding="11"
+                                    Margin="0,0,0,8">
+                                <DockPanel>
+                                    <Button x:Name="BtnSettingsBack"
+                                            Content="Go Back"
+                                            Style="{StaticResource ButtonBaseStyle}"
+                                            Width="110"
+                                            DockPanel.Dock="Left"
+                                            IsEnabled="{Binding IsSettingsBackEnabled}" />
+                                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Settings" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Connection, auth, and reliability" Style="{StaticResource CaptionTextStyle}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+
+                            <ScrollViewer Grid.Row="1"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel>
+                                    <GroupBox Header="Appearance">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0"
+                                                       Grid.Column="0"
+                                                       Text="Theme"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,8"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                            <StackPanel Grid.Row="0"
+                                                        Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center"
+                                                        Margin="0,0,0,8">
+                                                <TextBlock x:Name="LblThemeState"
+                                                           Text="{Binding SettingsPanel.ThemeStateText}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,10,0"
+                                                           Style="{StaticResource CaptionTextStyle}" />
+                                                <Button x:Name="BtnToggleTheme"
+                                                        Content="{Binding SettingsPanel.ThemeToggleButtonText}"
+                                                        Command="{Binding SettingsPanel.ToggleThemeCommand}"
+                                                        Style="{StaticResource ButtonBaseStyle}" />
+                                            </StackPanel>
+
+                                            <TextBlock Grid.Row="1"
+                                                       Grid.Column="0"
+                                                       Text="Density"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                            <ComboBox x:Name="CmbDensity"
+                                                      Grid.Row="1"
+                                                      Grid.Column="1"
+                                                      SelectedIndex="{Binding SettingsPanel.DensityIndex, Mode=TwoWay}">
+                                                <ComboBoxItem Content="comfortable" />
+                                                <ComboBoxItem Content="compact" />
+                                            </ComboBox>
+
+                                            <TextBlock Grid.Row="2"
+                                                       Grid.Column="0"
+                                                       Text="Hints"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,8,8,0"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                            <StackPanel Grid.Row="2"
+                                                        Grid.Column="1"
+                                                        Margin="0,8,0,0">
+                                                <CheckBox x:Name="ChkDisableWorkspaceHintOverlay"
+                                                          Margin="0,0,0,6"
+                                                          Content="Disable workspace hint bubbles"
+                                                          IsChecked="{Binding SettingsPanel.DisableWorkspaceHintOverlay, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkDisableConnectionInitializedToast"
+                                                          Margin="0,0,0,6"
+                                                          Content="Disable top-right hint toasts"
+                                                          IsChecked="{Binding SettingsPanel.DisableConnectionInitializedToast, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkDisableThreadsPanelHints"
+                                                          Content="Disable threads panel hint bubbles"
+                                                          IsChecked="{Binding SettingsPanel.DisableThreadsPanelHints, Mode=TwoWay}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </GroupBox>
+
+                                    <GroupBox Header="Connection">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Codex path" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtCodexPath"
+                                                     Grid.Row="0"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     IsEnabled="{Binding SettingsPanel.AreConnectionFieldsEditable}"
+                                                     Text="{Binding SettingsPanel.CodexPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Args" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtServerArgs"
+                                                     Grid.Row="1"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     IsEnabled="{Binding SettingsPanel.AreConnectionFieldsEditable}"
+                                                     Text="{Binding SettingsPanel.ServerArgs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Working dir" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtWorkingDir"
+                                                     Grid.Row="2"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     IsEnabled="{Binding SettingsPanel.AreConnectionFieldsEditable}"
+                                                     Text="{Binding SettingsPanel.WorkingDir, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Codex home" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtWindowsCodexHome"
+                                                     Grid.Row="3"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     IsEnabled="{Binding SettingsPanel.AreConnectionFieldsEditable}"
+                                                     Text="{Binding SettingsPanel.WindowsCodexHome, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Connection" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <WrapPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,8">
+                                                <Button x:Name="BtnConnect" Content="Connect" Command="{Binding SettingsPanel.ConnectCommand}" IsEnabled="{Binding SessionState.CanConnect}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,6" />
+                                                <Button x:Name="BtnDisconnect" Content="Disconnect" Command="{Binding SettingsPanel.DisconnectCommand}" IsEnabled="{Binding SessionState.CanDisconnect}" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
+                                            </WrapPanel>
+
+                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Reliability" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <WrapPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,8">
+                                                <CheckBox x:Name="ChkAutoReconnect"
+                                                          Content="Auto reconnect"
+                                                          Margin="0,0,12,6"
+                                                          IsChecked="{Binding SettingsPanel.AutoReconnect, Mode=TwoWay}" />
+                                                <Button x:Name="BtnReconnectNow" Content="Reconnect now" Command="{Binding SettingsPanel.ReconnectNowCommand}" IsEnabled="{Binding SessionState.CanReconnectNow}" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
+                                                <Button x:Name="BtnExportDiagnostics" Content="Export diagnostics" Command="{Binding SettingsPanel.ExportDiagnosticsCommand}" IsEnabled="{Binding SettingsPanel.CanExportDiagnostics}" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
+                                            </WrapPanel>
+
+                                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Reconnect" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock x:Name="LblReconnectCountdown" Grid.Row="6" Grid.Column="1" Text="{Binding SettingsPanel.ReconnectCountdownText}" VerticalAlignment="Center" Margin="0,0,0,8" />
+
+                                            <TextBlock Grid.Row="7" Grid.Column="0" Text="State" VerticalAlignment="Center" Margin="0,0,8,0" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock x:Name="LblConnectionState" Grid.Row="7" Grid.Column="1" Text="{Binding ConnectionStateText}" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </GroupBox>
+
+                                    <GroupBox Header="OpenAI Auth">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Status" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock x:Name="LblAccountState" Grid.Row="0" Grid.Column="1" Text="{Binding SettingsPanel.AccountStateText}" VerticalAlignment="Center" Margin="0,0,0,8" />
+
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Actions" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <WrapPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
+                                                <Button x:Name="BtnAccountRead" Content="Read account" Command="{Binding SettingsPanel.AccountReadCommand}" IsEnabled="{Binding SessionState.CanAccountRead}" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
+                                                <Button x:Name="BtnLoginChatGpt" Content="Login ChatGPT" Command="{Binding SettingsPanel.LoginChatGptCommand}" IsEnabled="{Binding SessionState.CanLoginChatGpt}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,6" />
+                                                <Button x:Name="BtnCancelLogin" Content="Cancel login" Command="{Binding SettingsPanel.CancelLoginCommand}" IsEnabled="{Binding SessionState.CanCancelLogin}" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
+                                                <Button x:Name="BtnLogout" Content="Logout" Command="{Binding SettingsPanel.LogoutCommand}" IsEnabled="{Binding SessionState.CanLogout}" Style="{StaticResource DangerButtonStyle}" Margin="0,0,6,6" />
+                                                <Button x:Name="BtnReadRateLimits" Content="Rate limits" Command="{Binding SettingsPanel.ReadRateLimitsCommand}" IsEnabled="{Binding SessionState.CanReadRateLimits}" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
+                                            </WrapPanel>
+
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="API key" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtApiKey"
+                                                     Grid.Row="2"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     Text="{Binding SettingsPanel.ApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="3" Grid.Column="0" />
+                                            <Button x:Name="BtnLoginApiKey" Grid.Row="3" Grid.Column="1" Content="Login API key" Command="{Binding SettingsPanel.LoginApiKeyCommand}" IsEnabled="{Binding SessionState.CanLoginApiKey}" HorizontalAlignment="Left" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,0,8" />
+
+                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="External token" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtExternalAccessToken"
+                                                     Grid.Row="4"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     Text="{Binding SettingsPanel.ExternalAccessToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Account id" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtExternalAccountId"
+                                                     Grid.Row="5"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     Text="{Binding SettingsPanel.ExternalAccountId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Plan type" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <ComboBox x:Name="CmbExternalPlanType"
+                                                      Grid.Row="6"
+                                                      Grid.Column="1"
+                                                      Margin="0,0,0,8"
+                                                      SelectedItem="{Binding SettingsPanel.ExternalPlanType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                            <TextBlock Grid.Row="7" Grid.Column="0" />
+                                            <Button x:Name="BtnLoginExternalTokens" Grid.Row="7" Grid.Column="1" Content="Login tokens" Command="{Binding SettingsPanel.LoginExternalTokensCommand}" IsEnabled="{Binding SessionState.CanLoginExternalTokens}" HorizontalAlignment="Left" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,0,8" />
+
+                                            <TextBlock Grid.Row="8" Grid.Column="0" Text="Rate limits" VerticalAlignment="Top" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtRateLimits"
+                                                     Grid.Row="8"
+                                                     Grid.Column="1"
+                                                     Margin="0,0,0,8"
+                                                     Height="140"
+                                                     Text="{Binding SettingsPanel.RateLimitsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                     IsReadOnly="True"
+                                                     AcceptsReturn="True"
+                                                     TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto" />
+
+                                            <TextBlock Grid.Row="9" Grid.Column="0" Text="API key prefs" VerticalAlignment="Top" Margin="0,0,8,0" Style="{StaticResource CaptionTextStyle}" />
+                                            <StackPanel Grid.Row="9" Grid.Column="1">
+                                                <CheckBox x:Name="ChkRememberApiKey"
+                                                          Content="Remember API key (encrypted)"
+                                                          Margin="0,0,0,4"
+                                                          IsChecked="{Binding SettingsPanel.RememberApiKey, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkAutoLoginApiKey"
+                                                          Content="Auto login API key on connect"
+                                                          IsChecked="{Binding SettingsPanel.AutoLoginApiKey, Mode=TwoWay}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </GroupBox>
+
+                                    <GroupBox Header="Keybinds">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl+Enter" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Send turn input" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl+Shift+N" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="Start a new thread" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl+F" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="2" Grid.Column="1" Text="Focus thread search" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Ctrl+," Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Text="Open Settings" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="F5" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="4" Grid.Column="1" Text="Refresh thread list" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="F6" Margin="0,0,10,0" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="5" Grid.Column="1" Text="Refresh models" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </GroupBox>
+
+                                    <GroupBox Header="Protocol">
+                                        <DockPanel LastChildFill="True">
+                                            <TextBlock Text="Open the raw protocol log viewer dialog."
+                                                       Style="{StaticResource CaptionTextStyle}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,10,0" />
+                                            <Button x:Name="BtnSettingsOpenProtocolDialog"
+                                                    Content="Open Protocol"
+                                                    Style="{StaticResource ButtonBaseStyle}"
+                                                    Padding="10,4"
+                                                    MinHeight="28"
+                                                    HorizontalAlignment="Right" />
+                                        </DockPanel>
+                                    </GroupBox>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+</UserControl>

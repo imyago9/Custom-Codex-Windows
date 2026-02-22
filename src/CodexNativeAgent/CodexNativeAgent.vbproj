@@ -12,11 +12,38 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="..\..\assets\light-background.png">
+      <Link>Assets\light-background.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\dark-background.png">
+      <Link>Assets\dark-background.png</Link>
+    </Resource>
     <Resource Include="..\..\assets\send-input.png">
       <Link>Assets\send-input.png</Link>
     </Resource>
     <Resource Include="..\..\assets\interrupt.png">
       <Link>Assets\interrupt.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\vs-code.png">
+      <Link>Assets\vs-code.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\git.png">
+      <Link>Assets\git.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\git-white.png">
+      <Link>Assets\git-white.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\terminal.png">
+      <Link>Assets\terminal.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\terminal-white.png">
+      <Link>Assets\terminal-white.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\timetobuild.png">
+      <Link>Assets\timetobuild.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\timetobuild-white.png">
+      <Link>Assets\timetobuild-white.png</Link>
     </Resource>
   </ItemGroup>
 </Project>

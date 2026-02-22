@@ -30,6 +30,7 @@ coverage.*
 tmp/
 tmpbuild/
 artifacts/
+tests/
 *.tmp
 *.temp
 *.cache

@@ -2,6 +2,7 @@ Imports System.Collections.Generic
 Imports System.Diagnostics
 Imports System.IO
 Imports System.IO.Compression
+Imports System.Runtime.InteropServices
 Imports System.Security.Cryptography
 Imports System.Text
 Imports System.Text.Json
@@ -11,10 +12,16 @@ Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Controls
 Imports System.Windows.Input
+Imports System.Windows.Interop
 Imports System.Windows.Media
+Imports System.Windows.Media.Imaging
 Imports System.Windows.Threading
 Imports CodexNativeAgent.AppServer
 Imports CodexNativeAgent.Services
+Imports CodexNativeAgent.Ui.Coordinators
+Imports CodexNativeAgent.Ui.Mvvm
+Imports CodexNativeAgent.Ui.ViewModels
+Imports CodexNativeAgent.Ui.ViewModels.Threads
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
@@ -31,157 +38,309 @@ Namespace CodexNativeAgent.Ui
             End Function
         End Class
 
-        Private NotInheritable Class ThreadListEntry
-            Public Property Id As String = String.Empty
-            Public Property Preview As String = String.Empty
-            Public Property LastActiveAt As String = String.Empty
-            Public Property LastActiveSortTimestamp As Long
-            Public Property Cwd As String = String.Empty
-            Public Property IsArchived As Boolean
-
-            Public ReadOnly Property ListLeftText As String
-                Get
-                    Return NormalizePreviewSnippet(Preview)
-                End Get
-            End Property
-
-            Public ReadOnly Property ListRightText As String
-                Get
-                    Return FormatCompactAge(LastActiveSortTimestamp)
-                End Get
-            End Property
-
-            Public ReadOnly Property ListLeftMargin As Thickness
-                Get
-                    Return New Thickness(18, 0, 0, 0)
-                End Get
-            End Property
-
-            Public ReadOnly Property ListLeftFontWeight As FontWeight
-                Get
-                    Return FontWeights.Normal
-                End Get
-            End Property
-
-            Public Overrides Function ToString() As String
-                Dim snippet = ListLeftText
-                Dim age = ListRightText
-                If String.IsNullOrWhiteSpace(age) Then
-                    Return $"    {snippet}"
-                End If
-
-                Return $"    {snippet} | {age}"
-            End Function
-
-            Private Shared Function NormalizePreviewSnippet(value As String) As String
-                Dim text = If(String.IsNullOrWhiteSpace(value), "(untitled)", value)
-                text = text.Replace(ControlChars.Cr, " "c).
-                            Replace(ControlChars.Lf, " "c).
-                            Replace(ControlChars.Tab, " "c).
-                            Trim()
-
-                Do While text.Contains("  ", StringComparison.Ordinal)
-                    text = text.Replace("  ", " ", StringComparison.Ordinal)
-                Loop
-
-                Const maxLength As Integer = 72
-                If text.Length > maxLength Then
-                    Return text.Substring(0, maxLength - 3) & "..."
-                End If
-
-                Return text
-            End Function
-
-            Private Shared Function FormatCompactAge(unixMilliseconds As Long) As String
-                If unixMilliseconds <= 0 OrElse unixMilliseconds = Long.MinValue Then
-                    Return String.Empty
-                End If
-
-                Try
-                    Dim age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds)
-                    If age < TimeSpan.Zero Then
-                        age = TimeSpan.Zero
-                    End If
-
-                    If age.TotalMinutes < 1 Then
-                        Return "now"
-                    End If
-
-                    If age.TotalHours < 1 Then
-                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalMinutes)))}m"
-                    End If
-
-                    If age.TotalDays < 1 Then
-                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalHours)))}h"
-                    End If
-
-                    If age.TotalDays < 7 Then
-                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays)))}d"
-                    End If
-
-                    If age.TotalDays < 30 Then
-                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays / 7)))}w"
-                    End If
-
-                    If age.TotalDays < 365 Then
-                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays / 30)))}mo"
-                    End If
-
-                    Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays / 365)))}y"
-                Catch
-                    Return String.Empty
-                End Try
-            End Function
-        End Class
-
-        Private NotInheritable Class ThreadGroupHeaderEntry
-            Public Property GroupKey As String = String.Empty
-            Public Property ProjectPath As String = String.Empty
-            Public Property FolderName As String = String.Empty
-            Public Property Count As Integer
-            Public Property IsExpanded As Boolean
-
-            Public ReadOnly Property ListLeftText As String
-                Get
-                    Dim folderIcon = Char.ConvertFromUtf32(If(IsExpanded, &H1F4C2, &H1F4C1))
-                    Return $"{folderIcon} {FolderName}"
-                End Get
-            End Property
-
-            Public ReadOnly Property ListRightText As String
-                Get
-                    Return Count.ToString()
-                End Get
-            End Property
-
-            Public ReadOnly Property ListLeftMargin As Thickness
-                Get
-                    Return New Thickness(0)
-                End Get
-            End Property
-
-            Public ReadOnly Property ListLeftFontWeight As FontWeight
-                Get
-                    Return FontWeights.SemiBold
-                End Get
-            End Property
-
-            Public Overrides Function ToString() As String
-                Return $"{ListLeftText} ({Count})"
-            End Function
-        End Class
-
-        Private NotInheritable Class ThreadProjectGroup
-            Public Property Key As String = String.Empty
-            Public Property HeaderLabel As String = String.Empty
-            Public Property LatestActivitySortTimestamp As Long = Long.MinValue
-            Public ReadOnly Property Threads As New List(Of ThreadListEntry)()
-        End Class
-
         Private NotInheritable Class PendingUserEcho
             Public Property Text As String = String.Empty
             Public Property AddedUtc As DateTimeOffset
         End Class
+
+        Private Structure ProcessCaptureResult
+            Public Property ExitCode As Integer
+            Public Property OutputText As String
+            Public Property ErrorText As String
+        End Structure
+
+        Private NotInheritable Class GitPanelSnapshot
+            Public Property WorkingDirectory As String = String.Empty
+            Public Property RepoRoot As String = String.Empty
+            Public Property RepoName As String = String.Empty
+            Public Property BranchName As String = String.Empty
+            Public Property StatusSummary As String = String.Empty
+            Public Property ChangesText As String = String.Empty
+            Public Property CommitsText As String = String.Empty
+            Public Property BranchesText As String = String.Empty
+            Public Property ChangedFiles As New List(Of GitChangedFileListEntry)()
+            Public Property Commits As New List(Of GitCommitListEntry)()
+            Public Property Branches As New List(Of GitBranchListEntry)()
+            Public Property AddedLineCount As Integer?
+            Public Property RemovedLineCount As Integer?
+            Public Property ErrorMessage As String = String.Empty
+            Public Property LoadedAtLocal As DateTime = DateTime.Now
+        End Class
+
+        Private NotInheritable Class GitChangedFileListEntry
+            Public Property StatusCode As String = String.Empty
+            Public Property FilePath As String = String.Empty
+            Public Property DisplayPath As String = String.Empty
+            Public Property AddedLineCount As Integer?
+            Public Property RemovedLineCount As Integer?
+            Public Property IsUntracked As Boolean
+            Public Property FileIconSource As ImageSource
+
+            Public ReadOnly Property StatusKind As String
+                Get
+                    If IsUntracked Then
+                        Return "untracked"
+                    End If
+
+                    Dim code = If(StatusCode, String.Empty).PadRight(2)
+                    Dim x = code(0)
+                    Dim y = code(1)
+
+                    If x = "U"c OrElse y = "U"c Then
+                        Return "conflict"
+                    End If
+
+                    Dim primary = If(x <> " "c, x, y)
+                    Select Case primary
+                        Case "A"c
+                            Return "added"
+                        Case "D"c
+                            Return "deleted"
+                        Case "R"c
+                            Return "renamed"
+                        Case "C"c
+                            Return "copied"
+                        Case "M"c, "T"c
+                            Return "modified"
+                        Case Else
+                            Return "other"
+                    End Select
+                End Get
+            End Property
+
+            Public ReadOnly Property StatusBadgeText As String
+                Get
+                    Dim text = If(StatusCode, String.Empty).Trim()
+                    If String.IsNullOrWhiteSpace(text) Then
+                        Return If(IsUntracked, "U", "--")
+                    End If
+
+                    If IsUntracked AndAlso StringComparer.Ordinal.Equals(text, "??") Then
+                        Return "U"
+                    End If
+
+                    Return text
+                End Get
+            End Property
+
+            Public ReadOnly Property AddedLinesText As String
+                Get
+                    If AddedLineCount.HasValue AndAlso AddedLineCount.Value > 0 Then
+                        Return $"+{AddedLineCount.Value}"
+                    End If
+
+                    Return String.Empty
+                End Get
+            End Property
+
+            Public ReadOnly Property RemovedLinesText As String
+                Get
+                    If RemovedLineCount.HasValue AndAlso RemovedLineCount.Value > 0 Then
+                        Return $"-{RemovedLineCount.Value}"
+                    End If
+
+                    Return String.Empty
+                End Get
+            End Property
+
+            Public ReadOnly Property AddedLinesVisibility As Visibility
+                Get
+                    Return If(String.IsNullOrWhiteSpace(AddedLinesText), Visibility.Collapsed, Visibility.Visible)
+                End Get
+            End Property
+
+            Public ReadOnly Property RemovedLinesVisibility As Visibility
+                Get
+                    Return If(String.IsNullOrWhiteSpace(RemovedLinesText), Visibility.Collapsed, Visibility.Visible)
+                End Get
+            End Property
+
+            Public ReadOnly Property DisplayText As String
+                Get
+                    Dim pathText = If(String.IsNullOrWhiteSpace(DisplayPath), FilePath, DisplayPath)
+                    Dim statusText = If(String.IsNullOrWhiteSpace(StatusBadgeText), "--", StatusBadgeText)
+                    Dim parts As New List(Of String) From {$"{statusText} {pathText}"}
+                    If AddedLineCount.HasValue AndAlso AddedLineCount.Value > 0 Then
+                        parts.Add($"+{AddedLineCount.Value}")
+                    End If
+                    If RemovedLineCount.HasValue AndAlso RemovedLineCount.Value > 0 Then
+                        parts.Add($"-{RemovedLineCount.Value}")
+                    End If
+
+                    Return String.Join("    ", parts)
+                End Get
+            End Property
+
+            Public ReadOnly Property FileIconVisibility As Visibility
+                Get
+                    Return If(FileIconSource Is Nothing, Visibility.Collapsed, Visibility.Visible)
+                End Get
+            End Property
+
+            Public ReadOnly Property FileIconFallbackVisibility As Visibility
+                Get
+                    Return If(FileIconSource Is Nothing, Visibility.Visible, Visibility.Collapsed)
+                End Get
+            End Property
+
+            Public ReadOnly Property DisplayPathPrefixText As String
+                Get
+                    Dim parts = BuildDisplayPathParts(If(String.IsNullOrWhiteSpace(DisplayPath), FilePath, DisplayPath))
+                    Return parts.Prefix
+                End Get
+            End Property
+
+            Public ReadOnly Property DisplayPathFileNameText As String
+                Get
+                    Dim parts = BuildDisplayPathParts(If(String.IsNullOrWhiteSpace(DisplayPath), FilePath, DisplayPath))
+                    Return parts.FileName
+                End Get
+            End Property
+
+            Private Shared Function BuildDisplayPathParts(pathText As String) As (Prefix As String, FileName As String)
+                Dim text = If(pathText, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(text) Then
+                    Return (String.Empty, String.Empty)
+                End If
+
+                Dim renamePrefix As String = String.Empty
+                Dim targetPath = text
+                Dim renameArrowIndex = text.IndexOf(" -> ", StringComparison.Ordinal)
+                If renameArrowIndex >= 0 Then
+                    renamePrefix = text.Substring(0, renameArrowIndex + 4)
+                    targetPath = text.Substring(renameArrowIndex + 4)
+                End If
+
+                Dim lastSlash = Math.Max(targetPath.LastIndexOf("/"c), targetPath.LastIndexOf("\"c))
+                If lastSlash < 0 Then
+                    Return (renamePrefix, CompactFileNamePreservingEnd(targetPath))
+                End If
+
+                Dim prefix = renamePrefix & targetPath.Substring(0, lastSlash + 1)
+                Dim fileName = targetPath.Substring(lastSlash + 1)
+                If String.IsNullOrWhiteSpace(fileName) Then
+                    Return (String.Empty, CompactFileNamePreservingEnd(text))
+                End If
+
+                Return (prefix, CompactFileNamePreservingEnd(fileName))
+            End Function
+
+            Private Shared Function CompactFileNamePreservingEnd(fileName As String) As String
+                Dim text = If(fileName, String.Empty)
+                If String.IsNullOrWhiteSpace(text) Then
+                    Return String.Empty
+                End If
+
+                Const maxLen As Integer = 34
+                If text.Length <= maxLen Then
+                    Return text
+                End If
+
+                Dim ext = Path.GetExtension(text)
+                Dim stem = text
+                If Not String.IsNullOrWhiteSpace(ext) AndAlso ext.Length < text.Length Then
+                    stem = text.Substring(0, text.Length - ext.Length)
+                Else
+                    ext = String.Empty
+                End If
+
+                If String.IsNullOrEmpty(stem) Then
+                    Return text
+                End If
+
+                Dim tailStemLen = Math.Min(8, Math.Max(3, stem.Length \ 3))
+                Dim headStemLen = Math.Max(5, maxLen - ext.Length - 3 - tailStemLen)
+                If headStemLen + tailStemLen >= stem.Length Then
+                    Return text
+                End If
+
+                Return stem.Substring(0, headStemLen) &
+                       "..." &
+                       stem.Substring(stem.Length - tailStemLen) &
+                       ext
+            End Function
+        End Class
+
+        Private NotInheritable Class GitDiffPreviewLineEntry
+            Public Property Text As String = String.Empty
+            Public Property Kind As String = "context"
+        End Class
+
+        <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Unicode)>
+        Private Structure SHFILEINFO
+            Public hIcon As IntPtr
+            Public iIcon As Integer
+            Public dwAttributes As UInteger
+            <MarshalAs(UnmanagedType.ByValTStr, SizeConst:=260)>
+            Public szDisplayName As String
+            <MarshalAs(UnmanagedType.ByValTStr, SizeConst:=80)>
+            Public szTypeName As String
+        End Structure
+
+        <DllImport("shell32.dll", CharSet:=CharSet.Unicode)>
+        Private Shared Function SHGetFileInfo(pszPath As String,
+                                              dwFileAttributes As UInteger,
+                                              ByRef psfi As SHFILEINFO,
+                                              cbFileInfo As UInteger,
+                                              uFlags As UInteger) As IntPtr
+        End Function
+
+        <DllImport("user32.dll", SetLastError:=True)>
+        Private Shared Function DestroyIcon(hIcon As IntPtr) As Boolean
+        End Function
+
+        Private Const SHGFI_ICON As UInteger = &H100UI
+        Private Const SHGFI_SMALLICON As UInteger = &H1UI
+        Private Const SHGFI_USEFILEATTRIBUTES As UInteger = &H10UI
+        Private Const FILE_ATTRIBUTE_DIRECTORY As UInteger = &H10UI
+        Private Const FILE_ATTRIBUTE_NORMAL As UInteger = &H80UI
+        Private Shared ReadOnly _gitFileIconCacheLock As New Object()
+        Private Shared ReadOnly _gitFileIconCache As New Dictionary(Of String, ImageSource)(StringComparer.OrdinalIgnoreCase)
+
+        Private NotInheritable Class GitCommitListEntry
+            Public Property Sha As String = String.Empty
+            Public Property ShortSha As String = String.Empty
+            Public Property Subject As String = String.Empty
+            Public Property RelativeTime As String = String.Empty
+            Public Property Decorations As String = String.Empty
+
+            Public ReadOnly Property DisplayText As String
+                Get
+                    Dim headline = $"{If(String.IsNullOrWhiteSpace(ShortSha), "???????", ShortSha)}  {If(Subject, String.Empty)}".Trim()
+                    If String.IsNullOrWhiteSpace(RelativeTime) Then
+                        Return headline
+                    End If
+
+                    Return $"{headline}    ({RelativeTime})"
+                End Get
+            End Property
+        End Class
+
+        Private NotInheritable Class GitBranchListEntry
+            Public Property Name As String = String.Empty
+            Public Property IsCurrent As Boolean
+            Public Property IsRemote As Boolean
+            Public Property CommitShortSha As String = String.Empty
+            Public Property RelativeTime As String = String.Empty
+            Public Property Subject As String = String.Empty
+
+            Public ReadOnly Property DisplayText As String
+                Get
+                    Dim prefix = If(IsCurrent, "● ", If(IsRemote, "◌ ", "○ "))
+                    Dim headline = prefix & If(Name, String.Empty)
+                    If Not String.IsNullOrWhiteSpace(CommitShortSha) Then
+                        headline &= $"  {CommitShortSha}"
+                    End If
+
+                    If Not String.IsNullOrWhiteSpace(RelativeTime) Then
+                        headline &= $"  ({RelativeTime})"
+                    End If
+
+                    Return headline
+                End Get
+            End Property
+        End Class
+
 
         Private NotInheritable Class AppSettings
             Public Property CodexPath As String = String.Empty
@@ -191,10 +350,14 @@ Namespace CodexNativeAgent.Ui
             Public Property RememberApiKey As Boolean
             Public Property AutoLoginApiKey As Boolean
             Public Property AutoReconnect As Boolean = True
+            Public Property DisableWorkspaceHintOverlay As Boolean
+            Public Property DisableConnectionInitializedToast As Boolean
+            Public Property DisableThreadsPanelHints As Boolean
             Public Property FilterThreadsByWorkingDir As Boolean
             Public Property EncryptedApiKey As String = String.Empty
             Public Property ThemeMode As String = AppAppearanceManager.LightTheme
             Public Property DensityMode As String = AppAppearanceManager.ComfortableDensity
+            Public Property TurnComposerPickersCollapsed As Boolean
         End Class
 
         Private ReadOnly _accountService As IAccountService
@@ -209,10 +372,9 @@ Namespace CodexNativeAgent.Ui
         Private ReadOnly _toastTimer As New DispatcherTimer()
         Private ReadOnly _watchdogTimer As New DispatcherTimer()
         Private ReadOnly _reconnectUiTimer As New DispatcherTimer()
-        Private ReadOnly _approvalQueue As New Queue(Of PendingApprovalInfo)()
+        Private ReadOnly _workspaceHintOverlayTimer As New DispatcherTimer()
         Private ReadOnly _threadEntries As New List(Of ThreadListEntry)()
         Private ReadOnly _expandedThreadProjectGroups As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-        Private ReadOnly _streamingAgentItemIds As New HashSet(Of String)(StringComparer.Ordinal)
         Private ReadOnly _pendingLocalUserEchoes As New Queue(Of PendingUserEcho)()
         Private Shared ReadOnly PendingUserEchoMaxAge As TimeSpan = TimeSpan.FromSeconds(30)
 
@@ -222,9 +384,7 @@ Namespace CodexNativeAgent.Ui
         Private _currentLoginId As String = String.Empty
         Private _disconnecting As Boolean
         Private _threadsLoading As Boolean
-        Private _threadLoadError As String = String.Empty
         Private _threadSelectionLoadCts As CancellationTokenSource
-        Private _threadSelectionLoadVersion As Integer
         Private _threadContentLoading As Boolean
         Private _suppressThreadSelectionEvents As Boolean
         Private _suppressThreadToolbarMenuEvents As Boolean
@@ -245,20 +405,88 @@ Namespace CodexNativeAgent.Ui
         Private _modelsLoadedAtLeastOnce As Boolean
         Private _threadsLoadedAtLeastOnce As Boolean
         Private _workspaceBootstrapInProgress As Boolean
-        Private _activeApproval As PendingApprovalInfo
         Private _currentTheme As String = AppAppearanceManager.LightTheme
         Private _currentDensity As String = AppAppearanceManager.ComfortableDensity
         Private _suppressAppearanceUiChange As Boolean
+        Private _turnComposerPickersCollapsed As Boolean
+        Private _turnComposerPickersExpandedWidth As Double = 434.0R
+        Private _transcriptAutoScrollEnabled As Boolean = True
+        Private _suppressTranscriptScrollTracking As Boolean
+        Private _pendingNewThreadFirstPromptSelection As Boolean
+        Private _threadsPanelHintBubbleHintKey As String = String.Empty
+        Private _threadsPanelHintBubbleDismissedForCurrentHint As Boolean
+        Private _workspaceHintOverlayHintKey As String = String.Empty
+        Private _workspaceHintOverlayDismissedForCurrentHint As Boolean
+        Private _gitPanelLoadVersion As Integer
+        Private _gitPanelDiffPreviewLoadVersion As Integer
+        Private _gitPanelCommitPreviewLoadVersion As Integer
+        Private _gitPanelBranchPreviewLoadVersion As Integer
+        Private _suppressGitPanelSelectionEvents As Boolean
+        Private _gitPanelActiveTab As String = "changes"
+        Private _gitPanelDockWidth As Double = 560.0R
+        Private _currentGitPanelSnapshot As GitPanelSnapshot
+        Private _gitPanelSelectedDiffFilePath As String = String.Empty
         Private _settings As New AppSettings()
+        Private ReadOnly _viewModel As New MainWindowViewModel()
+        Private ReadOnly _sessionCoordinator As SessionCoordinator
+        Private ReadOnly _sessionNotificationCoordinator As SessionNotificationCoordinator
+        Private ReadOnly _threadWorkflowCoordinator As ThreadWorkflowCoordinator
+        Private ReadOnly _turnWorkflowCoordinator As TurnWorkflowCoordinator
+        Private ReadOnly _shellCommandCoordinator As ShellCommandCoordinator
+        Private ReadOnly _settingsStore As IAppSettingsStore
 
         Public Sub New()
             InitializeComponent()
-
+            DataContext = _viewModel
             _accountService = New CodexAccountService(Function() CurrentClient())
             _connectionService = New CodexConnectionService()
             _approvalService = New CodexApprovalService()
             _threadService = New CodexThreadService(Function() CurrentClient())
             _turnService = New CodexTurnService(Function() CurrentClient())
+            _sessionCoordinator = New SessionCoordinator(
+                _viewModel,
+                Function(operation) RunUiActionAsync(operation),
+                AddressOf ConnectAsync,
+                AddressOf DisconnectAsync,
+                AddressOf ReconnectNowAsync,
+                AddressOf RefreshAuthenticationGateAsync,
+                AddressOf LoginApiKeyAsync,
+                AddressOf LoginChatGptAsync,
+                AddressOf CancelLoginAsync,
+                AddressOf LogoutAsync,
+                AddressOf ReadRateLimitsAsync,
+                AddressOf LoginExternalTokensAsync)
+            _sessionNotificationCoordinator = New SessionNotificationCoordinator()
+            _threadWorkflowCoordinator = New ThreadWorkflowCoordinator()
+            _turnWorkflowCoordinator = New TurnWorkflowCoordinator(
+                _viewModel,
+                _turnService,
+                _approvalService,
+                Function(operation) RunUiActionAsync(operation))
+            _shellCommandCoordinator = New ShellCommandCoordinator(
+                _viewModel,
+                Function(operation) RunUiActionAsync(operation),
+                AddressOf FireAndForget)
+            _settingsStore = New JsonAppSettingsStore(_settingsFilePath, _settingsJsonOptions)
+            AddHandler _viewModel.TranscriptPanel.Items.CollectionChanged,
+                Sub(sender, e)
+                    UpdateWorkspaceEmptyStateVisibility()
+                End Sub
+            AddHandler _viewModel.ThreadsPanel.PropertyChanged,
+                Sub(sender, e)
+                    If e Is Nothing OrElse
+                       Not StringComparer.Ordinal.Equals(e.PropertyName, NameOf(ThreadsPanelViewModel.StateText)) Then
+                        Return
+                    End If
+
+                    UpdateThreadsPanelStateHintBubbleVisibility()
+                End Sub
+            InitializeSessionCoordinatorBindings()
+            _turnWorkflowCoordinator.BindCommands(AddressOf StartTurnAsync,
+                                                  AddressOf SteerTurnAsync,
+                                                  AddressOf InterruptTurnAsync,
+                                                  AddressOf ResolveApprovalAsync)
+            InitializeMvvmCommandBindings()
 
             InitializeUiDefaults()
             InitializeEventHandlers()
@@ -270,146 +498,192 @@ Namespace CodexNativeAgent.Ui
             ShowStatus("Ready.")
         End Sub
 
+        Private Sub InitializeMvvmCommandBindings()
+            If SidebarPaneHost.ThreadSortContextMenu IsNot Nothing Then
+                SidebarPaneHost.ThreadSortContextMenu.DataContext = _viewModel
+            End If
+
+            If SidebarPaneHost.ThreadFilterContextMenu IsNot Nothing Then
+                SidebarPaneHost.ThreadFilterContextMenu.DataContext = _viewModel
+            End If
+
+            If SidebarPaneHost.ThreadItemContextMenu IsNot Nothing Then
+                SidebarPaneHost.ThreadItemContextMenu.DataContext = _viewModel
+            End If
+
+            _shellCommandCoordinator.BindCommands(
+                AddressOf StartTurnAsync,
+                AddressOf RefreshThreadsAsync,
+                AddressOf RefreshModelsAsync,
+                AddressOf StartThreadAsync,
+                Sub()
+                    ShowThreadsSidebarTab()
+                    SidebarPaneHost.TxtThreadSearch.Focus()
+                    SidebarPaneHost.TxtThreadSearch.SelectAll()
+                End Sub,
+                AddressOf ShowControlCenterTab,
+                Sub() OpenThreadToolbarMenu(SidebarPaneHost.BtnThreadSortMenu, SidebarPaneHost.ThreadSortContextMenu),
+                Sub() OpenThreadToolbarMenu(SidebarPaneHost.BtnThreadFilterMenu, SidebarPaneHost.ThreadFilterContextMenu),
+                Sub(targetIndex)
+                    If targetIndex < 0 Then
+                        Return
+                    End If
+
+                    ApplyThreadSortMenuSelection(targetIndex)
+                End Sub,
+                AddressOf ApplyThreadFilterMenuToggle,
+                AddressOf SelectThreadFromContextMenu,
+                AddressOf RefreshThreadFromContextMenuAsync,
+                AddressOf ForkThreadFromContextMenuAsync,
+                AddressOf ArchiveThreadFromContextMenuAsync,
+                AddressOf UnarchiveThreadFromContextMenuAsync,
+                AddressOf StartThreadFromGroupHeaderContextMenuAsync,
+                AddressOf ToggleTheme,
+                AddressOf ExportDiagnosticsAsync)
+
+            _sessionCoordinator.BindSettingsCommands()
+        End Sub
+
         Private Sub InitializeUiDefaults()
-            If CmbThreadSort.SelectedIndex < 0 Then
-                CmbThreadSort.SelectedIndex = 0
+            If _viewModel.ThreadsPanel.SortIndex < 0 Then
+                _viewModel.ThreadsPanel.SortIndex = 0
             End If
 
-            If CmbReasoningEffort.SelectedIndex < 0 Then
-                CmbReasoningEffort.SelectedIndex = 2
+            If WorkspacePaneHost.CmbReasoningEffort.SelectedIndex < 0 Then
+                WorkspacePaneHost.CmbReasoningEffort.SelectedIndex = 2
             End If
 
-            If CmbApprovalPolicy.SelectedIndex < 0 Then
-                CmbApprovalPolicy.SelectedIndex = 2
+            If StatusBarPaneHost.CmbApprovalPolicy.SelectedIndex < 0 Then
+                StatusBarPaneHost.CmbApprovalPolicy.SelectedIndex = 2
             End If
 
-            If CmbSandbox.SelectedIndex < 0 Then
-                CmbSandbox.SelectedIndex = 0
+            If StatusBarPaneHost.CmbSandbox.SelectedIndex < 0 Then
+                StatusBarPaneHost.CmbSandbox.SelectedIndex = 0
             End If
 
-            If CmbDensity.SelectedIndex < 0 Then
-                CmbDensity.SelectedIndex = 0
+            If _viewModel.SettingsPanel.DensityIndex < 0 Then
+                _viewModel.SettingsPanel.DensityIndex = 0
             End If
 
-            If CmbExternalPlanType.Items.Count = 0 Then
-                CmbExternalPlanType.Items.Add("")
-                CmbExternalPlanType.Items.Add("free")
-                CmbExternalPlanType.Items.Add("go")
-                CmbExternalPlanType.Items.Add("plus")
-                CmbExternalPlanType.Items.Add("pro")
-                CmbExternalPlanType.Items.Add("team")
-                CmbExternalPlanType.Items.Add("business")
-                CmbExternalPlanType.Items.Add("enterprise")
-                CmbExternalPlanType.Items.Add("edu")
-                CmbExternalPlanType.Items.Add("unknown")
+            If SidebarPaneHost.CmbExternalPlanType.Items.Count = 0 Then
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("free")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("go")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("plus")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("pro")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("team")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("business")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("enterprise")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("edu")
+                SidebarPaneHost.CmbExternalPlanType.Items.Add("unknown")
             End If
-            CmbExternalPlanType.SelectedIndex = 0
+            SidebarPaneHost.CmbExternalPlanType.SelectedIndex = 0
+            _viewModel.SettingsPanel.ExternalPlanType = String.Empty
 
-            TxtApproval.Text = "No pending approvals."
-            TxtRateLimits.Text = "No rate-limit data loaded yet."
-            LblCurrentThread.Text = "New Thread"
-            LblCurrentTurn.Text = "Turn: 0"
-            LblConnectionState.Text = "Disconnected"
-            LblReconnectCountdown.Text = "Reconnect: not scheduled."
+            _viewModel.ApprovalPanel.ResetLifecycleState()
+            _viewModel.SettingsPanel.RateLimitsText = "No rate-limit data loaded yet."
+            _viewModel.ThreadsPanel.StateText = "No threads loaded yet."
+            _viewModel.CurrentThreadText = "New thread"
+            _viewModel.CurrentTurnText = "Turn: 0"
+            UpdateConnectionStateTextFromSession(syncFirst:=False)
+            _viewModel.SettingsPanel.ReconnectCountdownText = "Reconnect: not scheduled."
             SetTranscriptLoadingState(False)
-            InlineApprovalCard.Visibility = Visibility.Collapsed
             UpdateSidebarSelectionState(showSettings:=False)
+            ApplyTurnComposerPickersCollapsedState(animated:=False, persist:=False)
             SyncAppearanceControls()
             SyncThreadToolbarMenus()
             SyncNewThreadTargetChip()
         End Sub
 
         Private Sub InitializeEventHandlers()
-            AddHandler BtnSidebarNewThread.Click, Async Sub(sender, e)
+            AddHandler SidebarPaneHost.BtnSidebarNewThread.Click, Async Sub(sender, e)
                                                        ShowWorkspaceView()
                                                        Await RunUiActionAsync(AddressOf StartThreadAsync)
                                                    End Sub
-            AddHandler SidebarNewThreadContextMenu.Opened, Sub(sender, e) SyncSidebarNewThreadMenu()
-            AddHandler MnuSidebarNewThreadChooseFolder.Click, Async Sub(sender, e)
+            AddHandler SidebarPaneHost.SidebarNewThreadContextMenu.Opened, Sub(sender, e) SyncSidebarNewThreadMenu()
+            AddHandler SidebarPaneHost.MnuSidebarNewThreadChooseFolder.Click, Async Sub(sender, e)
                                                                ShowWorkspaceView()
                                                                Await RunUiActionAsync(AddressOf ChooseFolderAndStartNewThreadAsync)
                                                            End Sub
-            AddHandler BtnSidebarSettings.Click, Sub(sender, e) ShowSettingsView()
-            AddHandler BtnSettingsBack.Click, Sub(sender, e) ShowWorkspaceView()
-            AddHandler BtnToggleTheme.Click, Sub(sender, e) ToggleTheme()
-            AddHandler CmbDensity.SelectionChanged, Sub(sender, e) OnDensitySelectionChanged()
-            AddHandler TxtWorkingDir.TextChanged, Sub(sender, e) SyncNewThreadTargetChip()
+            AddHandler SidebarPaneHost.BtnSidebarSettings.Click, Sub(sender, e) ShowSettingsView()
+            AddHandler SidebarPaneHost.BtnSettingsBack.Click, Sub(sender, e) ShowWorkspaceView()
+            AddHandler SidebarPaneHost.CmbDensity.SelectionChanged, Sub(sender, e) OnDensitySelectionChanged()
+            AddHandler SidebarPaneHost.TxtWorkingDir.TextChanged, Sub(sender, e) SyncNewThreadTargetChip()
 
-            AddHandler BtnConnect.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ConnectAsync)
-            AddHandler BtnDisconnect.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf DisconnectAsync)
-            AddHandler BtnExportDiagnostics.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ExportDiagnosticsAsync)
-            AddHandler BtnReconnectNow.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ReconnectNowAsync)
-            AddHandler ChkAutoReconnect.Checked, Sub(sender, e) SaveSettings()
-            AddHandler ChkAutoReconnect.Unchecked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkAutoReconnect.Checked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkAutoReconnect.Unchecked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkDisableWorkspaceHintOverlay.Checked,
+                Sub(sender, e)
+                    SaveSettings()
+                    DismissWorkspaceHintOverlay(dismissCurrentHint:=False)
+                    UpdateWorkspaceHintOverlayVisibility()
+                End Sub
+            AddHandler SidebarPaneHost.ChkDisableWorkspaceHintOverlay.Unchecked,
+                Sub(sender, e)
+                    SaveSettings()
+                    _workspaceHintOverlayDismissedForCurrentHint = False
+                    UpdateWorkspaceHintOverlayVisibility()
+                End Sub
+            AddHandler SidebarPaneHost.ChkDisableConnectionInitializedToast.Checked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkDisableConnectionInitializedToast.Unchecked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkDisableThreadsPanelHints.Checked,
+                Sub(sender, e)
+                    SaveSettings()
+                    DismissThreadsPanelStateHint(dismissCurrentHint:=False)
+                    UpdateThreadsPanelStateHintBubbleVisibility()
+                End Sub
+            AddHandler SidebarPaneHost.ChkDisableThreadsPanelHints.Unchecked,
+                Sub(sender, e)
+                    SaveSettings()
+                    _threadsPanelHintBubbleDismissedForCurrentHint = False
+                    UpdateThreadsPanelStateHintBubbleVisibility()
+                End Sub
 
-            AddHandler BtnAccountRead.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshAuthenticationGateAsync)
-            AddHandler BtnLoginApiKey.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf LoginApiKeyAsync)
-            AddHandler BtnLoginChatGpt.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf LoginChatGptAsync)
-            AddHandler BtnCancelLogin.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf CancelLoginAsync)
-            AddHandler BtnLogout.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf LogoutAsync)
-            AddHandler BtnReadRateLimits.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ReadRateLimitsAsync)
-            AddHandler BtnLoginExternalTokens.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf LoginExternalTokensAsync)
-            AddHandler ChkRememberApiKey.Checked, Sub(sender, e) SaveSettings()
-            AddHandler ChkRememberApiKey.Unchecked, Sub(sender, e) SaveSettings()
-            AddHandler ChkAutoLoginApiKey.Checked, Sub(sender, e) SaveSettings()
-            AddHandler ChkAutoLoginApiKey.Unchecked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkRememberApiKey.Checked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkRememberApiKey.Unchecked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkAutoLoginApiKey.Checked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkAutoLoginApiKey.Unchecked, Sub(sender, e) SaveSettings()
 
-            AddHandler ChkShowArchivedThreads.Checked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
-            AddHandler ChkShowArchivedThreads.Unchecked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
-            AddHandler ChkFilterThreadsByWorkingDir.Checked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
-            AddHandler ChkFilterThreadsByWorkingDir.Unchecked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
-            AddHandler TxtThreadSearch.TextChanged, Sub(sender, e) ApplyThreadFiltersAndSort()
-            AddHandler CmbThreadSort.SelectionChanged,
+            AddHandler SidebarPaneHost.ChkShowArchivedThreads.Checked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
+            AddHandler SidebarPaneHost.ChkShowArchivedThreads.Unchecked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
+            AddHandler SidebarPaneHost.ChkFilterThreadsByWorkingDir.Checked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
+            AddHandler SidebarPaneHost.ChkFilterThreadsByWorkingDir.Unchecked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
+            AddHandler SidebarPaneHost.TxtThreadSearch.TextChanged, Sub(sender, e) ApplyThreadFiltersAndSort()
+            AddHandler SidebarPaneHost.CmbThreadSort.SelectionChanged,
                 Sub(sender, e)
                     ApplyThreadFiltersAndSort()
                     SyncThreadToolbarMenus()
                 End Sub
-            AddHandler BtnThreadSortMenu.Click, AddressOf OnThreadSortMenuButtonClick
-            AddHandler BtnThreadFilterMenu.Click, AddressOf OnThreadFilterMenuButtonClick
-            AddHandler ThreadSortContextMenu.Opened, Sub(sender, e) SyncThreadToolbarMenus()
-            AddHandler ThreadFilterContextMenu.Opened, Sub(sender, e) SyncThreadToolbarMenus()
-            AddHandler MnuThreadSortNewest.Click, AddressOf OnThreadSortMenuItemClick
-            AddHandler MnuThreadSortOldest.Click, AddressOf OnThreadSortMenuItemClick
-            AddHandler MnuThreadSortPreviewAz.Click, AddressOf OnThreadSortMenuItemClick
-            AddHandler MnuThreadSortPreviewZa.Click, AddressOf OnThreadSortMenuItemClick
-            AddHandler MnuThreadFilterArchived.Checked, AddressOf OnThreadFilterMenuItemToggled
-            AddHandler MnuThreadFilterArchived.Unchecked, AddressOf OnThreadFilterMenuItemToggled
-            AddHandler MnuThreadFilterWorkingDir.Checked, AddressOf OnThreadFilterMenuItemToggled
-            AddHandler MnuThreadFilterWorkingDir.Unchecked, AddressOf OnThreadFilterMenuItemToggled
-            AddHandler LstThreads.PreviewMouseRightButtonDown, AddressOf OnThreadsPreviewMouseRightButtonDown
-            AddHandler LstThreads.ContextMenuOpening, AddressOf OnThreadsContextMenuOpening
-            AddHandler ThreadItemContextMenu.Closed,
+            AddHandler SidebarPaneHost.ThreadSortContextMenu.Opened, Sub(sender, e) SyncThreadToolbarMenus()
+            AddHandler SidebarPaneHost.ThreadFilterContextMenu.Opened, Sub(sender, e) SyncThreadToolbarMenus()
+            AddHandler SidebarPaneHost.LstThreads.PreviewMouseLeftButtonDown, AddressOf OnThreadsPreviewMouseLeftButtonDown
+            AddHandler SidebarPaneHost.LstThreads.PreviewMouseRightButtonDown, AddressOf OnThreadsPreviewMouseRightButtonDown
+            AddHandler SidebarPaneHost.LstThreads.ContextMenuOpening, AddressOf OnThreadsContextMenuOpening
+            AddHandler SidebarPaneHost.ThreadItemContextMenu.Closed,
                 Sub(sender, e)
                     _threadContextTarget = Nothing
                     _threadGroupContextTarget = Nothing
                 End Sub
-            AddHandler MnuThreadGroupNewThreadHere.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf StartThreadFromGroupHeaderContextMenuAsync)
-            AddHandler MnuThreadSelect.Click, AddressOf OnSelectThreadFromContextMenuClick
-            AddHandler MnuThreadRefreshSingle.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadFromContextMenuAsync)
-            AddHandler MnuThreadFork.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ForkThreadFromContextMenuAsync)
-            AddHandler MnuThreadArchive.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ArchiveThreadFromContextMenuAsync)
-            AddHandler MnuThreadUnarchive.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf UnarchiveThreadFromContextMenuAsync)
-            AddHandler LstThreads.SelectionChanged,
+            AddHandler SidebarPaneHost.LstThreads.SelectionChanged,
                 Sub(sender, e)
                     If _suppressThreadSelectionEvents Then
                         Return
                     End If
 
-                    Dim selectedHeader = TryCast(LstThreads.SelectedItem, ThreadGroupHeaderEntry)
+                    Dim selectedHeader = TryCast(_viewModel.ThreadsPanel.SelectedListItem, ThreadGroupHeaderEntry)
                     If selectedHeader IsNot Nothing Then
                         _suppressThreadSelectionEvents = True
-                        LstThreads.SelectedItem = Nothing
+                        _viewModel.ThreadsPanel.SelectedListItem = Nothing
                         _suppressThreadSelectionEvents = False
                         ToggleThreadProjectGroupExpansion(selectedHeader.GroupKey)
                         ApplyThreadFiltersAndSort()
                         Return
                     End If
 
-                    Dim selected = TryCast(LstThreads.SelectedItem, ThreadListEntry)
+                    Dim selected = TryCast(_viewModel.ThreadsPanel.SelectedListItem, ThreadListEntry)
                     If selected Is Nothing Then
                         CancelActiveThreadSelectionLoad()
-                        _threadContentLoading = False
-                        SetTranscriptLoadingState(False)
+                        ResetThreadSelectionLoadUiState(hideTranscriptLoader:=True)
                     Else
                         FireAndForget(AutoLoadThreadSelectionAsync(selected))
                     End If
@@ -417,17 +691,37 @@ Namespace CodexNativeAgent.Ui
                     RefreshControlStates()
                 End Sub
 
-            AddHandler BtnTurnStart.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf StartTurnAsync)
-            AddHandler BtnTurnSteer.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf SteerTurnAsync)
-            AddHandler BtnTurnInterrupt.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf InterruptTurnAsync)
-            AddHandler BtnApprovalAccept.Click, Async Sub(sender, e) Await RunUiActionAsync(Function() ResolveApprovalAsync("accept"))
-            AddHandler BtnApprovalAcceptSession.Click, Async Sub(sender, e) Await RunUiActionAsync(Function() ResolveApprovalAsync("accept_session"))
-            AddHandler BtnApprovalDecline.Click, Async Sub(sender, e) Await RunUiActionAsync(Function() ResolveApprovalAsync("decline"))
-            AddHandler BtnApprovalCancel.Click, Async Sub(sender, e) Await RunUiActionAsync(Function() ResolveApprovalAsync("cancel"))
-
-            AddHandler BtnQuickOpenVsc.Click, Sub(sender, e) ShowStatus("Open VSC action not implemented yet.")
-            AddHandler BtnQuickOpenTerminal.Click, Sub(sender, e) ShowStatus("Open Terminal action not implemented yet.")
-            AddHandler BtnOpenProtocolDialog.Click, Sub(sender, e) ShowProtocolDialog()
+            AddHandler WorkspacePaneHost.BtnQuickOpenVsc.Click, Sub(sender, e) OpenWorkspaceInVsCode()
+            AddHandler WorkspacePaneHost.BtnQuickOpenGit.Click, Sub(sender, e) ToggleGitPanel()
+            AddHandler WorkspacePaneHost.BtnQuickOpenTerminal.Click, Sub(sender, e) OpenWorkspaceInPowerShell()
+            AddHandler WorkspacePaneHost.BtnTurnComposerPickersToggle.Click, Sub(sender, e) ToggleTurnComposerPickersCollapsed()
+            AddHandler GitPaneHost.BtnGitPanelRefresh.Click, Sub(sender, e) FireAndForget(RefreshGitPanelAsync())
+            AddHandler GitPaneHost.BtnGitPanelClose.Click, Sub(sender, e) CloseGitPanel()
+            AddHandler GitPaneHost.BtnGitTabChanges.Click, Sub(sender, e) ShowGitPanelTab("changes")
+            AddHandler GitPaneHost.BtnGitTabHistory.Click, Sub(sender, e) ShowGitPanelTab("history")
+            AddHandler GitPaneHost.BtnGitTabBranches.Click, Sub(sender, e) ShowGitPanelTab("branches")
+            AddHandler GitPaneHost.LstGitPanelChanges.SelectionChanged, AddressOf OnGitPanelChangesSelectionChanged
+            AddHandler GitPaneHost.LstGitPanelChanges.MouseDoubleClick, AddressOf OnGitPanelChangesMouseDoubleClick
+            GitPaneHost.LstGitPanelChanges.AddHandler(Button.ClickEvent,
+                                                            New RoutedEventHandler(AddressOf OnGitPanelChangesListButtonClick),
+                                                            True)
+            AddHandler GitPaneHost.LstGitPanelCommits.SelectionChanged, AddressOf OnGitPanelCommitsSelectionChanged
+            AddHandler GitPaneHost.LstGitPanelBranches.SelectionChanged, AddressOf OnGitPanelBranchesSelectionChanged
+            InitializeGitPanelUi()
+            If WorkspacePaneHost.LstTranscript IsNot Nothing Then
+                WorkspacePaneHost.LstTranscript.AddHandler(ScrollViewer.ScrollChangedEvent,
+                                                          New ScrollChangedEventHandler(AddressOf OnTranscriptScrollChanged))
+            End If
+            AddHandler WorkspacePaneHost.BtnDismissWorkspaceHintOverlay.Click,
+                Sub(sender, e)
+                    DismissWorkspaceHintOverlay()
+                End Sub
+            AddHandler SidebarPaneHost.BtnDismissThreadsStateHint.Click,
+                Sub(sender, e)
+                    DismissThreadsPanelStateHint()
+                End Sub
+            AddHandler BtnToastClose.Click, Sub(sender, e) HideToast()
+            AddHandler SidebarPaneHost.BtnSettingsOpenProtocolDialog.Click, Sub(sender, e) ShowProtocolDialog()
         End Sub
 
         Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
@@ -440,7 +734,7 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub ShowProtocolDialog()
-            Dim protocolText = If(TxtProtocol.Text, String.Empty)
+            Dim protocolText = If(_viewModel.TranscriptPanel.ProtocolText, String.Empty)
             If String.IsNullOrWhiteSpace(protocolText) Then
                 protocolText = "No protocol entries yet."
             End If
@@ -525,11 +819,11 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub OnThreadSortMenuButtonClick(sender As Object, e As RoutedEventArgs)
-            OpenThreadToolbarMenu(TryCast(sender, Button), ThreadSortContextMenu)
+            OpenThreadToolbarMenu(TryCast(sender, Button), SidebarPaneHost.ThreadSortContextMenu)
         End Sub
 
         Private Sub OnThreadFilterMenuButtonClick(sender As Object, e As RoutedEventArgs)
-            OpenThreadToolbarMenu(TryCast(sender, Button), ThreadFilterContextMenu)
+            OpenThreadToolbarMenu(TryCast(sender, Button), SidebarPaneHost.ThreadFilterContextMenu)
         End Sub
 
         Private Sub OpenThreadToolbarMenu(button As Button, menu As ContextMenu)
@@ -549,43 +843,39 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub SyncThreadToolbarMenus()
-            If MnuThreadSortNewest Is Nothing OrElse
-               MnuThreadSortOldest Is Nothing OrElse
-               MnuThreadSortPreviewAz Is Nothing OrElse
-               MnuThreadSortPreviewZa Is Nothing OrElse
-               MnuThreadFilterArchived Is Nothing OrElse
-               MnuThreadFilterWorkingDir Is Nothing Then
+            If SidebarPaneHost.MnuThreadSortNewest Is Nothing OrElse
+               SidebarPaneHost.MnuThreadSortOldest Is Nothing OrElse
+               SidebarPaneHost.MnuThreadSortPreviewAz Is Nothing OrElse
+               SidebarPaneHost.MnuThreadSortPreviewZa Is Nothing OrElse
+               SidebarPaneHost.MnuThreadFilterArchived Is Nothing OrElse
+               SidebarPaneHost.MnuThreadFilterWorkingDir Is Nothing Then
                 Return
             End If
 
             _suppressThreadToolbarMenuEvents = True
             Try
-                Dim sortIndex = Math.Max(0, CmbThreadSort.SelectedIndex)
-                MnuThreadSortNewest.IsChecked = (sortIndex = 0)
-                MnuThreadSortOldest.IsChecked = (sortIndex = 1)
-                MnuThreadSortPreviewAz.IsChecked = (sortIndex = 2)
-                MnuThreadSortPreviewZa.IsChecked = (sortIndex = 3)
+                Dim sortIndex = Math.Max(0, _viewModel.ThreadsPanel.SortIndex)
+                SidebarPaneHost.MnuThreadSortNewest.IsChecked = (sortIndex = 0)
+                SidebarPaneHost.MnuThreadSortOldest.IsChecked = (sortIndex = 1)
+                SidebarPaneHost.MnuThreadSortPreviewAz.IsChecked = (sortIndex = 2)
+                SidebarPaneHost.MnuThreadSortPreviewZa.IsChecked = (sortIndex = 3)
 
-                MnuThreadFilterArchived.IsChecked = IsChecked(ChkShowArchivedThreads)
-                MnuThreadFilterWorkingDir.IsChecked = IsChecked(ChkFilterThreadsByWorkingDir)
+                SidebarPaneHost.MnuThreadFilterArchived.IsChecked = _viewModel.ThreadsPanel.ShowArchived
+                SidebarPaneHost.MnuThreadFilterWorkingDir.IsChecked = _viewModel.ThreadsPanel.FilterByWorkingDir
             Finally
                 _suppressThreadToolbarMenuEvents = False
             End Try
         End Sub
 
         Private Sub OnThreadSortMenuItemClick(sender As Object, e As RoutedEventArgs)
-            If _suppressThreadToolbarMenuEvents Then
-                Return
-            End If
-
             Dim targetIndex As Integer = -1
-            If ReferenceEquals(sender, MnuThreadSortNewest) Then
+            If ReferenceEquals(sender, SidebarPaneHost.MnuThreadSortNewest) Then
                 targetIndex = 0
-            ElseIf ReferenceEquals(sender, MnuThreadSortOldest) Then
+            ElseIf ReferenceEquals(sender, SidebarPaneHost.MnuThreadSortOldest) Then
                 targetIndex = 1
-            ElseIf ReferenceEquals(sender, MnuThreadSortPreviewAz) Then
+            ElseIf ReferenceEquals(sender, SidebarPaneHost.MnuThreadSortPreviewAz) Then
                 targetIndex = 2
-            ElseIf ReferenceEquals(sender, MnuThreadSortPreviewZa) Then
+            ElseIf ReferenceEquals(sender, SidebarPaneHost.MnuThreadSortPreviewZa) Then
                 targetIndex = 3
             End If
 
@@ -593,33 +883,45 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If CmbThreadSort.SelectedIndex <> targetIndex Then
-                CmbThreadSort.SelectedIndex = targetIndex
-            Else
-                SyncThreadToolbarMenus()
-            End If
-
-            If ThreadSortContextMenu IsNot Nothing Then
-                ThreadSortContextMenu.IsOpen = False
-            End If
+            ApplyThreadSortMenuSelection(targetIndex)
         End Sub
 
         Private Sub OnThreadFilterMenuItemToggled(sender As Object, e As RoutedEventArgs)
+            ApplyThreadFilterMenuToggle()
+        End Sub
+
+        Private Sub ApplyThreadSortMenuSelection(targetIndex As Integer)
             If _suppressThreadToolbarMenuEvents Then
                 Return
             End If
 
-            Dim archivedChecked = MnuThreadFilterArchived IsNot Nothing AndAlso MnuThreadFilterArchived.IsChecked
-            Dim workingDirChecked = MnuThreadFilterWorkingDir IsNot Nothing AndAlso MnuThreadFilterWorkingDir.IsChecked
+            If _viewModel.ThreadsPanel.SortIndex <> targetIndex Then
+                _viewModel.ThreadsPanel.SortIndex = targetIndex
+            Else
+                SyncThreadToolbarMenus()
+            End If
+
+            If SidebarPaneHost.ThreadSortContextMenu IsNot Nothing Then
+                SidebarPaneHost.ThreadSortContextMenu.IsOpen = False
+            End If
+        End Sub
+
+        Private Sub ApplyThreadFilterMenuToggle()
+            If _suppressThreadToolbarMenuEvents Then
+                Return
+            End If
+
+            Dim archivedChecked = SidebarPaneHost.MnuThreadFilterArchived IsNot Nothing AndAlso SidebarPaneHost.MnuThreadFilterArchived.IsChecked
+            Dim workingDirChecked = SidebarPaneHost.MnuThreadFilterWorkingDir IsNot Nothing AndAlso SidebarPaneHost.MnuThreadFilterWorkingDir.IsChecked
 
             Dim changed As Boolean = False
-            If ChkShowArchivedThreads IsNot Nothing AndAlso IsChecked(ChkShowArchivedThreads) <> archivedChecked Then
-                ChkShowArchivedThreads.IsChecked = archivedChecked
+            If _viewModel.ThreadsPanel.ShowArchived <> archivedChecked Then
+                _viewModel.ThreadsPanel.ShowArchived = archivedChecked
                 changed = True
             End If
 
-            If ChkFilterThreadsByWorkingDir IsNot Nothing AndAlso IsChecked(ChkFilterThreadsByWorkingDir) <> workingDirChecked Then
-                ChkFilterThreadsByWorkingDir.IsChecked = workingDirChecked
+            If _viewModel.ThreadsPanel.FilterByWorkingDir <> workingDirChecked Then
+                _viewModel.ThreadsPanel.FilterByWorkingDir = workingDirChecked
                 changed = True
             End If
 
@@ -631,12 +933,1576 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub SyncSidebarNewThreadMenu()
-            If MnuSidebarNewThreadChooseFolder Is Nothing Then
+            If SidebarPaneHost.MnuSidebarNewThreadChooseFolder Is Nothing Then
                 Return
             End If
 
-            MnuSidebarNewThreadChooseFolder.IsEnabled = BtnSidebarNewThread IsNot Nothing AndAlso BtnSidebarNewThread.IsEnabled
+            SidebarPaneHost.MnuSidebarNewThreadChooseFolder.IsEnabled = _viewModel.IsSidebarNewThreadEnabled
         End Sub
+
+        Private Sub OpenWorkspaceInVsCode()
+            Dim targetCwd = ResolveQuickOpenWorkspaceCwd("VS Code")
+            If String.IsNullOrWhiteSpace(targetCwd) Then
+                Return
+            End If
+
+            If StartVsCode(targetCwd, ".") Then
+                ShowStatus($"Opened VS Code in {targetCwd}")
+                Return
+            End If
+
+            ShowStatus("Could not open VS Code. Make sure `code` is installed and available on PATH.", isError:=True, displayToast:=True)
+        End Sub
+
+        Private Sub OpenWorkspaceInPowerShell()
+            Dim targetCwd = ResolveQuickOpenWorkspaceCwd("PowerShell")
+            If String.IsNullOrWhiteSpace(targetCwd) Then
+                Return
+            End If
+
+            If StartProcessInDirectory("powershell.exe", "-NoExit", targetCwd) Then
+                ShowStatus($"Opened PowerShell in {targetCwd}")
+                Return
+            End If
+
+            ShowStatus("Could not open PowerShell.", isError:=True, displayToast:=True)
+        End Sub
+
+        Private Sub InitializeGitPanelUi()
+            ShowGitPanelTab(_gitPanelActiveTab)
+            ResetGitPanelTabContent()
+        End Sub
+
+        Private Sub ShowGitPanelTab(tabKey As String)
+            _gitPanelActiveTab = If(String.IsNullOrWhiteSpace(tabKey), "changes", tabKey.Trim().ToLowerInvariant())
+
+            If GitPaneHost.GitTabChangesView IsNot Nothing Then
+                GitPaneHost.GitTabChangesView.Visibility = If(StringComparer.Ordinal.Equals(_gitPanelActiveTab, "changes"), Visibility.Visible, Visibility.Collapsed)
+            End If
+            If GitPaneHost.GitTabHistoryView IsNot Nothing Then
+                GitPaneHost.GitTabHistoryView.Visibility = If(StringComparer.Ordinal.Equals(_gitPanelActiveTab, "history"), Visibility.Visible, Visibility.Collapsed)
+            End If
+            If GitPaneHost.GitTabBranchesView IsNot Nothing Then
+                GitPaneHost.GitTabBranchesView.Visibility = If(StringComparer.Ordinal.Equals(_gitPanelActiveTab, "branches"), Visibility.Visible, Visibility.Collapsed)
+            End If
+
+            ApplyGitPanelTabButtonState(GitPaneHost.BtnGitTabChanges, StringComparer.Ordinal.Equals(_gitPanelActiveTab, "changes"))
+            ApplyGitPanelTabButtonState(GitPaneHost.BtnGitTabHistory, StringComparer.Ordinal.Equals(_gitPanelActiveTab, "history"))
+            ApplyGitPanelTabButtonState(GitPaneHost.BtnGitTabBranches, StringComparer.Ordinal.Equals(_gitPanelActiveTab, "branches"))
+        End Sub
+
+        Private Sub ApplyGitPanelTabButtonState(button As Button, isSelected As Boolean)
+            If button Is Nothing Then
+                Return
+            End If
+
+            button.Background = ResolveBrush(If(isSelected, "AccentSubtleBrush", "SurfaceBrush"), Brushes.Transparent)
+            button.BorderBrush = ResolveBrush(If(isSelected, "AccentGlowBrush", "BorderBrush"), Brushes.Transparent)
+            button.BorderThickness = New Thickness(1)
+            button.Foreground = ResolveBrush(If(isSelected, "TextSecondaryBrush", "TextTertiaryBrush"), Brushes.Black)
+            button.FontWeight = If(isSelected, FontWeights.SemiBold, FontWeights.Normal)
+        End Sub
+
+        Private Sub ResetGitPanelTabContent()
+            _suppressGitPanelSelectionEvents = True
+            Try
+                If GitPaneHost.LstGitPanelChanges IsNot Nothing Then
+                    GitPaneHost.LstGitPanelChanges.ItemsSource = Nothing
+                    GitPaneHost.LstGitPanelChanges.SelectedItem = Nothing
+                End If
+                If GitPaneHost.LstGitPanelCommits IsNot Nothing Then
+                    GitPaneHost.LstGitPanelCommits.ItemsSource = Nothing
+                    GitPaneHost.LstGitPanelCommits.SelectedItem = Nothing
+                End If
+                If GitPaneHost.LstGitPanelBranches IsNot Nothing Then
+                    GitPaneHost.LstGitPanelBranches.ItemsSource = Nothing
+                    GitPaneHost.LstGitPanelBranches.SelectedItem = Nothing
+                End If
+            Finally
+                _suppressGitPanelSelectionEvents = False
+            End Try
+
+            SetGitPanelDiffPreviewText("Select a changed file to preview its diff.")
+            If GitPaneHost.TxtGitPanelCommitPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelCommitPreview.Text = "Select a commit to preview details."
+            End If
+            If GitPaneHost.TxtGitPanelBranchPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelBranchPreview.Text = "Select a branch to preview recent history."
+            End If
+            If GitPaneHost.LblGitPanelDiffTitle IsNot Nothing Then
+                GitPaneHost.LblGitPanelDiffTitle.Text = "Diff Preview"
+            End If
+            If GitPaneHost.LblGitPanelDiffMeta IsNot Nothing Then
+                GitPaneHost.LblGitPanelDiffMeta.Text = String.Empty
+            End If
+            If GitPaneHost.LblGitPanelCommitPreviewTitle IsNot Nothing Then
+                GitPaneHost.LblGitPanelCommitPreviewTitle.Text = "Commit Preview"
+            End If
+            If GitPaneHost.LblGitPanelBranchPreviewTitle IsNot Nothing Then
+                GitPaneHost.LblGitPanelBranchPreviewTitle.Text = "Branch Preview"
+            End If
+        End Sub
+
+        Private Sub OnGitPanelChangesSelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+            If _suppressGitPanelSelectionEvents Then
+                Return
+            End If
+
+            Dim selected = TryCast(GitPaneHost.LstGitPanelChanges?.SelectedItem, GitChangedFileListEntry)
+            If selected Is Nothing Then
+                SetGitPanelDiffPreviewText("Select a changed file to preview its diff.")
+                Return
+            End If
+
+            _gitPanelSelectedDiffFilePath = If(selected.FilePath, String.Empty)
+
+            FireAndForget(LoadGitChangeDiffPreviewAsync(selected))
+        End Sub
+
+        Private Sub OnGitPanelChangesMouseDoubleClick(sender As Object, e As MouseButtonEventArgs)
+            If _suppressGitPanelSelectionEvents Then
+                Return
+            End If
+
+            Dim selected = TryCast(GitPaneHost.LstGitPanelChanges?.SelectedItem, GitChangedFileListEntry)
+            If selected Is Nothing Then
+                Return
+            End If
+
+            OpenGitChangeInVsCode(selected)
+        End Sub
+
+        Private Sub OnGitPanelChangesListButtonClick(sender As Object, e As RoutedEventArgs)
+            If _suppressGitPanelSelectionEvents OrElse e Is Nothing Then
+                Return
+            End If
+
+            Dim source = TryCast(e.OriginalSource, DependencyObject)
+            If source Is Nothing Then
+                Return
+            End If
+
+            Dim button = FindVisualAncestor(Of Button)(source)
+            If button Is Nothing OrElse Not StringComparer.Ordinal.Equals(button.Name, "BtnGitChangeOpenInline") Then
+                Return
+            End If
+
+            Dim selected = TryCast(button.Tag, GitChangedFileListEntry)
+            If selected Is Nothing Then
+                selected = TryCast(button.DataContext, GitChangedFileListEntry)
+            End If
+            If selected Is Nothing Then
+                Return
+            End If
+
+            e.Handled = True
+            OpenGitChangeInVsCode(selected)
+        End Sub
+
+        Private Sub OnGitPanelCommitsSelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+            If _suppressGitPanelSelectionEvents Then
+                Return
+            End If
+
+            Dim selected = TryCast(GitPaneHost.LstGitPanelCommits?.SelectedItem, GitCommitListEntry)
+            If selected Is Nothing Then
+                If GitPaneHost.TxtGitPanelCommitPreview IsNot Nothing Then
+                    GitPaneHost.TxtGitPanelCommitPreview.Text = "Select a commit to preview details."
+                End If
+                Return
+            End If
+
+            FireAndForget(LoadGitCommitPreviewAsync(selected))
+        End Sub
+
+        Private Sub OnGitPanelBranchesSelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+            If _suppressGitPanelSelectionEvents Then
+                Return
+            End If
+
+            Dim selected = TryCast(GitPaneHost.LstGitPanelBranches?.SelectedItem, GitBranchListEntry)
+            If selected Is Nothing Then
+                If GitPaneHost.TxtGitPanelBranchPreview IsNot Nothing Then
+                    GitPaneHost.TxtGitPanelBranchPreview.Text = "Select a branch to preview recent history."
+                End If
+                Return
+            End If
+
+            FireAndForget(LoadGitBranchPreviewAsync(selected))
+        End Sub
+
+        Private Sub SetGitPanelDiffPreviewText(previewText As String)
+            If GitPaneHost.LstGitPanelDiffPreviewLines Is Nothing Then
+                Return
+            End If
+
+            Dim lines = BuildGitDiffPreviewLineEntries(previewText)
+            GitPaneHost.LstGitPanelDiffPreviewLines.ItemsSource = Nothing
+            GitPaneHost.LstGitPanelDiffPreviewLines.ItemsSource = lines
+
+            If lines IsNot Nothing AndAlso lines.Count > 0 Then
+                GitPaneHost.LstGitPanelDiffPreviewLines.ScrollIntoView(lines(0))
+            End If
+        End Sub
+
+        Private Shared Function BuildGitDiffPreviewLineEntries(previewText As String) As List(Of GitDiffPreviewLineEntry)
+            Dim text = If(previewText, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            If text.Length = 0 Then
+                Return New List(Of GitDiffPreviewLineEntry) From {
+                    New GitDiffPreviewLineEntry() With {.Text = String.Empty, .Kind = "message"}
+                }
+            End If
+
+            Dim result As New List(Of GitDiffPreviewLineEntry)()
+            Dim lines = text.Split({vbLf}, StringSplitOptions.None)
+            For Each line In lines
+                result.Add(New GitDiffPreviewLineEntry() With {
+                    .Text = line,
+                    .Kind = ClassifyGitDiffPreviewLine(line)
+                })
+            Next
+
+            Return result
+        End Function
+
+        Private Shared Function ClassifyGitDiffPreviewLine(line As String) As String
+            Dim value = If(line, String.Empty)
+            If value.Length = 0 Then
+                Return "empty"
+            End If
+
+            If value.StartsWith("diff --git ", StringComparison.Ordinal) Then
+                Return "fileHeader"
+            End If
+
+            If value.StartsWith("--- ", StringComparison.Ordinal) OrElse
+               value.StartsWith("+++ ", StringComparison.Ordinal) Then
+                Return "pathHeader"
+            End If
+
+            If value.StartsWith("@@", StringComparison.Ordinal) Then
+                Return "hunk"
+            End If
+
+            If value.StartsWith("+", StringComparison.Ordinal) AndAlso Not value.StartsWith("+++", StringComparison.Ordinal) Then
+                Return "added"
+            End If
+
+            If value.StartsWith("-", StringComparison.Ordinal) AndAlso Not value.StartsWith("---", StringComparison.Ordinal) Then
+                Return "removed"
+            End If
+
+            If value.StartsWith("index ", StringComparison.Ordinal) OrElse
+               value.StartsWith("new file mode ", StringComparison.Ordinal) OrElse
+               value.StartsWith("deleted file mode ", StringComparison.Ordinal) OrElse
+               value.StartsWith("old mode ", StringComparison.Ordinal) OrElse
+               value.StartsWith("new mode ", StringComparison.Ordinal) OrElse
+               value.StartsWith("similarity index ", StringComparison.Ordinal) OrElse
+               value.StartsWith("rename from ", StringComparison.Ordinal) OrElse
+               value.StartsWith("rename to ", StringComparison.Ordinal) OrElse
+               value.StartsWith("copy from ", StringComparison.Ordinal) OrElse
+               value.StartsWith("copy to ", StringComparison.Ordinal) OrElse
+               value.StartsWith("Binary files ", StringComparison.Ordinal) Then
+                Return "meta"
+            End If
+
+            If value.StartsWith("\", StringComparison.Ordinal) Then
+                Return "note"
+            End If
+
+            If value.StartsWith(" ", StringComparison.Ordinal) Then
+                Return "context"
+            End If
+
+            Return "message"
+        End Function
+
+        Private Async Function LoadGitChangeDiffPreviewAsync(selected As GitChangedFileListEntry) As Task
+            If selected Is Nothing Then
+                Return
+            End If
+
+            Dim repoRoot = ResolveCurrentGitPanelRepoRoot()
+            If String.IsNullOrWhiteSpace(repoRoot) Then
+                Return
+            End If
+
+            If GitPaneHost.LblGitPanelDiffTitle IsNot Nothing Then
+                GitPaneHost.LblGitPanelDiffTitle.Text = $"Diff: {selected.DisplayPath}"
+            End If
+            If GitPaneHost.LblGitPanelDiffMeta IsNot Nothing Then
+                Dim metaParts As New List(Of String)()
+                If selected.AddedLineCount.HasValue AndAlso selected.AddedLineCount.Value > 0 Then
+                    metaParts.Add($"+{selected.AddedLineCount.Value}")
+                End If
+                If selected.RemovedLineCount.HasValue AndAlso selected.RemovedLineCount.Value > 0 Then
+                    metaParts.Add($"-{selected.RemovedLineCount.Value}")
+                End If
+                GitPaneHost.LblGitPanelDiffMeta.Text = String.Join("  ", metaParts)
+            End If
+            SetGitPanelDiffPreviewText("Loading diff preview...")
+
+            Dim previewVersion = Interlocked.Increment(_gitPanelDiffPreviewLoadVersion)
+            Dim previewText = Await Task.Run(Function() BuildGitFileDiffPreview(repoRoot, selected)).ConfigureAwait(True)
+
+            If previewVersion <> _gitPanelDiffPreviewLoadVersion Then
+                Return
+            End If
+
+            SetGitPanelDiffPreviewText(previewText)
+        End Function
+
+        Private Async Function LoadGitCommitPreviewAsync(selected As GitCommitListEntry) As Task
+            If selected Is Nothing Then
+                Return
+            End If
+
+            Dim repoRoot = ResolveCurrentGitPanelRepoRoot()
+            If String.IsNullOrWhiteSpace(repoRoot) Then
+                Return
+            End If
+
+            If GitPaneHost.LblGitPanelCommitPreviewTitle IsNot Nothing Then
+                GitPaneHost.LblGitPanelCommitPreviewTitle.Text = $"Commit Preview: {selected.ShortSha}"
+            End If
+            If GitPaneHost.TxtGitPanelCommitPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelCommitPreview.Text = "Loading commit preview..."
+            End If
+
+            Dim previewVersion = Interlocked.Increment(_gitPanelCommitPreviewLoadVersion)
+            Dim previewText = Await Task.Run(Function() BuildGitCommitPreview(repoRoot, selected.Sha)).ConfigureAwait(True)
+            If previewVersion <> _gitPanelCommitPreviewLoadVersion Then
+                Return
+            End If
+
+            If GitPaneHost.TxtGitPanelCommitPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelCommitPreview.Text = previewText
+            End If
+        End Function
+
+        Private Async Function LoadGitBranchPreviewAsync(selected As GitBranchListEntry) As Task
+            If selected Is Nothing Then
+                Return
+            End If
+
+            Dim repoRoot = ResolveCurrentGitPanelRepoRoot()
+            If String.IsNullOrWhiteSpace(repoRoot) Then
+                Return
+            End If
+
+            If GitPaneHost.LblGitPanelBranchPreviewTitle IsNot Nothing Then
+                GitPaneHost.LblGitPanelBranchPreviewTitle.Text = $"Branch Preview: {selected.Name}"
+            End If
+            If GitPaneHost.TxtGitPanelBranchPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelBranchPreview.Text = "Loading branch preview..."
+            End If
+
+            Dim previewVersion = Interlocked.Increment(_gitPanelBranchPreviewLoadVersion)
+            Dim previewText = Await Task.Run(Function() BuildGitBranchPreview(repoRoot, selected.Name)).ConfigureAwait(True)
+            If previewVersion <> _gitPanelBranchPreviewLoadVersion Then
+                Return
+            End If
+
+            If GitPaneHost.TxtGitPanelBranchPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelBranchPreview.Text = previewText
+            End If
+        End Function
+
+        Private Function ResolveCurrentGitPanelRepoRoot() As String
+            If _currentGitPanelSnapshot Is Nothing Then
+                Return String.Empty
+            End If
+
+            Return If(_currentGitPanelSnapshot.RepoRoot, String.Empty)
+        End Function
+
+        Private Sub OpenGitChangeInVsCode(selected As GitChangedFileListEntry)
+            If selected Is Nothing Then
+                Return
+            End If
+
+            Dim repoRoot = ResolveCurrentGitPanelRepoRoot()
+            If String.IsNullOrWhiteSpace(repoRoot) Then
+                ShowStatus("Git panel repository is not available.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            Dim relativePath = If(selected.FilePath, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(relativePath) Then
+                ShowStatus("No file path available for this entry.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            Dim fullPath = Path.Combine(repoRoot, relativePath.Replace("/"c, Path.DirectorySeparatorChar))
+            If Not File.Exists(fullPath) Then
+                ShowStatus($"File not found (possibly deleted): {relativePath}", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            If StartVsCode(repoRoot, "-g " & QuoteProcessArgument(fullPath)) Then
+                ShowStatus($"Opened {relativePath} in VS Code")
+                Return
+            End If
+
+            ShowStatus("Could not open file in VS Code. Make sure `code` is installed and available on PATH.",
+                       isError:=True,
+                       displayToast:=True)
+        End Sub
+
+        Private Sub ToggleGitPanel()
+            If GitPaneHost.GitInspectorPanel Is Nothing Then
+                Return
+            End If
+
+            If GitPaneHost.GitInspectorPanel.Visibility = Visibility.Visible Then
+                CloseGitPanel()
+                Return
+            End If
+
+            ShowGitPanelDock()
+            GitPaneHost.GitInspectorPanel.Visibility = Visibility.Visible
+            FireAndForget(RefreshGitPanelAsync())
+        End Sub
+
+        Private Sub ShowGitPanelDock()
+            Const minGitPaneWidth As Double = 280.0R
+            Const preferredGitPaneWidth As Double = 560.0R
+            Const minWorkspaceWidthWhenGitPaneOpen As Double = 520.0R
+            Const maxGitPaneWidth As Double = 760.0R
+
+            Dim targetWidth = _gitPanelDockWidth
+            If Double.IsNaN(targetWidth) OrElse Double.IsInfinity(targetWidth) OrElse targetWidth < minGitPaneWidth Then
+                targetWidth = preferredGitPaneWidth
+            End If
+
+            ' Always reopen at a comfortable width when possible, even if the user last closed it very narrow.
+            targetWidth = Math.Max(targetWidth, preferredGitPaneWidth)
+
+            Dim maxFitWidth = Double.PositiveInfinity
+            If WorkspacePaneHost IsNot Nothing AndAlso WorkspacePaneHost.ActualWidth > 0 Then
+                maxFitWidth = Math.Max(minGitPaneWidth, WorkspacePaneHost.ActualWidth - minWorkspaceWidthWhenGitPaneOpen)
+            End If
+
+            If Not Double.IsInfinity(maxFitWidth) Then
+                targetWidth = Math.Min(targetWidth, maxFitWidth)
+            End If
+
+            targetWidth = Math.Max(minGitPaneWidth, Math.Min(targetWidth, maxGitPaneWidth))
+
+            If RightGitPaneShell IsNot Nothing Then
+                RightGitPaneShell.Visibility = Visibility.Visible
+            End If
+
+            If RightGitPaneColumn IsNot Nothing Then
+                RightGitPaneColumn.MinWidth = minGitPaneWidth
+                RightGitPaneColumn.Width = New GridLength(targetWidth, GridUnitType.Pixel)
+            End If
+
+            If RightGitPaneSplitterColumn IsNot Nothing Then
+                RightGitPaneSplitterColumn.Width = New GridLength(8, GridUnitType.Pixel)
+            End If
+
+            If RightGitPaneSplitter IsNot Nothing Then
+                RightGitPaneSplitter.Visibility = Visibility.Visible
+            End If
+        End Sub
+
+        Private Shared Function StartVsCode(workingDirectory As String, arguments As String) As Boolean
+            Dim normalizedArgs = If(arguments, String.Empty)
+
+            ' Prefer direct executables first to avoid a visible cmd window.
+            Dim directCandidates As New List(Of String) From {
+                "code.exe",
+                "code"
+            }
+
+            Dim userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            Dim localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+            Dim programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+            Dim programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
+
+            directCandidates.Add(Path.Combine(localAppData, "Programs", "Microsoft VS Code", "Code.exe"))
+            directCandidates.Add(Path.Combine(userProfile, "AppData", "Local", "Programs", "Microsoft VS Code", "Code.exe"))
+            directCandidates.Add(Path.Combine(programFiles, "Microsoft VS Code", "Code.exe"))
+            If Not String.IsNullOrWhiteSpace(programFilesX86) Then
+                directCandidates.Add(Path.Combine(programFilesX86, "Microsoft VS Code", "Code.exe"))
+            End If
+
+            For Each candidate In directCandidates
+                If String.IsNullOrWhiteSpace(candidate) Then
+                    Continue For
+                End If
+
+                If candidate.Contains(Path.DirectorySeparatorChar) OrElse candidate.Contains(Path.AltDirectorySeparatorChar) Then
+                    If Not File.Exists(candidate) Then
+                        Continue For
+                    End If
+                End If
+
+                If StartProcessInDirectory(candidate, normalizedArgs, workingDirectory, createNoWindow:=True) Then
+                    Return True
+                End If
+            Next
+
+            ' Fallback for PATH setups that expose only code.cmd; keep the shell window hidden.
+            Return StartProcessInDirectory("cmd.exe", "/c code " & normalizedArgs, workingDirectory, createNoWindow:=True)
+        End Function
+
+        Private Sub CloseGitPanel()
+            If GitPaneHost.GitInspectorPanel Is Nothing Then
+                Return
+            End If
+
+            Dim actualWidth = GitPaneHost.GitInspectorPanel.ActualWidth
+            If Not Double.IsNaN(actualWidth) AndAlso Not Double.IsInfinity(actualWidth) AndAlso actualWidth >= 280 Then
+                _gitPanelDockWidth = actualWidth
+            End If
+
+            GitPaneHost.GitInspectorPanel.Visibility = Visibility.Collapsed
+            If RightGitPaneSplitter IsNot Nothing Then
+                RightGitPaneSplitter.Visibility = Visibility.Collapsed
+            End If
+            If RightGitPaneSplitterColumn IsNot Nothing Then
+                RightGitPaneSplitterColumn.Width = New GridLength(0, GridUnitType.Pixel)
+            End If
+            If RightGitPaneColumn IsNot Nothing Then
+                RightGitPaneColumn.MinWidth = 0
+                RightGitPaneColumn.Width = New GridLength(0, GridUnitType.Pixel)
+            End If
+            If RightGitPaneShell IsNot Nothing Then
+                RightGitPaneShell.Visibility = Visibility.Collapsed
+            End If
+            Interlocked.Increment(_gitPanelLoadVersion)
+            Interlocked.Increment(_gitPanelDiffPreviewLoadVersion)
+            Interlocked.Increment(_gitPanelCommitPreviewLoadVersion)
+            Interlocked.Increment(_gitPanelBranchPreviewLoadVersion)
+        End Sub
+
+        Private Async Function RefreshGitPanelAsync() As Task
+            If GitPaneHost.GitInspectorPanel Is Nothing OrElse
+               GitPaneHost.GitInspectorPanel.Visibility <> Visibility.Visible Then
+                Return
+            End If
+
+            Dim targetCwd = ResolveQuickOpenWorkspaceCwd("Git panel")
+            If String.IsNullOrWhiteSpace(targetCwd) Then
+                SetGitPanelErrorState("No workspace folder available.")
+                Return
+            End If
+
+            Dim loadVersion = Interlocked.Increment(_gitPanelLoadVersion)
+            SetGitPanelLoadingState(True, $"Loading repository in {targetCwd}...")
+
+            Dim snapshot = Await Task.Run(Function() BuildGitPanelSnapshot(targetCwd)).ConfigureAwait(True)
+
+            If loadVersion <> _gitPanelLoadVersion Then
+                Return
+            End If
+
+            If GitPaneHost.GitInspectorPanel.Visibility <> Visibility.Visible Then
+                Return
+            End If
+
+            ApplyGitPanelSnapshot(snapshot)
+        End Function
+
+        Private Sub SetGitPanelLoadingState(isLoading As Boolean, statusText As String)
+            If GitPaneHost.GitPanelLoadingOverlay IsNot Nothing Then
+                GitPaneHost.GitPanelLoadingOverlay.Visibility = If(isLoading, Visibility.Visible, Visibility.Collapsed)
+            End If
+
+            If GitPaneHost.LblGitPanelLoading IsNot Nothing Then
+                GitPaneHost.LblGitPanelLoading.Text = If(statusText, String.Empty)
+            End If
+
+            If GitPaneHost.LblGitPanelState IsNot Nothing Then
+                GitPaneHost.LblGitPanelState.Text = If(statusText, String.Empty)
+            End If
+
+            If GitPaneHost.BtnGitPanelRefresh IsNot Nothing Then
+                GitPaneHost.BtnGitPanelRefresh.IsEnabled = Not isLoading
+            End If
+        End Sub
+
+        Private Sub SetGitPanelErrorState(message As String)
+            _currentGitPanelSnapshot = Nothing
+            SetGitPanelLoadingState(False, If(message, "Git panel unavailable."))
+            If GitPaneHost.LblGitPanelRepoName IsNot Nothing Then
+                GitPaneHost.LblGitPanelRepoName.Text = "Repository unavailable"
+            End If
+            If GitPaneHost.LblGitPanelRepoPath IsNot Nothing Then
+                GitPaneHost.LblGitPanelRepoPath.Text = String.Empty
+            End If
+            If GitPaneHost.LblGitPanelBranch IsNot Nothing Then
+                GitPaneHost.LblGitPanelBranch.Text = "branch: -"
+            End If
+            If GitPaneHost.LblGitPanelStatusSummary IsNot Nothing Then
+                GitPaneHost.LblGitPanelStatusSummary.Text = "status: unavailable"
+            End If
+            SetGitPanelLineSummary(Nothing, Nothing)
+            ResetGitPanelTabContent()
+            SetGitPanelDiffPreviewText(If(message, "No git data."))
+            If GitPaneHost.TxtGitPanelCommitPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelCommitPreview.Text = "No commit history available."
+            End If
+            If GitPaneHost.TxtGitPanelBranchPreview IsNot Nothing Then
+                GitPaneHost.TxtGitPanelBranchPreview.Text = "No branch data available."
+            End If
+        End Sub
+
+        Private Sub ApplyGitPanelSnapshot(snapshot As GitPanelSnapshot)
+            If snapshot Is Nothing Then
+                SetGitPanelErrorState("No git data.")
+                Return
+            End If
+
+            If Not String.IsNullOrWhiteSpace(snapshot.ErrorMessage) Then
+                SetGitPanelErrorState(snapshot.ErrorMessage)
+                Return
+            End If
+
+            _currentGitPanelSnapshot = snapshot
+            SetGitPanelLoadingState(False, $"Updated {snapshot.LoadedAtLocal:HH:mm:ss}")
+
+            If GitPaneHost.LblGitPanelRepoName IsNot Nothing Then
+                GitPaneHost.LblGitPanelRepoName.Text = If(snapshot.RepoName, "Repository")
+            End If
+
+            If GitPaneHost.LblGitPanelRepoPath IsNot Nothing Then
+                GitPaneHost.LblGitPanelRepoPath.Text = If(snapshot.RepoRoot, snapshot.WorkingDirectory)
+                GitPaneHost.LblGitPanelRepoPath.ToolTip = If(snapshot.RepoRoot, snapshot.WorkingDirectory)
+            End If
+
+            If GitPaneHost.LblGitPanelBranch IsNot Nothing Then
+                Dim branchLabel = If(String.IsNullOrWhiteSpace(snapshot.BranchName), "-", snapshot.BranchName)
+                GitPaneHost.LblGitPanelBranch.Text = $"branch: {branchLabel}"
+            End If
+
+            If GitPaneHost.LblGitPanelStatusSummary IsNot Nothing Then
+                Dim statusLabel = If(String.IsNullOrWhiteSpace(snapshot.StatusSummary), "unknown", snapshot.StatusSummary)
+                GitPaneHost.LblGitPanelStatusSummary.Text = $"status: {statusLabel}"
+            End If
+
+            SetGitPanelLineSummary(snapshot.AddedLineCount, snapshot.RemovedLineCount)
+            PopulateGitPanelLists(snapshot)
+        End Sub
+
+        Private Sub PopulateGitPanelLists(snapshot As GitPanelSnapshot)
+            Dim desiredChangeIndex = -1
+            If snapshot IsNot Nothing AndAlso snapshot.ChangedFiles IsNot Nothing AndAlso snapshot.ChangedFiles.Count > 0 Then
+                If Not String.IsNullOrWhiteSpace(_gitPanelSelectedDiffFilePath) Then
+                    For i = 0 To snapshot.ChangedFiles.Count - 1
+                        Dim entry = snapshot.ChangedFiles(i)
+                        If entry IsNot Nothing AndAlso
+                           StringComparer.OrdinalIgnoreCase.Equals(If(entry.FilePath, String.Empty), _gitPanelSelectedDiffFilePath) Then
+                            desiredChangeIndex = i
+                            Exit For
+                        End If
+                    Next
+                End If
+
+                If desiredChangeIndex < 0 Then
+                    desiredChangeIndex = 0
+                End If
+            End If
+
+            _suppressGitPanelSelectionEvents = True
+            Try
+                If GitPaneHost.LstGitPanelChanges IsNot Nothing Then
+                    GitPaneHost.LstGitPanelChanges.ItemsSource = Nothing
+                    GitPaneHost.LstGitPanelChanges.ItemsSource = snapshot.ChangedFiles
+                    GitPaneHost.LstGitPanelChanges.SelectedIndex = desiredChangeIndex
+                End If
+
+                If GitPaneHost.LstGitPanelCommits IsNot Nothing Then
+                    GitPaneHost.LstGitPanelCommits.ItemsSource = Nothing
+                    GitPaneHost.LstGitPanelCommits.ItemsSource = snapshot.Commits
+                    GitPaneHost.LstGitPanelCommits.SelectedIndex = If(snapshot.Commits IsNot Nothing AndAlso snapshot.Commits.Count > 0, 0, -1)
+                End If
+
+                If GitPaneHost.LstGitPanelBranches IsNot Nothing Then
+                    GitPaneHost.LstGitPanelBranches.ItemsSource = Nothing
+                    GitPaneHost.LstGitPanelBranches.ItemsSource = snapshot.Branches
+                    Dim selectedBranchIndex = -1
+                    If snapshot.Branches IsNot Nothing Then
+                        For i = 0 To snapshot.Branches.Count - 1
+                            If snapshot.Branches(i) IsNot Nothing AndAlso snapshot.Branches(i).IsCurrent Then
+                                selectedBranchIndex = i
+                                Exit For
+                            End If
+                        Next
+                    End If
+                    If selectedBranchIndex < 0 AndAlso snapshot.Branches IsNot Nothing AndAlso snapshot.Branches.Count > 0 Then
+                        selectedBranchIndex = 0
+                    End If
+                    GitPaneHost.LstGitPanelBranches.SelectedIndex = selectedBranchIndex
+                End If
+            Finally
+                _suppressGitPanelSelectionEvents = False
+            End Try
+
+            If snapshot.ChangedFiles Is Nothing OrElse snapshot.ChangedFiles.Count = 0 Then
+                SetGitPanelDiffPreviewText(If(snapshot.ChangesText, "Working tree clean."))
+                If GitPaneHost.LblGitPanelDiffTitle IsNot Nothing Then
+                    GitPaneHost.LblGitPanelDiffTitle.Text = "Diff Preview"
+                End If
+                If GitPaneHost.LblGitPanelDiffMeta IsNot Nothing Then
+                    GitPaneHost.LblGitPanelDiffMeta.Text = String.Empty
+                End If
+            Else
+                Dim selectedChange = TryCast(GitPaneHost.LstGitPanelChanges?.SelectedItem, GitChangedFileListEntry)
+                If selectedChange Is Nothing AndAlso GitPaneHost.LstGitPanelChanges IsNot Nothing Then
+                    GitPaneHost.LstGitPanelChanges.SelectedIndex = If(desiredChangeIndex >= 0, desiredChangeIndex, 0)
+                    selectedChange = TryCast(GitPaneHost.LstGitPanelChanges.SelectedItem, GitChangedFileListEntry)
+                End If
+
+                If selectedChange Is Nothing Then
+                    selectedChange = snapshot.ChangedFiles(Math.Max(0, Math.Min(snapshot.ChangedFiles.Count - 1, desiredChangeIndex)))
+                End If
+
+                _gitPanelSelectedDiffFilePath = If(selectedChange?.FilePath, String.Empty)
+                FireAndForget(LoadGitChangeDiffPreviewAsync(selectedChange))
+            End If
+
+            If snapshot.Commits Is Nothing OrElse snapshot.Commits.Count = 0 Then
+                If GitPaneHost.TxtGitPanelCommitPreview IsNot Nothing Then
+                    GitPaneHost.TxtGitPanelCommitPreview.Text = If(snapshot.CommitsText, "No commits found.")
+                End If
+            Else
+                FireAndForget(LoadGitCommitPreviewAsync(snapshot.Commits(0)))
+            End If
+
+            If snapshot.Branches Is Nothing OrElse snapshot.Branches.Count = 0 Then
+                If GitPaneHost.TxtGitPanelBranchPreview IsNot Nothing Then
+                    GitPaneHost.TxtGitPanelBranchPreview.Text = If(snapshot.BranchesText, "No branch data available.")
+                End If
+            Else
+                Dim branchToPreview As GitBranchListEntry = Nothing
+                For Each branchEntry In snapshot.Branches
+                    If branchEntry IsNot Nothing AndAlso branchEntry.IsCurrent Then
+                        branchToPreview = branchEntry
+                        Exit For
+                    End If
+                Next
+
+                If branchToPreview Is Nothing AndAlso snapshot.Branches.Count > 0 Then
+                    branchToPreview = snapshot.Branches(0)
+                End If
+
+                If branchToPreview IsNot Nothing Then
+                    FireAndForget(LoadGitBranchPreviewAsync(branchToPreview))
+                End If
+            End If
+        End Sub
+
+        Private Sub SetGitPanelLineSummary(addedLineCount As Integer?, removedLineCount As Integer?)
+            If GitPaneHost.LblGitPanelAddedSummary IsNot Nothing Then
+                If addedLineCount.HasValue AndAlso addedLineCount.Value > 0 Then
+                    GitPaneHost.LblGitPanelAddedSummary.Text = $"+{addedLineCount.Value} lines"
+                    GitPaneHost.LblGitPanelAddedSummary.Visibility = Visibility.Visible
+                Else
+                    GitPaneHost.LblGitPanelAddedSummary.Text = String.Empty
+                    GitPaneHost.LblGitPanelAddedSummary.Visibility = Visibility.Collapsed
+                End If
+            End If
+
+            If GitPaneHost.LblGitPanelRemovedSummary IsNot Nothing Then
+                If removedLineCount.HasValue AndAlso removedLineCount.Value > 0 Then
+                    GitPaneHost.LblGitPanelRemovedSummary.Text = $"-{removedLineCount.Value} lines"
+                    GitPaneHost.LblGitPanelRemovedSummary.Visibility = Visibility.Visible
+                Else
+                    GitPaneHost.LblGitPanelRemovedSummary.Text = String.Empty
+                    GitPaneHost.LblGitPanelRemovedSummary.Visibility = Visibility.Collapsed
+                End If
+            End If
+        End Sub
+
+        Private Shared Function BuildGitPanelSnapshot(targetCwd As String) As GitPanelSnapshot
+            Dim snapshot As New GitPanelSnapshot() With {
+                .WorkingDirectory = If(targetCwd, String.Empty),
+                .LoadedAtLocal = Date.Now
+            }
+
+            Dim repoRootResult = RunProcessCapture("git", "rev-parse --show-toplevel", targetCwd)
+            If repoRootResult.ExitCode <> 0 Then
+                snapshot.ErrorMessage = If(String.IsNullOrWhiteSpace(repoRootResult.ErrorText),
+                                           "Selected folder is not a git repository.",
+                                           repoRootResult.ErrorText.Trim())
+                Return snapshot
+            End If
+
+            snapshot.RepoRoot = FirstNonEmptyLine(repoRootResult.OutputText)
+            If String.IsNullOrWhiteSpace(snapshot.RepoRoot) Then
+                snapshot.ErrorMessage = "Could not determine repository root."
+                Return snapshot
+            End If
+
+            snapshot.RepoName = Path.GetFileName(snapshot.RepoRoot.TrimEnd("\"c, "/"c))
+            If String.IsNullOrWhiteSpace(snapshot.RepoName) Then
+                snapshot.RepoName = snapshot.RepoRoot
+            End If
+
+            Dim branchResult = RunProcessCapture("git", "rev-parse --abbrev-ref HEAD", snapshot.RepoRoot)
+            If branchResult.ExitCode = 0 Then
+                snapshot.BranchName = FirstNonEmptyLine(branchResult.OutputText)
+            End If
+
+            Dim statusResult = RunProcessCapture("git", "status --short --branch", snapshot.RepoRoot)
+            If statusResult.ExitCode = 0 Then
+                Dim parsedStatus = ParseGitStatus(statusResult.OutputText)
+                If String.IsNullOrWhiteSpace(snapshot.BranchName) Then
+                    snapshot.BranchName = parsedStatus.BranchName
+                End If
+                snapshot.StatusSummary = parsedStatus.StatusSummary
+                snapshot.ChangesText = parsedStatus.ChangesText
+                snapshot.ChangedFiles = parsedStatus.ChangedFiles
+                RemoveGitDirectoryEntries(snapshot.ChangedFiles, snapshot.RepoRoot)
+                AssignGitFileIcons(snapshot.ChangedFiles, snapshot.RepoRoot)
+            Else
+                snapshot.StatusSummary = "unavailable"
+                snapshot.ChangesText = NormalizeProcessError(statusResult)
+            End If
+
+            Dim numstatResult = RunProcessCapture("git", "diff --numstat HEAD", snapshot.RepoRoot)
+            If numstatResult.ExitCode = 0 Then
+                Dim diffTotals = CountGitNumstatTotals(numstatResult.OutputText)
+                snapshot.AddedLineCount = diffTotals.AddedLineCount
+                snapshot.RemovedLineCount = diffTotals.RemovedLineCount
+                ApplyGitNumstatToChangedFiles(snapshot.ChangedFiles, numstatResult.OutputText)
+            Else
+                Dim fallbackNumstatResult = RunProcessCapture("git", "diff --numstat", snapshot.RepoRoot)
+                If fallbackNumstatResult.ExitCode = 0 Then
+                    Dim diffTotals = CountGitNumstatTotals(fallbackNumstatResult.OutputText)
+                    snapshot.AddedLineCount = diffTotals.AddedLineCount
+                    snapshot.RemovedLineCount = diffTotals.RemovedLineCount
+                    ApplyGitNumstatToChangedFiles(snapshot.ChangedFiles, fallbackNumstatResult.OutputText)
+                End If
+            End If
+
+            Dim untrackedTotals = ApplyUntrackedFileLineCounts(snapshot.ChangedFiles, snapshot.RepoRoot)
+            If untrackedTotals.AddedLineCount.HasValue Then
+                snapshot.AddedLineCount = (If(snapshot.AddedLineCount, 0) + untrackedTotals.AddedLineCount.Value)
+            End If
+            If untrackedTotals.RemovedLineCount.HasValue Then
+                snapshot.RemovedLineCount = (If(snapshot.RemovedLineCount, 0) + untrackedTotals.RemovedLineCount.Value)
+            End If
+
+            Dim logResult = RunProcessCapture("git", "--no-pager log --pretty=format:%H%x1f%h%x1f%cr%x1f%s%x1f%D -n 30", snapshot.RepoRoot)
+            If logResult.ExitCode = 0 Then
+                snapshot.CommitsText = NormalizePanelMultiline(logResult.OutputText, "No commits found.")
+                snapshot.Commits = ParseGitCommits(logResult.OutputText)
+            Else
+                snapshot.CommitsText = NormalizeProcessError(logResult)
+            End If
+
+            Dim branchesResult = RunProcessCapture("git", "--no-pager for-each-ref --format=%(HEAD)%x1f%(refname:short)%x1f%(objectname:short)%x1f%(committerdate:relative)%x1f%(contents:subject) refs/heads refs/remotes", snapshot.RepoRoot)
+            If branchesResult.ExitCode = 0 Then
+                snapshot.BranchesText = NormalizePanelMultiline(branchesResult.OutputText, "No branches found.")
+                snapshot.Branches = ParseGitBranches(branchesResult.OutputText)
+            Else
+                snapshot.BranchesText = NormalizeProcessError(branchesResult)
+            End If
+
+            If String.IsNullOrWhiteSpace(snapshot.StatusSummary) Then
+                snapshot.StatusSummary = "unknown"
+            End If
+            If String.IsNullOrWhiteSpace(snapshot.ChangesText) Then
+                snapshot.ChangesText = "Working tree clean."
+            End If
+            If String.IsNullOrWhiteSpace(snapshot.CommitsText) Then
+                snapshot.CommitsText = "No commits found."
+            End If
+            If String.IsNullOrWhiteSpace(snapshot.BranchesText) Then
+                snapshot.BranchesText = "No branches found."
+            End If
+
+            Return snapshot
+        End Function
+
+        Private Shared Function RunProcessCapture(fileName As String, arguments As String, workingDirectory As String) As ProcessCaptureResult
+            Try
+                Using process As New Process()
+                    process.StartInfo = New ProcessStartInfo(fileName) With {
+                        .Arguments = If(arguments, String.Empty),
+                        .WorkingDirectory = If(workingDirectory, String.Empty),
+                        .UseShellExecute = False,
+                        .RedirectStandardOutput = True,
+                        .RedirectStandardError = True,
+                        .CreateNoWindow = True
+                    }
+
+                    process.Start()
+                    Dim output = process.StandardOutput.ReadToEnd()
+                    Dim [error] = process.StandardError.ReadToEnd()
+                    process.WaitForExit()
+
+                    Return New ProcessCaptureResult() With {
+                        .ExitCode = process.ExitCode,
+                        .OutputText = If(output, String.Empty),
+                        .ErrorText = If([error], String.Empty)
+                    }
+                End Using
+            Catch ex As Exception
+                Return New ProcessCaptureResult() With {
+                    .ExitCode = -1,
+                    .OutputText = String.Empty,
+                    .ErrorText = ex.Message
+                }
+            End Try
+        End Function
+
+        Private Structure GitStatusParseResult
+            Public Property BranchName As String
+            Public Property StatusSummary As String
+            Public Property ChangesText As String
+            Public Property ChangedFiles As List(Of GitChangedFileListEntry)
+        End Structure
+
+        Private Structure GitNumstatTotals
+            Public Property AddedLineCount As Integer?
+            Public Property RemovedLineCount As Integer?
+        End Structure
+
+        Private Shared Function ParseGitStatus(outputText As String) As GitStatusParseResult
+            Dim result As New GitStatusParseResult() With {
+                .ChangedFiles = New List(Of GitChangedFileListEntry)()
+            }
+            Dim normalized = If(outputText, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+            Dim changesBuilder As New StringBuilder()
+            Dim stagedCount = 0
+            Dim unstagedCount = 0
+            Dim untrackedCount = 0
+            Dim conflictCount = 0
+
+            For Each rawLine In lines
+                Dim line = If(rawLine, String.Empty).TrimEnd()
+                If String.IsNullOrWhiteSpace(line) Then
+                    Continue For
+                End If
+
+                If line.StartsWith("## ", StringComparison.Ordinal) Then
+                    result.BranchName = ParseBranchNameFromStatusHeader(line)
+                    Continue For
+                End If
+
+                If changesBuilder.Length > 0 Then
+                    changesBuilder.AppendLine()
+                End If
+                changesBuilder.Append(line)
+
+                Dim changeEntry = ParseGitStatusChangeEntry(line)
+                If changeEntry IsNot Nothing Then
+                    result.ChangedFiles.Add(changeEntry)
+                End If
+
+                Dim code = If(line.Length >= 2, line.Substring(0, 2), line)
+                If StringComparer.Ordinal.Equals(code, "??") Then
+                    untrackedCount += 1
+                    Continue For
+                End If
+
+                If code.Contains("U"c) Then
+                    conflictCount += 1
+                End If
+                If code.Length >= 1 AndAlso code(0) <> " "c Then
+                    stagedCount += 1
+                End If
+                If code.Length >= 2 AndAlso code(1) <> " "c Then
+                    unstagedCount += 1
+                End If
+            Next
+
+            If changesBuilder.Length = 0 Then
+                result.ChangesText = "Working tree clean."
+            Else
+                result.ChangesText = changesBuilder.ToString()
+            End If
+
+            Dim parts As New List(Of String)()
+            If conflictCount > 0 Then
+                parts.Add($"{conflictCount} conflict")
+            End If
+            If stagedCount > 0 Then
+                parts.Add($"{stagedCount} staged")
+            End If
+            If unstagedCount > 0 Then
+                parts.Add($"{unstagedCount} changed")
+            End If
+            If untrackedCount > 0 Then
+                parts.Add($"{untrackedCount} untracked")
+            End If
+
+            result.StatusSummary = If(parts.Count = 0, "clean", String.Join(" • ", parts))
+            Return result
+        End Function
+
+        Private Shared Function ParseGitStatusChangeEntry(statusLine As String) As GitChangedFileListEntry
+            Dim line = If(statusLine, String.Empty)
+            If line.StartsWith("## ", StringComparison.Ordinal) OrElse line.Length < 3 Then
+                Return Nothing
+            End If
+
+            Dim rawCode = line.Substring(0, Math.Min(2, line.Length))
+            Dim pathText = If(line.Length > 3, line.Substring(3).Trim(), String.Empty)
+            If String.IsNullOrWhiteSpace(pathText) Then
+                Return Nothing
+            End If
+
+            Dim displayPath = pathText
+            Dim canonicalPath = pathText
+            Dim renameArrowIndex = pathText.IndexOf(" -> ", StringComparison.Ordinal)
+            If renameArrowIndex >= 0 Then
+                canonicalPath = pathText.Substring(renameArrowIndex + 4).Trim()
+            End If
+
+            Dim code = rawCode.Trim()
+            If String.IsNullOrWhiteSpace(code) Then
+                code = rawCode
+            End If
+
+            Return New GitChangedFileListEntry() With {
+                .StatusCode = If(code, String.Empty),
+                .FilePath = canonicalPath,
+                .DisplayPath = displayPath,
+                .IsUntracked = StringComparer.Ordinal.Equals(rawCode, "??")
+            }
+        End Function
+
+        Private Shared Sub RemoveGitDirectoryEntries(changedFiles As IList(Of GitChangedFileListEntry), repoRoot As String)
+            If changedFiles Is Nothing OrElse changedFiles.Count = 0 Then
+                Return
+            End If
+
+            For i = changedFiles.Count - 1 To 0 Step -1
+                Dim item = changedFiles(i)
+                If item Is Nothing OrElse String.IsNullOrWhiteSpace(item.FilePath) Then
+                    Continue For
+                End If
+
+                Dim normalizedRelativePath = item.FilePath.Trim().Replace("/"c, Path.DirectorySeparatorChar)
+                Dim isDirectoryHint = item.FilePath.EndsWith("/", StringComparison.Ordinal) OrElse
+                                      item.FilePath.EndsWith("\", StringComparison.Ordinal)
+
+                Dim isDirectoryOnDisk = False
+                If Not String.IsNullOrWhiteSpace(repoRoot) Then
+                    Dim fullPath = Path.Combine(repoRoot, normalizedRelativePath.TrimEnd(Path.DirectorySeparatorChar))
+                    If Not String.IsNullOrWhiteSpace(fullPath) Then
+                        isDirectoryOnDisk = Directory.Exists(fullPath)
+                    End If
+                End If
+
+                If isDirectoryHint OrElse isDirectoryOnDisk Then
+                    changedFiles.RemoveAt(i)
+                End If
+            Next
+        End Sub
+
+        Private Shared Sub AssignGitFileIcons(changedFiles As IList(Of GitChangedFileListEntry), repoRoot As String)
+            If changedFiles Is Nothing OrElse changedFiles.Count = 0 Then
+                Return
+            End If
+
+            For Each item In changedFiles
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                item.FileIconSource = GetGitFileIconSource(item, repoRoot)
+            Next
+        End Sub
+
+        Private Shared Function GetGitFileIconSource(item As GitChangedFileListEntry, repoRoot As String) As ImageSource
+            If item Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim relativePath = If(item.FilePath, String.Empty).Trim()
+            Dim isDirectory = relativePath.EndsWith("/", StringComparison.Ordinal) OrElse
+                              relativePath.EndsWith("\", StringComparison.Ordinal)
+
+            Dim extension = String.Empty
+            If Not isDirectory Then
+                extension = Path.GetExtension(relativePath)
+            End If
+
+            Dim cacheKey As String
+            If isDirectory Then
+                cacheKey = "dir"
+            ElseIf Not String.IsNullOrWhiteSpace(extension) Then
+                cacheKey = "ext:" & extension.Trim().ToLowerInvariant()
+            Else
+                cacheKey = "file"
+            End If
+
+            SyncLock _gitFileIconCacheLock
+                Dim cached As ImageSource = Nothing
+                If _gitFileIconCache.TryGetValue(cacheKey, cached) Then
+                    Return cached
+                End If
+            End SyncLock
+
+            Dim iconSource = CreateShellAssociatedIconSource(relativePath, repoRoot, isDirectory)
+
+            SyncLock _gitFileIconCacheLock
+                If Not _gitFileIconCache.ContainsKey(cacheKey) Then
+                    _gitFileIconCache(cacheKey) = iconSource
+                End If
+                Return _gitFileIconCache(cacheKey)
+            End SyncLock
+        End Function
+
+        Private Shared Function CreateShellAssociatedIconSource(relativePath As String, repoRoot As String, isDirectory As Boolean) As ImageSource
+            Try
+                Dim pathHint As String
+                If isDirectory Then
+                    pathHint = "folder"
+                Else
+                    Dim ext = Path.GetExtension(If(relativePath, String.Empty))
+                    If String.IsNullOrWhiteSpace(ext) Then
+                        pathHint = "file.bin"
+                    Else
+                        pathHint = "file" & ext.Trim()
+                    End If
+                End If
+
+                Dim fullPath = String.Empty
+                If Not String.IsNullOrWhiteSpace(repoRoot) AndAlso Not String.IsNullOrWhiteSpace(relativePath) Then
+                    fullPath = Path.Combine(repoRoot, relativePath.Replace("/"c, Path.DirectorySeparatorChar).TrimEnd(Path.DirectorySeparatorChar))
+                End If
+
+                Dim queryPath = If(Not String.IsNullOrWhiteSpace(fullPath), fullPath, pathHint)
+                Dim fileAttrs = If(isDirectory, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL)
+                Dim flags = SHGFI_ICON Or SHGFI_SMALLICON Or SHGFI_USEFILEATTRIBUTES
+
+                Dim info As New SHFILEINFO()
+                Dim result = SHGetFileInfo(queryPath, fileAttrs, info, CUInt(Marshal.SizeOf(GetType(SHFILEINFO))), flags)
+                If result = IntPtr.Zero OrElse info.hIcon = IntPtr.Zero Then
+                    Return Nothing
+                End If
+
+                Try
+                    Dim iconImage = Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(16, 16))
+                    If iconImage IsNot Nothing AndAlso iconImage.CanFreeze Then
+                        iconImage.Freeze()
+                    End If
+                    Return iconImage
+                Finally
+                    DestroyIcon(info.hIcon)
+                End Try
+            Catch
+                Return Nothing
+            End Try
+        End Function
+
+        Private Shared Function ParseBranchNameFromStatusHeader(headerLine As String) As String
+            Dim header = If(headerLine, String.Empty).Trim()
+            If header.StartsWith("## ", StringComparison.Ordinal) Then
+                header = header.Substring(3)
+            End If
+
+            Dim ellipsisIndex = header.IndexOf("...", StringComparison.Ordinal)
+            If ellipsisIndex >= 0 Then
+                header = header.Substring(0, ellipsisIndex)
+            End If
+
+            Dim spaceIndex = header.IndexOf(" "c)
+            If spaceIndex >= 0 Then
+                header = header.Substring(0, spaceIndex)
+            End If
+
+            Return header.Trim()
+        End Function
+
+        Private Shared Sub ApplyGitNumstatToChangedFiles(changedFiles As IList(Of GitChangedFileListEntry), numstatOutput As String)
+            If changedFiles Is Nothing OrElse changedFiles.Count = 0 Then
+                Return
+            End If
+
+            Dim perPath = ParseGitNumstatPerPath(numstatOutput)
+            If perPath.Count = 0 Then
+                Return
+            End If
+
+            For Each item In changedFiles
+                If item Is Nothing OrElse String.IsNullOrWhiteSpace(item.FilePath) Then
+                    Continue For
+                End If
+
+                Dim stats As GitNumstatTotals = Nothing
+                If perPath.TryGetValue(item.FilePath, stats) Then
+                    item.AddedLineCount = stats.AddedLineCount
+                    item.RemovedLineCount = stats.RemovedLineCount
+                End If
+            Next
+        End Sub
+
+        Private Shared Function ApplyUntrackedFileLineCounts(changedFiles As IList(Of GitChangedFileListEntry), repoRoot As String) As GitNumstatTotals
+            If changedFiles Is Nothing OrElse changedFiles.Count = 0 OrElse String.IsNullOrWhiteSpace(repoRoot) Then
+                Return New GitNumstatTotals()
+            End If
+
+            Dim addedTotal = 0
+            Dim removedTotal = 0
+
+            For Each item In changedFiles
+                If item Is Nothing OrElse Not item.IsUntracked Then
+                    Continue For
+                End If
+
+                If item.AddedLineCount.HasValue OrElse item.RemovedLineCount.HasValue Then
+                    If item.AddedLineCount.HasValue Then
+                        addedTotal += Math.Max(0, item.AddedLineCount.Value)
+                    End If
+                    If item.RemovedLineCount.HasValue Then
+                        removedTotal += Math.Max(0, item.RemovedLineCount.Value)
+                    End If
+                    Continue For
+                End If
+
+                If String.IsNullOrWhiteSpace(item.FilePath) Then
+                    Continue For
+                End If
+
+                Dim fullPath = Path.Combine(repoRoot, item.FilePath.Replace("/"c, Path.DirectorySeparatorChar))
+                Dim lineCount = CountFileLinesOrNothing(fullPath)
+                If lineCount.HasValue AndAlso lineCount.Value > 0 Then
+                    item.AddedLineCount = lineCount
+                    addedTotal += lineCount.Value
+                End If
+            Next
+
+            Return New GitNumstatTotals() With {
+                .AddedLineCount = If(addedTotal > 0, CType(addedTotal, Integer?), Nothing),
+                .RemovedLineCount = If(removedTotal > 0, CType(removedTotal, Integer?), Nothing)
+            }
+        End Function
+
+        Private Shared Function CountFileLinesOrNothing(filePath As String) As Integer?
+            Try
+                If String.IsNullOrWhiteSpace(filePath) OrElse Not File.Exists(filePath) Then
+                    Return Nothing
+                End If
+
+                Dim lineCount = 0
+                For Each lineText In File.ReadLines(filePath)
+                    lineCount += 1
+                Next
+
+                If lineCount <= 0 Then
+                    Return Nothing
+                End If
+
+                Return lineCount
+            Catch
+                Return Nothing
+            End Try
+        End Function
+
+        Private Shared Function ParseGitNumstatPerPath(outputText As String) As Dictionary(Of String, GitNumstatTotals)
+            Dim result As New Dictionary(Of String, GitNumstatTotals)(StringComparer.OrdinalIgnoreCase)
+            Dim normalized = If(outputText, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+
+            For Each rawLine In lines
+                Dim line = If(rawLine, String.Empty).TrimEnd()
+                If String.IsNullOrWhiteSpace(line) Then
+                    Continue For
+                End If
+
+                Dim parts = line.Split(ControlChars.Tab)
+                If parts.Length < 3 Then
+                    Continue For
+                End If
+
+                Dim filePath = parts(2).Trim()
+                If String.IsNullOrWhiteSpace(filePath) Then
+                    Continue For
+                End If
+
+                Dim addCount As Integer
+                Dim removeCount As Integer
+                Dim added As Integer? = Nothing
+                Dim removed As Integer? = Nothing
+                If Integer.TryParse(parts(0).Trim(), addCount) Then
+                    added = Math.Max(0, addCount)
+                End If
+                If Integer.TryParse(parts(1).Trim(), removeCount) Then
+                    removed = Math.Max(0, removeCount)
+                End If
+
+                result(filePath) = New GitNumstatTotals() With {
+                    .AddedLineCount = If(added.HasValue AndAlso added.Value > 0, added, Nothing),
+                    .RemovedLineCount = If(removed.HasValue AndAlso removed.Value > 0, removed, Nothing)
+                }
+            Next
+
+            Return result
+        End Function
+
+        Private Shared Function CountGitNumstatTotals(outputText As String) As GitNumstatTotals
+            Dim normalized = If(outputText, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+            Dim added = 0
+            Dim removed = 0
+
+            For Each rawLine In lines
+                Dim line = If(rawLine, String.Empty).TrimEnd()
+                If String.IsNullOrWhiteSpace(line) Then
+                    Continue For
+                End If
+
+                Dim parts = line.Split(ControlChars.Tab)
+                If parts.Length < 3 Then
+                    Continue For
+                End If
+
+                Dim addCount As Integer
+                If Integer.TryParse(parts(0).Trim(), addCount) Then
+                    added += Math.Max(0, addCount)
+                End If
+
+                Dim removeCount As Integer
+                If Integer.TryParse(parts(1).Trim(), removeCount) Then
+                    removed += Math.Max(0, removeCount)
+                End If
+            Next
+
+            Return New GitNumstatTotals() With {
+                .AddedLineCount = If(added > 0, CType(added, Integer?), Nothing),
+                .RemovedLineCount = If(removed > 0, CType(removed, Integer?), Nothing)
+            }
+        End Function
+
+        Private Shared Function ParseGitCommits(outputText As String) As List(Of GitCommitListEntry)
+            Dim commits As New List(Of GitCommitListEntry)()
+            Dim normalized = If(outputText, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+            Dim separator = ChrW(&H1F)
+
+            For Each rawLine In lines
+                Dim line = If(rawLine, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(line) Then
+                    Continue For
+                End If
+
+                Dim parts = line.Split({separator}, StringSplitOptions.None)
+                Dim entry As New GitCommitListEntry() With {
+                    .Sha = If(parts.Length > 0, parts(0).Trim(), String.Empty),
+                    .ShortSha = If(parts.Length > 1, parts(1).Trim(), String.Empty),
+                    .RelativeTime = If(parts.Length > 2, parts(2).Trim(), String.Empty),
+                    .Subject = If(parts.Length > 3, parts(3).Trim(), String.Empty),
+                    .Decorations = If(parts.Length > 4, parts(4).Trim(), String.Empty)
+                }
+
+                If String.IsNullOrWhiteSpace(entry.Sha) Then
+                    Continue For
+                End If
+
+                commits.Add(entry)
+            Next
+
+            Return commits
+        End Function
+
+        Private Shared Function ParseGitBranches(outputText As String) As List(Of GitBranchListEntry)
+            Dim branches As New List(Of GitBranchListEntry)()
+            Dim normalized = If(outputText, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+            Dim separator = ChrW(&H1F)
+
+            For Each rawLine In lines
+                Dim line = If(rawLine, String.Empty)
+                If String.IsNullOrWhiteSpace(line) Then
+                    Continue For
+                End If
+
+                Dim parts = line.Split({separator}, StringSplitOptions.None)
+                If parts.Length < 2 Then
+                    Continue For
+                End If
+
+                Dim headMarker = parts(0).Trim()
+                Dim branchName = parts(1).Trim()
+                If String.IsNullOrWhiteSpace(branchName) Then
+                    Continue For
+                End If
+
+                branches.Add(New GitBranchListEntry() With {
+                    .IsCurrent = StringComparer.Ordinal.Equals(headMarker, "*"),
+                    .Name = branchName,
+                    .IsRemote = branchName.StartsWith("origin/", StringComparison.OrdinalIgnoreCase) OrElse branchName.StartsWith("remotes/", StringComparison.OrdinalIgnoreCase),
+                    .CommitShortSha = If(parts.Length > 2, parts(2).Trim(), String.Empty),
+                    .RelativeTime = If(parts.Length > 3, parts(3).Trim(), String.Empty),
+                    .Subject = If(parts.Length > 4, parts(4).Trim(), String.Empty)
+                })
+            Next
+
+            branches.Sort(
+                Function(a, b)
+                    If a Is Nothing AndAlso b Is Nothing Then Return 0
+                    If a Is Nothing Then Return 1
+                    If b Is Nothing Then Return -1
+                    If a.IsCurrent <> b.IsCurrent Then
+                        Return If(a.IsCurrent, -1, 1)
+                    End If
+
+                    Return StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name)
+                End Function)
+
+            Return branches
+        End Function
+
+        Private Shared Function BuildGitFileDiffPreview(repoRoot As String, entry As GitChangedFileListEntry) As String
+            If String.IsNullOrWhiteSpace(repoRoot) OrElse entry Is Nothing OrElse String.IsNullOrWhiteSpace(entry.FilePath) Then
+                Return "No file selected."
+            End If
+
+            If entry.IsUntracked Then
+                Return BuildUntrackedFilePreview(repoRoot, entry.FilePath)
+            End If
+
+            Dim quotedPath = QuoteProcessArgument(entry.FilePath)
+            Dim diffResult = RunProcessCapture("git", $"--no-pager diff --no-color HEAD -- {quotedPath}", repoRoot)
+            If diffResult.ExitCode = 0 Then
+                Dim output = NormalizePanelMultiline(diffResult.OutputText, String.Empty)
+                If Not String.IsNullOrWhiteSpace(output) Then
+                    Return output
+                End If
+            End If
+
+            Dim fallbackResult = RunProcessCapture("git", $"--no-pager diff --no-color -- {quotedPath}", repoRoot)
+            If fallbackResult.ExitCode = 0 Then
+                Dim output = NormalizePanelMultiline(fallbackResult.OutputText, String.Empty)
+                If Not String.IsNullOrWhiteSpace(output) Then
+                    Return output
+                End If
+            End If
+
+            Return "No diff output available for this file."
+        End Function
+
+        Private Shared Function BuildGitCommitPreview(repoRoot As String, commitSha As String) As String
+            If String.IsNullOrWhiteSpace(repoRoot) OrElse String.IsNullOrWhiteSpace(commitSha) Then
+                Return "No commit selected."
+            End If
+
+            Dim result = RunProcessCapture("git", $"--no-pager show --no-color --stat --patch --format=medium {QuoteProcessArgument(commitSha)}", repoRoot)
+            If result.ExitCode <> 0 Then
+                Return NormalizeProcessError(result)
+            End If
+
+            Return NormalizePanelMultiline(result.OutputText, "No commit preview available.")
+        End Function
+
+        Private Shared Function BuildGitBranchPreview(repoRoot As String, branchName As String) As String
+            If String.IsNullOrWhiteSpace(repoRoot) OrElse String.IsNullOrWhiteSpace(branchName) Then
+                Return "No branch selected."
+            End If
+
+            Dim historyResult = RunProcessCapture("git", $"--no-pager log --oneline --decorate -n 15 {QuoteProcessArgument(branchName)}", repoRoot)
+            If historyResult.ExitCode <> 0 Then
+                Return NormalizeProcessError(historyResult)
+            End If
+
+            Dim header = $"Recent history for {branchName}"
+            Dim body = NormalizePanelMultiline(historyResult.OutputText, "No history available.")
+            Return $"{header}{Environment.NewLine}{Environment.NewLine}{body}"
+        End Function
+
+        Private Shared Function BuildUntrackedFilePreview(repoRoot As String, relativePath As String) As String
+            Try
+                Dim fullPath = Path.Combine(repoRoot, relativePath)
+                If Not File.Exists(fullPath) Then
+                    Return "Untracked file preview unavailable (file not found)."
+                End If
+
+                Dim fileInfo As New FileInfo(fullPath)
+                If fileInfo.Length > 512 * 1024 Then
+                    Return $"Untracked file: {relativePath}{Environment.NewLine}{Environment.NewLine}(Preview skipped: file is larger than 512 KB)"
+                End If
+
+                Dim text = File.ReadAllText(fullPath)
+                Dim normalized = NormalizePanelMultiline(text, String.Empty)
+                If normalized.Length > 12000 Then
+                    normalized = normalized.Substring(0, 12000) & Environment.NewLine & "... (truncated)"
+                End If
+
+                Return $"Untracked file: {relativePath}{Environment.NewLine}{Environment.NewLine}{normalized}"
+            Catch ex As Exception
+                Return $"Untracked file preview unavailable: {ex.Message}"
+            End Try
+        End Function
+
+        Private Shared Function QuoteProcessArgument(value As String) As String
+            Dim text = If(value, String.Empty)
+            Return """" & text & """"
+        End Function
+
+        Private Shared Function FirstNonEmptyLine(value As String) As String
+            Dim normalized = If(value, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+            For Each line In lines
+                Dim trimmed = If(line, String.Empty).Trim()
+                If Not String.IsNullOrWhiteSpace(trimmed) Then
+                    Return trimmed
+                End If
+            Next
+
+            Return String.Empty
+        End Function
+
+        Private Shared Function NormalizePanelMultiline(value As String, fallback As String) As String
+            Dim normalized = If(value, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf).Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return If(fallback, String.Empty)
+            End If
+
+            Return normalized
+        End Function
+
+        Private Shared Function NormalizeProcessError(result As ProcessCaptureResult) As String
+            Dim [error] = NormalizePanelMultiline(result.ErrorText, String.Empty)
+            If Not String.IsNullOrWhiteSpace([error]) Then
+                Return [error]
+            End If
+
+            Return NormalizePanelMultiline(result.OutputText, "No data available.")
+        End Function
+
+        Private Function ResolveQuickOpenWorkspaceCwd(destinationLabel As String) As String
+            Dim source As String = String.Empty
+            Dim targetCwd = NormalizeProjectPath(ResolveNewThreadTargetCwd(source))
+            If String.IsNullOrWhiteSpace(targetCwd) Then
+                ShowStatus($"No folder available to open in {destinationLabel}.", isError:=True, displayToast:=True)
+                Return String.Empty
+            End If
+
+            If Not Directory.Exists(targetCwd) Then
+                ShowStatus($"Folder not found: {targetCwd}", isError:=True, displayToast:=True)
+                Return String.Empty
+            End If
+
+            Return targetCwd
+        End Function
+
+        Private Shared Function StartProcessInDirectory(fileName As String,
+                                                        arguments As String,
+                                                        workingDirectory As String,
+                                                        Optional createNoWindow As Boolean = False) As Boolean
+            Try
+                Dim startInfo As New ProcessStartInfo(fileName) With {
+                    .Arguments = If(arguments, String.Empty),
+                    .WorkingDirectory = workingDirectory,
+                    .UseShellExecute = False,
+                    .CreateNoWindow = createNoWindow
+                }
+                Process.Start(startInfo)
+                Return True
+            Catch
+                Return False
+            End Try
+        End Function
 
         Private Function ResolveNewThreadTargetCwd(Optional ByRef sourceLabel As String = Nothing) As String
             Dim explicitTarget = NormalizeProjectPath(_newThreadTargetOverrideCwd)
@@ -661,21 +2527,17 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub SyncNewThreadTargetChip()
-            If BtnSidebarNewThread Is Nothing OrElse LblSidebarNewThreadText Is Nothing Then
-                Return
-            End If
-
             Dim source As String = String.Empty
             Dim targetCwd = ResolveNewThreadTargetCwd(source)
             If String.IsNullOrWhiteSpace(targetCwd) Then
-                LblSidebarNewThreadText.Text = "New thread"
-                BtnSidebarNewThread.ToolTip = Nothing
+                _viewModel.SidebarNewThreadButtonText = "New thread"
+                _viewModel.SidebarNewThreadToolTip = Nothing
                 Return
             End If
 
             Dim folderLabel = BuildProjectGroupLabel(targetCwd)
-            LblSidebarNewThreadText.Text = $"New thread for {folderLabel}"
-            BtnSidebarNewThread.ToolTip = $"{source}: {targetCwd}"
+            _viewModel.SidebarNewThreadButtonText = $"New thread for {folderLabel}"
+            _viewModel.SidebarNewThreadToolTip = $"{source}: {targetCwd}"
         End Sub
 
         Private Function ShowNewThreadFolderPicker() As String
@@ -697,7 +2559,7 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Async Function ChooseFolderAndStartNewThreadAsync() As Task
-            If Not (BtnSidebarNewThread IsNot Nothing AndAlso BtnSidebarNewThread.IsEnabled) Then
+            If Not _viewModel.IsSidebarNewThreadEnabled Then
                 Return
             End If
 
@@ -729,55 +2591,72 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub MainWindow_PreviewKeyDown(sender As Object, e As KeyEventArgs) Handles Me.PreviewKeyDown
             If Keyboard.Modifiers = ModifierKeys.Control AndAlso e.Key = Key.Enter Then
-                If BtnTurnStart.IsEnabled Then
-                    FireAndForget(RunUiActionAsync(AddressOf StartTurnAsync))
+                If TryExecuteShellCommand(_viewModel.ShellSendCommand) Then
                     e.Handled = True
                 End If
                 Return
             End If
 
             If e.Key = Key.F5 Then
-                If CanRunFullThreadRefresh() Then
-                    FireAndForget(RunUiActionAsync(AddressOf RefreshThreadsAsync))
+                If TryExecuteShellCommand(_viewModel.ShellRefreshThreadsCommand) Then
                     e.Handled = True
                 End If
                 Return
             End If
 
             If e.Key = Key.F6 Then
-                If _isAuthenticated Then
-                    FireAndForget(RunUiActionAsync(AddressOf RefreshModelsAsync))
+                If TryExecuteShellCommand(_viewModel.ShellRefreshModelsCommand) Then
                     e.Handled = True
                 End If
                 Return
             End If
 
             If Keyboard.Modifiers = (ModifierKeys.Control Or ModifierKeys.Shift) AndAlso e.Key = Key.N Then
-                If BtnSidebarNewThread.IsEnabled Then
-                    FireAndForget(RunUiActionAsync(AddressOf StartThreadAsync))
+                If TryExecuteShellCommand(_viewModel.ShellNewThreadCommand) Then
                     e.Handled = True
                 End If
                 Return
             End If
 
             If Keyboard.Modifiers = ModifierKeys.Control AndAlso e.Key = Key.F Then
-                ShowThreadsSidebarTab()
-                TxtThreadSearch.Focus()
-                TxtThreadSearch.SelectAll()
-                e.Handled = True
+                e.Handled = TryExecuteShellCommand(_viewModel.ShellFocusThreadSearchCommand)
                 Return
             End If
 
             If Keyboard.Modifiers = ModifierKeys.Control AndAlso e.Key = Key.OemComma Then
-                ShowControlCenterTab()
-                e.Handled = True
+                e.Handled = TryExecuteShellCommand(_viewModel.ShellOpenSettingsCommand)
             End If
         End Sub
 
-        Private Function CanRunFullThreadRefresh() As Boolean
-            Dim connected = _client IsNot Nothing AndAlso _client.IsRunning
-            Return connected AndAlso _isAuthenticated AndAlso Not _threadsLoading AndAlso Not _threadContentLoading
+        Private Shared Function TryExecuteShellCommand(command As ICommand) As Boolean
+            If command Is Nothing Then
+                Return False
+            End If
+
+            If Not command.CanExecute(Nothing) Then
+                Return False
+            End If
+
+            command.Execute(Nothing)
+            Return True
         End Function
+
+        Private Sub RefreshCommandCanExecuteStates()
+            CommandManager.InvalidateRequerySuggested()
+
+            If _sessionCoordinator IsNot Nothing Then
+                _sessionCoordinator.RefreshCommandCanExecuteStates()
+            End If
+        End Sub
+
+        Private Shared Sub RaiseAsyncCommandCanExecuteChanged(command As ICommand)
+            Dim asyncCommand = TryCast(command, AsyncRelayCommand)
+            If asyncCommand Is Nothing Then
+                Return
+            End If
+
+            asyncCommand.RaiseCanExecuteChanged()
+        End Sub
 
         Private Async Function RunUiActionAsync(operation As Func(Of Task)) As Task
             Try
@@ -835,19 +2714,27 @@ Namespace CodexNativeAgent.Ui
         Private Sub InitializeStatusUi()
             _toastTimer.Interval = TimeSpan.FromMilliseconds(3500)
             AddHandler _toastTimer.Tick, AddressOf OnToastTimerTick
-            LblStatus.Text = "Ready."
-            LblStatus.Foreground = ResolveBrush("TextPrimaryBrush", Brushes.Black)
+            _workspaceHintOverlayTimer.Interval = TimeSpan.FromMilliseconds(8000)
+            AddHandler _workspaceHintOverlayTimer.Tick, AddressOf OnWorkspaceHintOverlayTimerTick
+            _viewModel.StatusText = "Ready."
+            StatusBarPaneHost.LblStatus.Foreground = ResolveBrush("TextPrimaryBrush", Brushes.Black)
         End Sub
 
         Private Sub ShowStatus(message As String,
                                Optional isError As Boolean = False,
                                Optional displayToast As Boolean = False)
-            LblStatus.Text = message
-            LblStatus.Foreground = If(isError,
+            _viewModel.StatusText = message
+            StatusBarPaneHost.LblStatus.Foreground = If(isError,
                                       ResolveBrush("DangerBrush", Brushes.DarkRed),
                                       ResolveBrush("TextPrimaryBrush", Brushes.Black))
 
-            If displayToast Then
+            Dim suppressHintToast = displayToast AndAlso
+                                    Not isError AndAlso
+                                    _viewModel IsNot Nothing AndAlso
+                                    _viewModel.SettingsPanel IsNot Nothing AndAlso
+                                    _viewModel.SettingsPanel.DisableConnectionInitializedToast
+
+            If displayToast AndAlso Not suppressHintToast Then
                 ShowToast(message, isError)
             End If
         End Sub
@@ -873,6 +2760,13 @@ Namespace CodexNativeAgent.Ui
             _toastTimer.Start()
         End Sub
 
+        Private Sub HideToast()
+            _toastTimer.Stop()
+            If ToastOverlay IsNot Nothing Then
+                ToastOverlay.Visibility = Visibility.Collapsed
+            End If
+        End Sub
+
         Private Function ResolveBrush(resourceKey As String, fallback As Brush) As Brush
             If String.IsNullOrWhiteSpace(resourceKey) Then
                 Return fallback
@@ -883,77 +2777,80 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub OnToastTimerTick(sender As Object, e As EventArgs)
-            _toastTimer.Stop()
-            ToastOverlay.Visibility = Visibility.Collapsed
+            HideToast()
         End Sub
 
-        Private Sub UpdateRuntimeFieldState()
-            Dim connected = _client IsNot Nothing AndAlso _client.IsRunning
-            Dim editable = Not connected
-
-            TxtCodexPath.IsEnabled = editable
-            TxtServerArgs.IsEnabled = editable
-            TxtWorkingDir.IsEnabled = editable
-            TxtWindowsCodexHome.IsEnabled = editable
+        Private Sub OnWorkspaceHintOverlayTimerTick(sender As Object, e As EventArgs)
+            _workspaceHintOverlayTimer.Stop()
+            DismissWorkspaceHintOverlay()
         End Sub
 
         Private Sub RefreshControlStates()
-            Dim connected = _client IsNot Nothing AndAlso _client.IsRunning
-            Dim authenticated = connected AndAlso _isAuthenticated
+            SyncSessionStateViewModel()
+            Dim session = _viewModel.SessionState
+            Dim connected = session.IsConnected
+            Dim authenticated = session.IsConnectedAndAuthenticated
 
-            BtnConnect.IsEnabled = Not connected
-            BtnDisconnect.IsEnabled = connected
-            BtnExportDiagnostics.IsEnabled = True
-            BtnReconnectNow.IsEnabled = Not connected
+            _viewModel.SettingsPanel.CanExportDiagnostics = True
+            RefreshTurnComposerAndShellControls(session, authenticated)
+            RefreshApprovalControlState(authenticated)
+            RefreshThreadPanelControlState(session)
+            RefreshWorkspaceHintState(connected, authenticated)
+            RefreshPostStateSyncUi()
+            UpdateWorkspaceEmptyStateVisibility()
+        End Sub
 
-            BtnAccountRead.IsEnabled = connected
-            BtnLoginApiKey.IsEnabled = connected
-            BtnLoginChatGpt.IsEnabled = connected
-            BtnCancelLogin.IsEnabled = connected AndAlso Not String.IsNullOrWhiteSpace(_currentLoginId)
-            BtnLogout.IsEnabled = authenticated
-            BtnReadRateLimits.IsEnabled = authenticated
-            BtnLoginExternalTokens.IsEnabled = connected
+        Private Sub RefreshTurnComposerAndShellControls(session As SessionStateViewModel,
+                                                        authenticated As Boolean)
+            If session Is Nothing Then
+                Return
+            End If
 
-            Dim hasActiveTurn = Not String.IsNullOrWhiteSpace(_currentTurnId)
-            Dim canUseTurnControls = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId)
+            Dim hasActiveTurn = session.HasCurrentTurn
+            Dim canStartDraftTurn = _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(_currentThreadId)
+            Dim canUseExistingThreadTurnControls = authenticated AndAlso Not _threadContentLoading AndAlso session.HasCurrentThread
+            Dim canStartTurn = authenticated AndAlso Not _threadContentLoading AndAlso (session.HasCurrentThread OrElse canStartDraftTurn)
 
-            BtnTurnStart.IsEnabled = canUseTurnControls AndAlso Not hasActiveTurn
-            BtnTurnSteer.IsEnabled = canUseTurnControls AndAlso hasActiveTurn
-            BtnTurnInterrupt.IsEnabled = canUseTurnControls AndAlso hasActiveTurn
-            BtnTurnStart.Visibility = If(BtnTurnInterrupt.IsEnabled, Visibility.Collapsed, Visibility.Visible)
-            BtnTurnInterrupt.Visibility = If(BtnTurnInterrupt.IsEnabled, Visibility.Visible, Visibility.Collapsed)
-            TxtTurnInput.IsEnabled = authenticated
-            BtnSidebarNewThread.IsEnabled = authenticated AndAlso Not _threadContentLoading
-            BtnSidebarAutomations.IsEnabled = True
-            BtnSidebarSkills.IsEnabled = True
-            BtnSidebarSettings.IsEnabled = True
-            BtnSettingsBack.IsEnabled = True
-            BtnQuickOpenVsc.IsEnabled = True
-            BtnQuickOpenTerminal.IsEnabled = True
+            _viewModel.TurnComposer.CanStartTurn = canStartTurn AndAlso Not hasActiveTurn
+            _viewModel.TurnComposer.CanSteerTurn = canUseExistingThreadTurnControls AndAlso hasActiveTurn
+            _viewModel.TurnComposer.CanInterruptTurn = canUseExistingThreadTurnControls AndAlso hasActiveTurn
+            _viewModel.TurnComposer.StartTurnVisibility = If(_viewModel.TurnComposer.CanInterruptTurn, Visibility.Collapsed, Visibility.Visible)
+            _viewModel.TurnComposer.InterruptTurnVisibility = If(_viewModel.TurnComposer.CanInterruptTurn, Visibility.Visible, Visibility.Collapsed)
+            _viewModel.TurnComposer.IsInputEnabled = authenticated
+            _viewModel.TurnComposer.IsModelEnabled = authenticated
+            _viewModel.TurnComposer.IsReasoningEnabled = authenticated
+            _viewModel.TurnComposer.IsApprovalPolicyEnabled = authenticated
+            _viewModel.TurnComposer.IsSandboxEnabled = authenticated
 
-            Dim hasActiveApproval = _activeApproval IsNot Nothing
-            BtnApprovalAccept.IsEnabled = authenticated AndAlso hasActiveApproval
-            BtnApprovalAcceptSession.IsEnabled = authenticated AndAlso hasActiveApproval
-            BtnApprovalDecline.IsEnabled = authenticated AndAlso hasActiveApproval
-            BtnApprovalCancel.IsEnabled = authenticated AndAlso hasActiveApproval
-            InlineApprovalCard.Visibility = If(hasActiveApproval, Visibility.Visible, Visibility.Collapsed)
+            _viewModel.IsSidebarNewThreadEnabled = authenticated AndAlso Not _threadContentLoading
+            _viewModel.IsSidebarAutomationsEnabled = True
+            _viewModel.IsSidebarSkillsEnabled = True
+            _viewModel.IsSidebarSettingsEnabled = True
+            _viewModel.IsSettingsBackEnabled = True
+            _viewModel.IsQuickOpenVscEnabled = True
+            _viewModel.IsQuickOpenTerminalEnabled = True
+        End Sub
 
-            CmbModel.IsEnabled = authenticated
-            CmbReasoningEffort.IsEnabled = authenticated
-            CmbApprovalPolicy.IsEnabled = authenticated
-            CmbSandbox.IsEnabled = authenticated
-            ChkShowArchivedThreads.IsEnabled = authenticated
-            ChkFilterThreadsByWorkingDir.IsEnabled = authenticated
-            TxtThreadSearch.IsEnabled = authenticated
-            CmbThreadSort.IsEnabled = authenticated
-            BtnThreadSortMenu.IsEnabled = authenticated
-            BtnThreadFilterMenu.IsEnabled = authenticated
-            LstThreads.IsEnabled = authenticated AndAlso Not _threadsLoading
-            ChkAutoReconnect.IsEnabled = True
+        Private Sub RefreshApprovalControlState(authenticated As Boolean)
+            Dim hasActiveApproval = _turnWorkflowCoordinator IsNot Nothing AndAlso _turnWorkflowCoordinator.HasActiveApproval
+            _viewModel.ApprovalPanel.UpdateAvailability(authenticated, hasActiveApproval)
+        End Sub
 
-            LblWorkspaceHint.Text = BuildWorkspaceHint(connected, authenticated)
+        Private Sub RefreshThreadPanelControlState(session As SessionStateViewModel)
+            _viewModel.ThreadsPanel.UpdateInteractionState(session, _threadsLoading, _threadContentLoading)
+            _viewModel.AreThreadLegacyFilterControlsEnabled = _viewModel.ThreadsPanel.IsSearchEnabled
+            UpdateThreadsPanelStateHintBubbleVisibility()
+        End Sub
 
+        Private Sub RefreshWorkspaceHintState(connected As Boolean,
+                                              authenticated As Boolean)
+            _viewModel.WorkspaceHintText = BuildWorkspaceHint(connected, authenticated)
+            UpdateWorkspaceHintOverlayVisibility()
+        End Sub
+
+        Private Sub RefreshPostStateSyncUi()
             UpdateRuntimeFieldState()
+            RefreshCommandCanExecuteStates()
             SyncThreadToolbarMenus()
             SyncSidebarNewThreadMenu()
             SyncNewThreadTargetChip()
@@ -966,6 +2863,10 @@ Namespace CodexNativeAgent.Ui
 
             If Not authenticated Then
                 Return "Authentication required: sign in from Settings to unlock threads and turns."
+            End If
+
+            If _pendingNewThreadFirstPromptSelection Then
+                Return "Ready. Send with Ctrl+Enter."
             End If
 
             If String.IsNullOrWhiteSpace(_currentThreadId) Then
@@ -992,2560 +2893,35 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub ShowSettingsView()
-            LeftMainView.Visibility = Visibility.Collapsed
-            LeftSettingsView.Visibility = Visibility.Visible
+            _viewModel.SidebarMainViewVisibility = Visibility.Collapsed
+            _viewModel.SidebarSettingsViewVisibility = Visibility.Visible
             UpdateSidebarSelectionState(showSettings:=True)
         End Sub
 
         Private Sub ShowWorkspaceView()
-            LeftSettingsView.Visibility = Visibility.Collapsed
-            LeftMainView.Visibility = Visibility.Visible
+            _viewModel.SidebarSettingsViewVisibility = Visibility.Collapsed
+            _viewModel.SidebarMainViewVisibility = Visibility.Visible
             UpdateSidebarSelectionState(showSettings:=False)
         End Sub
 
         Private Sub UpdateSidebarSelectionState(showSettings As Boolean)
-            BtnSidebarNewThread.Tag = If(showSettings, Nothing, "Active")
-            BtnSidebarSettings.Tag = If(showSettings, "Active", Nothing)
-            BtnSidebarAutomations.Tag = Nothing
-            BtnSidebarSkills.Tag = Nothing
-        End Sub
-
-        Private Sub ToggleTheme()
-            Dim nextTheme = AppAppearanceManager.ToggleTheme(_currentTheme)
-            ApplyAppearance(nextTheme, _currentDensity, persist:=True)
-            ShowStatus($"Theme switched to {AppAppearanceManager.DisplayTheme(_currentTheme)}.", displayToast:=True)
-        End Sub
-
-        Private Sub OnDensitySelectionChanged()
-            If _suppressAppearanceUiChange Then
-                Return
-            End If
-
-            Dim selectedDensity = AppAppearanceManager.NormalizeDensity(SelectedComboValue(CmbDensity))
-            If StringComparer.OrdinalIgnoreCase.Equals(selectedDensity, _currentDensity) Then
-                Return
-            End If
-
-            ApplyAppearance(_currentTheme, selectedDensity, persist:=True)
-
-            Dim densityLabel = If(StringComparer.OrdinalIgnoreCase.Equals(_currentDensity, AppAppearanceManager.CompactDensity),
-                                  "Compact",
-                                  "Comfortable")
-            ShowStatus($"Density set to {densityLabel}.", displayToast:=True)
-        End Sub
-
-        Private Sub ApplyAppearance(themeMode As String, densityMode As String, persist As Boolean)
-            _currentTheme = AppAppearanceManager.NormalizeTheme(themeMode)
-            _currentDensity = AppAppearanceManager.NormalizeDensity(densityMode)
-
-            AppAppearanceManager.ApplyDensity(_currentDensity)
-            AppAppearanceManager.ApplyTheme(_currentTheme)
-            SyncAppearanceControls()
-
-            If persist Then
-                SaveSettings()
-            End If
-        End Sub
-
-        Private Sub SyncAppearanceControls()
-            _suppressAppearanceUiChange = True
-            Try
-                Dim compact = StringComparer.OrdinalIgnoreCase.Equals(_currentDensity, AppAppearanceManager.CompactDensity)
-                CmbDensity.SelectedIndex = If(compact, 1, 0)
-                LblThemeState.Text = $"Current: {AppAppearanceManager.DisplayTheme(_currentTheme)}"
-                BtnToggleTheme.Content = AppAppearanceManager.ThemeButtonLabel(_currentTheme)
-            Finally
-                _suppressAppearanceUiChange = False
-            End Try
-        End Sub
-
-        Private Function LoadSettings() As AppSettings
-            Try
-                If Not File.Exists(_settingsFilePath) Then
-                    Return New AppSettings()
-                End If
-
-                Dim raw = File.ReadAllText(_settingsFilePath)
-                Dim loaded = JsonSerializer.Deserialize(Of AppSettings)(raw)
-                Return If(loaded, New AppSettings())
-            Catch
-                Return New AppSettings()
-            End Try
-        End Function
-
-        Private Sub SaveSettings()
-            Try
-                CaptureSettingsFromControls()
-
-                If Not _settings.RememberApiKey Then
-                    _settings.EncryptedApiKey = String.Empty
-                End If
-
-                Dim folder = Path.GetDirectoryName(_settingsFilePath)
-                If Not String.IsNullOrWhiteSpace(folder) Then
-                    Directory.CreateDirectory(folder)
-                End If
-
-                Dim raw = JsonSerializer.Serialize(_settings, _settingsJsonOptions)
-                File.WriteAllText(_settingsFilePath, raw)
-            Catch
-                ' Keep settings failures non-fatal.
-            End Try
-        End Sub
-
-        Private Sub CaptureSettingsFromControls()
-            _settings.CodexPath = TxtCodexPath.Text.Trim()
-            _settings.ServerArgs = TxtServerArgs.Text.Trim()
-            _settings.WorkingDir = TxtWorkingDir.Text.Trim()
-            _settings.WindowsCodexHome = TxtWindowsCodexHome.Text.Trim()
-            _settings.RememberApiKey = IsChecked(ChkRememberApiKey)
-            _settings.AutoLoginApiKey = IsChecked(ChkAutoLoginApiKey)
-            _settings.AutoReconnect = IsChecked(ChkAutoReconnect)
-            _settings.FilterThreadsByWorkingDir = IsChecked(ChkFilterThreadsByWorkingDir)
-            _settings.ThemeMode = _currentTheme
-            _settings.DensityMode = _currentDensity
-        End Sub
-
-        Private Sub InitializeDefaults()
-            _settings = LoadSettings()
-            _settings.ThemeMode = AppAppearanceManager.NormalizeTheme(_settings.ThemeMode)
-            _settings.DensityMode = AppAppearanceManager.NormalizeDensity(_settings.DensityMode)
-
-            Dim detectedCodexPath = _connectionService.DetectCodexExecutablePath()
-
-            If String.IsNullOrWhiteSpace(_settings.CodexPath) Then
-                _settings.CodexPath = If(String.IsNullOrWhiteSpace(detectedCodexPath), "codex", detectedCodexPath)
+            Dim newThreadTag As String
+            If showSettings Then
+                newThreadTag = String.Empty
+            ElseIf _pendingNewThreadFirstPromptSelection Then
+                newThreadTag = "ThreadSelectedLike"
             Else
-                Dim savedCodexPath = _settings.CodexPath.Trim()
-                Dim shouldResolveSavedPath = Not IsPathLike(savedCodexPath) OrElse Not File.Exists(savedCodexPath)
-
-                If shouldResolveSavedPath Then
-                    Dim resolvedSavedPath = _connectionService.ResolveWindowsCodexExecutable(savedCodexPath)
-                    If Not String.IsNullOrWhiteSpace(resolvedSavedPath) AndAlso
-                       ((IsPathLike(resolvedSavedPath) AndAlso File.Exists(resolvedSavedPath)) OrElse Not IsPathLike(resolvedSavedPath)) Then
-                        _settings.CodexPath = resolvedSavedPath
-                    ElseIf Not String.IsNullOrWhiteSpace(detectedCodexPath) Then
-                        _settings.CodexPath = detectedCodexPath
-                    End If
-                End If
+                newThreadTag = "Active"
             End If
 
-            If String.IsNullOrWhiteSpace(_settings.ServerArgs) Then
-                _settings.ServerArgs = "app-server"
-            End If
-
-            If String.IsNullOrWhiteSpace(_settings.WorkingDir) Then
-                _settings.WorkingDir = Environment.CurrentDirectory
-            End If
-
-            If String.IsNullOrWhiteSpace(_settings.WindowsCodexHome) Then
-                _settings.WindowsCodexHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
-            End If
-
-            TxtCodexPath.Text = _settings.CodexPath
-            TxtServerArgs.Text = _settings.ServerArgs
-            TxtWorkingDir.Text = _settings.WorkingDir
-            TxtWindowsCodexHome.Text = _settings.WindowsCodexHome
-            ChkRememberApiKey.IsChecked = _settings.RememberApiKey
-            ChkAutoLoginApiKey.IsChecked = _settings.AutoLoginApiKey
-            ChkAutoReconnect.IsChecked = _settings.AutoReconnect
-            ChkFilterThreadsByWorkingDir.IsChecked = _settings.FilterThreadsByWorkingDir
-            ApplyAppearance(_settings.ThemeMode, _settings.DensityMode, persist:=False)
-
-            If IsChecked(ChkRememberApiKey) Then
-                Dim decryptedApiKey = ReadPersistedApiKey()
-                If Not String.IsNullOrWhiteSpace(decryptedApiKey) Then
-                    TxtApiKey.Text = decryptedApiKey
-                End If
-            End If
-
-            UpdateRuntimeFieldState()
-            TxtApproval.Text = "No pending approvals."
-            TxtRateLimits.Text = "No rate-limit data loaded yet."
-            SyncThreadToolbarMenus()
-            SyncNewThreadTargetChip()
+            _viewModel.SidebarNewThreadNavTag = newThreadTag
+            _viewModel.SidebarSettingsNavTag = If(showSettings, "Active", String.Empty)
+            _viewModel.SidebarAutomationsNavTag = String.Empty
+            _viewModel.SidebarSkillsNavTag = String.Empty
         End Sub
-
-        Private Shared Function IsPathLike(value As String) As Boolean
-            If String.IsNullOrWhiteSpace(value) Then
-                Return False
-            End If
-
-            Return value.Contains(Path.DirectorySeparatorChar) OrElse
-                   value.Contains(Path.AltDirectorySeparatorChar) OrElse
-                   value.Contains(":"c)
-        End Function
-
-        Private Shared Function IsChecked(checkBox As CheckBox) As Boolean
-            If checkBox Is Nothing Then
-                Return False
-            End If
-
-            Return checkBox.IsChecked.HasValue AndAlso checkBox.IsChecked.Value
-        End Function
-
-        Private Function CurrentClient() As CodexAppServerClient
-            If _client Is Nothing OrElse Not _client.IsRunning Then
-                Throw New InvalidOperationException("Not connected to Codex App Server.")
-            End If
-
-            Return _client
-        End Function
-
-        Private Function EffectiveThreadWorkingDirectory() As String
-            Return TxtWorkingDir.Text.Trim()
-        End Function
-
-        Private Async Function ConnectAsync() As Task
-            Await ConnectCoreAsync(isReconnect:=False, cancellationToken:=CancellationToken.None)
-        End Function
-
-        Private Async Function AutoConnectOnStartupAsync() As Task
-            If _client IsNot Nothing AndAlso _client.IsRunning Then
-                Return
-            End If
-
-            ShowStatus("Auto-connecting to Codex App Server...")
-            Await ConnectCoreAsync(isReconnect:=False, cancellationToken:=CancellationToken.None)
-        End Function
-
-        Private Async Function ConnectCoreAsync(isReconnect As Boolean,
-                                                cancellationToken As CancellationToken) As Task
-            If _client IsNot Nothing AndAlso _client.IsRunning Then
-                Return
-            End If
-
-            SaveSettings()
-
-            Dim executable = TxtCodexPath.Text.Trim()
-            Dim arguments = TxtServerArgs.Text.Trim()
-            Dim workingDir = TxtWorkingDir.Text.Trim()
-
-            If String.IsNullOrWhiteSpace(executable) Then
-                executable = "codex"
-            End If
-
-            If String.IsNullOrWhiteSpace(arguments) Then
-                arguments = "app-server"
-            End If
-
-            If String.IsNullOrWhiteSpace(workingDir) Then
-                workingDir = Environment.CurrentDirectory
-            End If
-
-            Dim launchExecutable = _connectionService.ResolveWindowsCodexExecutable(executable)
-            Dim launchEnvironment = _connectionService.BuildLaunchEnvironment(TxtWindowsCodexHome.Text.Trim())
-
-            TxtCodexPath.Text = launchExecutable
-
-            Dim client = _connectionService.CreateClient()
-            AddHandler client.RawMessage, AddressOf ClientOnRawMessage
-            AddHandler client.NotificationReceived, AddressOf ClientOnNotification
-            AddHandler client.ServerRequestReceived, AddressOf ClientOnServerRequest
-            AddHandler client.Disconnected, AddressOf ClientOnDisconnected
-
-            Dim startupError As Exception = Nothing
-            Try
-                AppendSystemMessage($"Starting '{launchExecutable} {arguments}'...")
-                ShowStatus($"Starting '{launchExecutable} {arguments}'...")
-
-                Await _connectionService.StartAndInitializeAsync(client,
-                                                                 launchExecutable,
-                                                                 arguments,
-                                                                 workingDir,
-                                                                 launchEnvironment,
-                                                                 cancellationToken)
-
-                _client = client
-                _connectionExpected = True
-                _lastActivityUtc = DateTimeOffset.UtcNow
-                _lastWatchdogWarningUtc = DateTimeOffset.MinValue
-                _nextReconnectAttemptUtc = Nothing
-                LblConnectionState.Text = "Connected"
-                UpdateReconnectCountdownUi()
-
-                If isReconnect Then
-                    AppendSystemMessage("Reconnected and initialized.")
-                    ShowStatus("Reconnected and initialized.", displayToast:=True)
-                Else
-                    AppendSystemMessage("Connected and initialized.")
-                    ShowStatus("Connected and initialized.", displayToast:=True)
-                End If
-
-                RefreshControlStates()
-                Await EnsureAuthenticatedWithRetryAsync(allowAutoLogin:=True)
-                SaveSettings()
-            Catch ex As Exception
-                startupError = ex
-            End Try
-
-            If startupError Is Nothing Then
-                Return
-            End If
-
-            Try
-                RemoveHandler client.RawMessage, AddressOf ClientOnRawMessage
-                RemoveHandler client.NotificationReceived, AddressOf ClientOnNotification
-                RemoveHandler client.ServerRequestReceived, AddressOf ClientOnServerRequest
-                RemoveHandler client.Disconnected, AddressOf ClientOnDisconnected
-                Await _connectionService.StopAsync(client, "Connection setup failed.", cancellationToken)
-            Catch
-            End Try
-
-            Throw startupError
-        End Function
-
-        Private Async Function DisconnectAsync() As Task
-            _connectionExpected = False
-            CancelReconnect()
-
-            Dim client = _client
-            _client = Nothing
-            If client IsNot Nothing Then
-                Await DisconnectClientInternalAsync(client,
-                                                    "Disconnected by user.",
-                                                    CancellationToken.None)
-            End If
-
-            ResetDisconnectedUiState("Disconnected.", isError:=False, displayToast:=True)
-        End Function
-
-        Private Async Function DisconnectClientInternalAsync(client As CodexAppServerClient,
-                                                             reason As String,
-                                                             cancellationToken As CancellationToken) As Task
-            If client Is Nothing Then
-                Return
-            End If
-
-            _disconnecting = True
-            Try
-                Await _connectionService.StopAsync(client, reason, cancellationToken)
-            Finally
-                RemoveHandler client.RawMessage, AddressOf ClientOnRawMessage
-                RemoveHandler client.NotificationReceived, AddressOf ClientOnNotification
-                RemoveHandler client.ServerRequestReceived, AddressOf ClientOnServerRequest
-                RemoveHandler client.Disconnected, AddressOf ClientOnDisconnected
-                _disconnecting = False
-            End Try
-        End Function
-
-        Private Sub ResetDisconnectedUiState(message As String,
-                                             isError As Boolean,
-                                             displayToast As Boolean)
-            CancelActiveThreadSelectionLoad()
-            LblConnectionState.Text = "Disconnected"
-            _currentThreadId = String.Empty
-            _currentTurnId = String.Empty
-            _currentThreadCwd = String.Empty
-            _newThreadTargetOverrideCwd = String.Empty
-            _currentLoginId = String.Empty
-            _isAuthenticated = False
-            _authRequiredNoticeShown = False
-            _modelsLoadedAtLeastOnce = False
-            _threadsLoadedAtLeastOnce = False
-            _workspaceBootstrapInProgress = False
-            _threadsLoading = False
-            _threadLoadError = String.Empty
-            _threadContentLoading = False
-            _threadEntries.Clear()
-            _expandedThreadProjectGroups.Clear()
-            _approvalQueue.Clear()
-            _activeApproval = Nothing
-            _streamingAgentItemIds.Clear()
-            _pendingLocalUserEchoes.Clear()
-            TxtApproval.Text = "No pending approvals."
-            _nextReconnectAttemptUtc = Nothing
-            ApplyThreadFiltersAndSort()
-            UpdateReconnectCountdownUi()
-            UpdateThreadTurnLabels()
-            SetTranscriptLoadingState(False)
-            RefreshControlStates()
-            AppendSystemMessage(message)
-            ShowStatus(message, isError:=isError, displayToast:=displayToast)
-        End Sub
-
-        Private Sub ClientOnRawMessage(direction As String, payload As String)
-            RunOnUi(
-                Sub()
-                    MarkRpcActivity()
-                    AppendProtocol(direction, payload)
-                End Sub)
-        End Sub
-
-        Private Sub ClientOnNotification(methodName As String, paramsNode As JsonNode)
-            RunOnUi(
-                Sub()
-                    HandleNotification(methodName, paramsNode)
-                End Sub)
-        End Sub
-
-        Private Sub ClientOnServerRequest(request As RpcServerRequest)
-            RunOnUi(
-                Sub()
-                    FireAndForget(HandleServerRequestAsync(request))
-                End Sub)
-        End Sub
-
-        Private Sub ClientOnDisconnected(reason As String)
-            RunOnUi(
-                Sub()
-                    If _disconnecting Then
-                        Return
-                    End If
-
-                    Dim client = _client
-                    _client = Nothing
-                    If client IsNot Nothing Then
-                        RemoveHandler client.RawMessage, AddressOf ClientOnRawMessage
-                        RemoveHandler client.NotificationReceived, AddressOf ClientOnNotification
-                        RemoveHandler client.ServerRequestReceived, AddressOf ClientOnServerRequest
-                        RemoveHandler client.Disconnected, AddressOf ClientOnDisconnected
-                    End If
-
-                    ResetDisconnectedUiState($"Connection closed: {reason}",
-                                             isError:=True,
-                                             displayToast:=True)
-                    BeginReconnect(reason)
-                End Sub)
-        End Sub
-
-        Private Sub HandleNotification(methodName As String, paramsNode As JsonNode)
-            MarkRpcActivity()
-            Dim paramsObject = AsObject(paramsNode)
-
-            Select Case methodName
-                Case "thread/started"
-                    Dim threadObject = GetPropertyObject(paramsObject, "thread")
-                    If threadObject IsNot Nothing Then
-                        ApplyCurrentThreadFromThreadObject(threadObject)
-                        AppendSystemMessage($"Thread started: {_currentThreadId}")
-                    End If
-
-                Case "turn/started"
-                    Dim turnObject = GetPropertyObject(paramsObject, "turn")
-                    Dim threadId = GetPropertyString(paramsObject, "threadId")
-                    If Not String.IsNullOrWhiteSpace(threadId) Then
-                        _currentThreadId = threadId
-                        MarkThreadLastActive(threadId)
-                    End If
-
-                    If turnObject IsNot Nothing Then
-                        Dim turnId = GetPropertyString(turnObject, "id")
-                        If Not String.IsNullOrWhiteSpace(turnId) Then
-                            _currentTurnId = turnId
-                        End If
-                    End If
-
-                    AppendSystemMessage($"Turn started: {_currentTurnId}")
-
-                Case "turn/completed"
-                    Dim turnObject = GetPropertyObject(paramsObject, "turn")
-                    Dim threadId = GetPropertyString(paramsObject, "threadId")
-                    If Not String.IsNullOrWhiteSpace(threadId) Then
-                        MarkThreadLastActive(threadId)
-                    ElseIf Not String.IsNullOrWhiteSpace(_currentThreadId) Then
-                        MarkThreadLastActive(_currentThreadId)
-                    End If
-
-                    Dim completedTurnId = GetPropertyString(turnObject, "id")
-                    Dim status = GetPropertyString(turnObject, "status")
-                    If StringComparer.Ordinal.Equals(completedTurnId, _currentTurnId) Then
-                        _currentTurnId = String.Empty
-                    End If
-
-                    _streamingAgentItemIds.Clear()
-                    AppendSystemMessage($"Turn completed: {completedTurnId} ({status})")
-
-                Case "item/started"
-                    Dim itemObject = GetPropertyObject(paramsObject, "item")
-                    If itemObject IsNot Nothing Then
-                        Dim itemType = GetPropertyString(itemObject, "type")
-                        If StringComparer.Ordinal.Equals(itemType, "agentMessage") Then
-                            Dim itemId = GetPropertyString(itemObject, "id")
-                            If Not String.IsNullOrWhiteSpace(itemId) Then
-                                _streamingAgentItemIds.Add(itemId)
-                                TxtTranscript.AppendText($"[{Now:HH:mm:ss}] assistant: ")
-                            End If
-                        End If
-                    End If
-
-                Case "item/agentMessage/delta"
-                    Dim delta = GetPropertyString(paramsObject, "delta")
-                    Dim itemId = GetPropertyString(paramsObject, "itemId")
-                    If String.IsNullOrWhiteSpace(itemId) Then
-                        itemId = "live"
-                    End If
-
-                    If Not _streamingAgentItemIds.Contains(itemId) Then
-                        _streamingAgentItemIds.Add(itemId)
-                        TxtTranscript.AppendText($"[{Now:HH:mm:ss}] assistant: ")
-                    End If
-
-                    TxtTranscript.AppendText(delta)
-                    ScrollTextBoxToBottom(TxtTranscript)
-
-                Case "item/completed"
-                    Dim itemObject = GetPropertyObject(paramsObject, "item")
-                    If itemObject IsNot Nothing Then
-                        Dim itemType = GetPropertyString(itemObject, "type")
-                        Dim itemId = GetPropertyString(itemObject, "id")
-
-                        If StringComparer.Ordinal.Equals(itemType, "agentMessage") Then
-                            Dim text = GetPropertyString(itemObject, "text")
-                            If _streamingAgentItemIds.Contains(itemId) Then
-                                TxtTranscript.AppendText(Environment.NewLine & Environment.NewLine)
-                                _streamingAgentItemIds.Remove(itemId)
-                            ElseIf Not String.IsNullOrWhiteSpace(text) Then
-                                AppendTranscript("assistant", text)
-                            End If
-                        Else
-                            RenderItem(itemObject)
-                        End If
-                    End If
-
-                Case "item/commandExecution/outputDelta"
-                    AppendProtocol("cmd", GetPropertyString(paramsObject, "delta"))
-
-                Case "item/fileChange/outputDelta"
-                    AppendProtocol("file", GetPropertyString(paramsObject, "delta"))
-
-                Case "item/reasoning/textDelta"
-                    AppendProtocol("reason", GetPropertyString(paramsObject, "delta"))
-
-                Case "error"
-                    Dim errorObject = GetPropertyObject(paramsObject, "error")
-                    Dim message = GetPropertyString(errorObject, "message", "Unknown error")
-                    AppendSystemMessage($"Turn error: {message}")
-
-                Case "account/login/completed"
-                    Dim success = GetPropertyBoolean(paramsObject, "success", False)
-                    Dim loginId = GetPropertyString(paramsObject, "loginId")
-                    Dim [error] = GetPropertyString(paramsObject, "error")
-
-                    If StringComparer.Ordinal.Equals(loginId, _currentLoginId) Then
-                        _currentLoginId = String.Empty
-                    End If
-
-                    If success Then
-                        AppendSystemMessage("Account login completed.")
-                    Else
-                        AppendSystemMessage($"Account login failed: {[error]}")
-                    End If
-
-                    RefreshControlStates()
-                    FireAndForget(RunUiActionAsync(AddressOf RefreshAuthenticationGateAsync))
-
-                Case "account/updated"
-                    FireAndForget(RunUiActionAsync(AddressOf RefreshAuthenticationGateAsync))
-
-                Case "account/rateLimits/updated"
-                    If paramsObject IsNot Nothing Then
-                        TxtRateLimits.Text = PrettyJson(paramsObject)
-                        ShowStatus("Rate limits updated.")
-                    End If
-
-                Case "model/rerouted"
-                    Dim fromModel = GetPropertyString(paramsObject, "fromModel")
-                    Dim toModel = GetPropertyString(paramsObject, "toModel")
-                    Dim reason = GetPropertyString(paramsObject, "reason")
-                    AppendSystemMessage($"Model rerouted: {fromModel} -> {toModel} ({reason})")
-
-                Case Else
-                    ' Keep unsupported notifications in protocol log only.
-            End Select
-
-            UpdateThreadTurnLabels()
-            RefreshControlStates()
-        End Sub
-
-        Private Function ReadPersistedApiKey() As String
-            If _settings Is Nothing OrElse String.IsNullOrWhiteSpace(_settings.EncryptedApiKey) Then
-                Return String.Empty
-            End If
-
-            Try
-                Dim encryptedBytes = Convert.FromBase64String(_settings.EncryptedApiKey)
-                Dim plainBytes = ProtectedData.Unprotect(encryptedBytes, Nothing, DataProtectionScope.CurrentUser)
-                Return Encoding.UTF8.GetString(plainBytes)
-            Catch
-                Return String.Empty
-            End Try
-        End Function
-
-        Private Sub PersistApiKeyIfNeeded(apiKey As String)
-            If _settings Is Nothing Then
-                _settings = New AppSettings()
-            End If
-
-            If IsChecked(ChkRememberApiKey) AndAlso Not String.IsNullOrWhiteSpace(apiKey) Then
-                Dim plainBytes = Encoding.UTF8.GetBytes(apiKey)
-                Dim encryptedBytes = ProtectedData.Protect(plainBytes, Nothing, DataProtectionScope.CurrentUser)
-                _settings.EncryptedApiKey = Convert.ToBase64String(encryptedBytes)
-            Else
-                _settings.EncryptedApiKey = String.Empty
-            End If
-
-            SaveSettings()
-        End Sub
-
-        Private Async Function TryAutoLoginApiKeyAsync() As Task
-            If Not IsChecked(ChkAutoLoginApiKey) Then
-                Return
-            End If
-
-            Dim storedApiKey = ReadPersistedApiKey()
-            If String.IsNullOrWhiteSpace(storedApiKey) Then
-                Return
-            End If
-
-            Try
-                Await _accountService.StartApiKeyLoginAsync(storedApiKey, CancellationToken.None)
-                AppendSystemMessage("Auto-login with saved API key completed.")
-                ShowStatus("Auto-login with saved API key completed.")
-            Catch ex As Exception
-                AppendSystemMessage($"Auto-login with saved API key failed: {ex.Message}")
-                ShowStatus($"Auto-login failed: {ex.Message}", isError:=True)
-            End Try
-        End Function
-
-        Private Async Function EnsureAuthenticatedAndInitializeWorkspaceAsync(allowAutoLogin As Boolean,
-                                                                              showAuthPrompt As Boolean) As Task(Of Boolean)
-            Dim wasAuthenticated = _isAuthenticated
-            Dim hasAccount = Await RefreshAccountAsync(False)
-
-            If Not hasAccount Then
-                hasAccount = Await RefreshAccountAsync(True)
-            End If
-
-            If Not hasAccount AndAlso allowAutoLogin Then
-                Await TryAutoLoginApiKeyAsync()
-                hasAccount = Await RefreshAccountAsync(False)
-                If Not hasAccount Then
-                    hasAccount = Await RefreshAccountAsync(True)
-                End If
-            End If
-
-            If hasAccount Then
-                _authRequiredNoticeShown = False
-                If Not wasAuthenticated OrElse Not _modelsLoadedAtLeastOnce OrElse Not _threadsLoadedAtLeastOnce Then
-                    Await InitializeWorkspaceAfterAuthenticationAsync()
-                End If
-
-                ShowThreadsSidebarTab()
-                Return True
-            End If
-
-            ApplyAuthenticationRequiredState(showPrompt:=showAuthPrompt)
-            Return False
-        End Function
-
-        Private Async Function EnsureAuthenticatedWithRetryAsync(allowAutoLogin As Boolean) As Task(Of Boolean)
-            Dim delaysMs As Integer() = {0, 500, 1200, 2500}
-
-            For attempt = 0 To delaysMs.Length - 1
-                If delaysMs(attempt) > 0 Then
-                    Await Task.Delay(delaysMs(attempt))
-                End If
-
-                Dim hasAccount = Await EnsureAuthenticatedAndInitializeWorkspaceAsync(allowAutoLogin:=allowAutoLogin AndAlso attempt = 0,
-                                                                                      showAuthPrompt:=attempt = delaysMs.Length - 1)
-                If hasAccount Then
-                    Return True
-                End If
-            Next
-
-            Return False
-        End Function
-
-        Private Async Function RefreshAuthenticationGateAsync() As Task
-            Await EnsureAuthenticatedWithRetryAsync(allowAutoLogin:=False)
-        End Function
-
-        Private Async Function InitializeWorkspaceAfterAuthenticationAsync() As Task
-            If _client Is Nothing OrElse Not _client.IsRunning Then
-                Return
-            End If
-
-            If Not _isAuthenticated Then
-                Return
-            End If
-
-            If _workspaceBootstrapInProgress Then
-                Return
-            End If
-
-            _workspaceBootstrapInProgress = True
-            Try
-                Await RefreshModelsAsync()
-                Await RefreshThreadsAsync()
-                ShowStatus("Connected and authenticated.")
-            Finally
-                _workspaceBootstrapInProgress = False
-            End Try
-        End Function
-
-        Private Sub ApplyAuthenticationRequiredState(Optional showPrompt As Boolean = False)
-            CancelActiveThreadSelectionLoad()
-            _isAuthenticated = False
-            _currentThreadId = String.Empty
-            _currentTurnId = String.Empty
-            _currentThreadCwd = String.Empty
-            _newThreadTargetOverrideCwd = String.Empty
-            _threadsLoading = False
-            _threadLoadError = String.Empty
-            _threadContentLoading = False
-            _modelsLoadedAtLeastOnce = False
-            _threadsLoadedAtLeastOnce = False
-            _workspaceBootstrapInProgress = False
-            _threadEntries.Clear()
-            _expandedThreadProjectGroups.Clear()
-            _streamingAgentItemIds.Clear()
-            _pendingLocalUserEchoes.Clear()
-            _approvalQueue.Clear()
-            _activeApproval = Nothing
-            TxtApproval.Text = "No pending approvals."
-
-            LstThreads.Items.Clear()
-            CmbModel.Items.Clear()
-
-            UpdateThreadTurnLabels()
-            UpdateThreadsStateLabel(0)
-            SetTranscriptLoadingState(False)
-            RefreshControlStates()
-
-            If showPrompt AndAlso Not _authRequiredNoticeShown Then
-                Dim message = "Authentication required. Sign in with ChatGPT or API key to continue."
-                AppendSystemMessage(message)
-                ShowStatus(message, isError:=True, displayToast:=True)
-                _authRequiredNoticeShown = True
-            End If
-
-            ShowControlCenterTab()
-        End Sub
-
-        Private Async Function RefreshAccountAsync(refreshToken As Boolean) As Task(Of Boolean)
-            Dim result = Await _accountService.ReadAccountAsync(refreshToken, CancellationToken.None)
-
-            If result.Account IsNot Nothing Then
-                LblAccountState.Text = FormatAccountLabel(result.Account, result.RequiresOpenAiAuth)
-            Else
-                LblAccountState.Text = If(result.RequiresOpenAiAuth,
-                                          "Account: signed out (OpenAI auth required)",
-                                          "Account: unknown")
-            End If
-
-            Dim hasAccount = result.Account IsNot Nothing
-            _isAuthenticated = hasAccount
-            If hasAccount Then
-                _authRequiredNoticeShown = False
-            End If
-
-            RefreshControlStates()
-            Return hasAccount
-        End Function
-
-        Private Async Function ReadRateLimitsAsync() As Task
-            Dim response = Await _accountService.ReadRateLimitsAsync(CancellationToken.None)
-            TxtRateLimits.Text = PrettyJson(response)
-            AppendSystemMessage("Rate limits updated.")
-            ShowStatus("Rate limits updated.")
-        End Function
-
-        Private Async Function LoginApiKeyAsync() As Task
-            Dim apiKey = TxtApiKey.Text.Trim()
-            If String.IsNullOrWhiteSpace(apiKey) Then
-                Throw New InvalidOperationException("Enter an OpenAI API key first.")
-            End If
-
-            Await _accountService.StartApiKeyLoginAsync(apiKey, CancellationToken.None)
-            PersistApiKeyIfNeeded(apiKey)
-            AppendSystemMessage("API key login submitted.")
-            ShowStatus("API key login submitted.", displayToast:=True)
-            Await EnsureAuthenticatedWithRetryAsync(allowAutoLogin:=False)
-        End Function
-
-        Private Async Function LoginChatGptAsync() As Task
-            Dim result = Await _accountService.StartChatGptLoginAsync(CancellationToken.None)
-            _currentLoginId = result.LoginId
-            Dim authUrl = result.AuthUrl
-
-            If String.IsNullOrWhiteSpace(_currentLoginId) OrElse String.IsNullOrWhiteSpace(authUrl) Then
-                Throw New InvalidOperationException("ChatGPT login did not return a valid auth URL.")
-            End If
-
-            Try
-                Process.Start(New ProcessStartInfo(authUrl) With {.UseShellExecute = True})
-            Catch ex As Exception
-                AppendSystemMessage($"Could not open browser automatically: {ex.Message}")
-                ShowStatus($"Could not open browser: {ex.Message}", isError:=True)
-            End Try
-
-            LblAccountState.Text = $"Account: waiting for browser sign-in (loginId={_currentLoginId})"
-            AppendSystemMessage("ChatGPT sign-in started. Finish auth in your browser.")
-            ShowStatus("ChatGPT sign-in started.", displayToast:=True)
-            RefreshControlStates()
-        End Function
-
-        Private Async Function CancelLoginAsync() As Task
-            If String.IsNullOrWhiteSpace(_currentLoginId) Then
-                Throw New InvalidOperationException("No active ChatGPT login flow to cancel.")
-            End If
-
-            Await _accountService.CancelLoginAsync(_currentLoginId, CancellationToken.None)
-            AppendSystemMessage($"Canceled login {_currentLoginId}.")
-            ShowStatus($"Canceled login {_currentLoginId}.")
-            _currentLoginId = String.Empty
-            RefreshControlStates()
-            Await RefreshAccountAsync(False)
-        End Function
-
-        Private Async Function LogoutAsync() As Task
-            Await _accountService.LogoutAsync(CancellationToken.None)
-            AppendSystemMessage("Logged out.")
-            ShowStatus("Logged out.", displayToast:=True)
-            _currentLoginId = String.Empty
-            RefreshControlStates()
-            Await RefreshAccountAsync(False)
-            ApplyAuthenticationRequiredState()
-        End Function
-
-        Private Async Function LoginExternalTokensAsync() As Task
-            Dim token = TxtExternalAccessToken.Text.Trim()
-            Dim accountId = TxtExternalAccountId.Text.Trim()
-
-            If String.IsNullOrWhiteSpace(token) Then
-                Throw New InvalidOperationException("Enter an external ChatGPT access token.")
-            End If
-
-            If String.IsNullOrWhiteSpace(accountId) Then
-                Throw New InvalidOperationException("Enter a ChatGPT account/workspace id.")
-            End If
-
-            Dim plan = SelectedComboValue(CmbExternalPlanType)
-            Await _accountService.StartExternalTokenLoginAsync(token,
-                                                               accountId,
-                                                               plan,
-                                                               CancellationToken.None)
-
-            AppendSystemMessage("External ChatGPT auth tokens applied.")
-            ShowStatus("External ChatGPT auth tokens applied.", displayToast:=True)
-            Await EnsureAuthenticatedWithRetryAsync(allowAutoLogin:=False)
-        End Function
-
-        Private Async Function HandleChatgptTokenRefreshAsync(request As RpcServerRequest) As Task
-            Dim token = TxtExternalAccessToken.Text.Trim()
-            Dim accountId = TxtExternalAccountId.Text.Trim()
-
-            If String.IsNullOrWhiteSpace(token) OrElse String.IsNullOrWhiteSpace(accountId) Then
-                Await CurrentClient().SendErrorAsync(request.Id,
-                                                     -32001,
-                                                     "ChatGPT auth token refresh requested, but external token/account id are not configured in the UI.")
-                AppendSystemMessage("Could not refresh external ChatGPT token: missing token/account id.")
-                ShowStatus("Could not refresh external token: missing token/account id.", isError:=True)
-                Return
-            End If
-
-            Dim response As New JsonObject()
-            response("accessToken") = token
-            response("chatgptAccountId") = accountId
-
-            Dim planType = SelectedComboValue(CmbExternalPlanType)
-            If Not String.IsNullOrWhiteSpace(planType) Then
-                response("chatgptPlanType") = planType
-            End If
-
-            Await CurrentClient().SendResultAsync(request.Id, response)
-            AppendSystemMessage("Provided refreshed external ChatGPT token to Codex.")
-            ShowStatus("Provided refreshed external ChatGPT token.")
-        End Function
-
-        Private Shared Function FormatAccountLabel(accountObject As JsonObject, requiresOpenAiAuth As Boolean) As String
-            If accountObject Is Nothing Then
-                If requiresOpenAiAuth Then
-                    Return "Account: signed out (OpenAI auth required)"
-                End If
-
-                Return "Account: signed out"
-            End If
-
-            Dim accountType = GetPropertyString(accountObject, "type")
-            Select Case accountType
-                Case "apiKey"
-                    Return "Account: API key"
-                Case "chatgpt"
-                    Dim email = GetPropertyString(accountObject, "email")
-                    Dim planType = GetPropertyString(accountObject, "planType")
-                    Return $"Account: ChatGPT {email} ({planType})"
-                Case Else
-                    Return $"Account: {accountType}"
-            End Select
-        End Function
-
-        Private Async Function RefreshModelsAsync() As Task
-            Dim previousModelId = SelectedModelId()
-            Dim models = Await _threadService.ListModelsAsync(CancellationToken.None)
-
-            CmbModel.Items.Clear()
-            For Each model In models
-                CmbModel.Items.Add(New ModelListEntry() With {
-                    .Id = model.Id,
-                    .DisplayName = model.DisplayName,
-                    .IsDefault = model.IsDefault
-                })
-            Next
-
-            Dim selectedIndex = -1
-            For i = 0 To CmbModel.Items.Count - 1
-                Dim item = TryCast(CmbModel.Items(i), ModelListEntry)
-                If item Is Nothing Then
-                    Continue For
-                End If
-
-                If StringComparer.Ordinal.Equals(item.Id, previousModelId) Then
-                    selectedIndex = i
-                    Exit For
-                End If
-
-                If selectedIndex = -1 AndAlso item.IsDefault Then
-                    selectedIndex = i
-                End If
-            Next
-
-            If selectedIndex >= 0 Then
-                CmbModel.SelectedIndex = selectedIndex
-            End If
-
-            _modelsLoadedAtLeastOnce = True
-            ShowStatus($"Loaded {CmbModel.Items.Count} model(s).")
-            AppendSystemMessage($"Loaded {CmbModel.Items.Count} models.")
-        End Function
-
-        Private Async Function StartThreadAsync() As Task
-            CancelActiveThreadSelectionLoad()
-            _threadContentLoading = False
-            SetTranscriptLoadingState(False)
-
-            Dim targetCwd = ResolveNewThreadTargetCwd()
-            Dim options = BuildThreadRequestOptions(includeModel:=True)
-            If Not String.IsNullOrWhiteSpace(targetCwd) Then
-                options.Cwd = targetCwd
-            End If
-
-            Dim threadObject = Await _threadService.StartThreadAsync(options, CancellationToken.None)
-
-            ApplyCurrentThreadFromThreadObject(threadObject)
-            TxtTranscript.Clear()
-            RenderThreadObject(threadObject)
-
-            AppendSystemMessage($"Started thread {_currentThreadId}.")
-            ShowStatus($"Started thread {_currentThreadId}.", displayToast:=True)
-            Await RefreshThreadsAsync()
-        End Function
-
-        Private Async Function RefreshThreadsAsync() As Task
-            If _client Is Nothing OrElse Not _client.IsRunning Then
-                Return
-            End If
-
-            _threadsLoading = True
-            _threadLoadError = String.Empty
-            UpdateThreadsStateLabel(VisibleThreadCount())
-            RefreshControlStates()
-            ShowStatus("Loading threads...")
-
-            Try
-                Dim useWorkingDirFilter = IsChecked(ChkFilterThreadsByWorkingDir)
-                Dim cwd = If(useWorkingDirFilter, EffectiveThreadWorkingDirectory(), String.Empty)
-                Dim summaries = Await _threadService.ListThreadsAsync(IsChecked(ChkShowArchivedThreads),
-                                                                      cwd,
-                                                                      CancellationToken.None)
-
-                _threadEntries.Clear()
-                For Each summary In summaries
-                    Dim lastActiveText = If(String.IsNullOrWhiteSpace(summary.LastActiveText),
-                                            summary.UpdatedAtText,
-                                            summary.LastActiveText)
-                    Dim lastActiveSortTimestamp = summary.LastActiveSortValue
-                    If lastActiveSortTimestamp = Long.MinValue Then
-                        lastActiveSortTimestamp = summary.UpdatedSortValue
-                    End If
-
-                    _threadEntries.Add(New ThreadListEntry() With {
-                        .Id = summary.Id,
-                        .Preview = summary.Preview,
-                        .LastActiveAt = lastActiveText,
-                        .LastActiveSortTimestamp = lastActiveSortTimestamp,
-                        .Cwd = summary.Cwd,
-                        .IsArchived = summary.IsArchived
-                    })
-                Next
-
-                _threadsLoadedAtLeastOnce = True
-                ApplyThreadFiltersAndSort()
-                AppendSystemMessage($"Loaded {_threadEntries.Count} thread(s).")
-                ShowStatus($"Loaded {_threadEntries.Count} thread(s).")
-            Catch ex As Exception
-                _threadLoadError = ex.Message
-                UpdateThreadsStateLabel(VisibleThreadCount())
-                ShowStatus($"Could not load threads: {ex.Message}", isError:=True, displayToast:=True)
-                Throw
-            Finally
-                _threadsLoading = False
-                UpdateThreadsStateLabel(VisibleThreadCount())
-                RefreshControlStates()
-            End Try
-        End Function
-
-        Private Async Function AutoLoadThreadSelectionAsync(selected As ThreadListEntry,
-                                                            Optional forceReload As Boolean = False) As Task
-            If selected Is Nothing OrElse String.IsNullOrWhiteSpace(selected.Id) Then
-                Return
-            End If
-
-            If _threadsLoading OrElse _client Is Nothing OrElse Not _client.IsRunning OrElse Not _isAuthenticated Then
-                Return
-            End If
-
-            Dim selectedThreadId = selected.Id.Trim()
-            If Not forceReload AndAlso
-               StringComparer.Ordinal.Equals(selectedThreadId, _currentThreadId) AndAlso
-               Not _threadContentLoading Then
-                Return
-            End If
-
-            Dim loadVersion = Interlocked.Increment(_threadSelectionLoadVersion)
-            CancelActiveThreadSelectionLoad()
-
-            Dim threadLoadCts As New CancellationTokenSource()
-            _threadSelectionLoadCts = threadLoadCts
-            Dim cancellationToken = threadLoadCts.Token
-
-            _threadContentLoading = True
-            SetTranscriptLoadingState(True, "Loading selected thread...")
-            RefreshControlStates()
-            ShowStatus("Loading selected thread...")
-
-            Try
-                Dim threadObject = Await _threadService.ResumeThreadAsync(selectedThreadId,
-                                                                          New ThreadRequestOptions(),
-                                                                          cancellationToken).ConfigureAwait(False)
-                If Not ThreadObjectHasTurns(threadObject) Then
-                    threadObject = Await _threadService.ReadThreadAsync(selectedThreadId,
-                                                                        includeTurns:=True,
-                                                                        cancellationToken:=cancellationToken).ConfigureAwait(False)
-                End If
-                cancellationToken.ThrowIfCancellationRequested()
-
-                Dim hasTurns = ThreadObjectHasTurns(threadObject)
-                Dim transcriptSnapshot = Await Task.Run(Function() BuildThreadTranscriptSnapshot(threadObject), cancellationToken).ConfigureAwait(False)
-                cancellationToken.ThrowIfCancellationRequested()
-
-                Await RunOnUiAsync(
-                    Function()
-                        If cancellationToken.IsCancellationRequested OrElse loadVersion <> _threadSelectionLoadVersion Then
-                            Return Task.CompletedTask
-                        End If
-
-                        Dim selectedNow = TryCast(LstThreads.SelectedItem, ThreadListEntry)
-                        If selectedNow Is Nothing OrElse Not StringComparer.Ordinal.Equals(selectedNow.Id, selectedThreadId) Then
-                            Return Task.CompletedTask
-                        End If
-
-                        ApplyCurrentThreadFromThreadObject(threadObject)
-                        ApplyThreadTranscriptSnapshot(transcriptSnapshot, hasTurns)
-                        AppendSystemMessage($"Loaded thread {_currentThreadId} from history.")
-                        ShowStatus($"Loaded thread {_currentThreadId}.")
-                        Return Task.CompletedTask
-                    End Function).ConfigureAwait(False)
-            Catch ex As OperationCanceledException
-            Catch ex As Exception
-                RunOnUi(
-                    Sub()
-                        If loadVersion = _threadSelectionLoadVersion Then
-                            ShowStatus($"Could not load thread {selectedThreadId}: {ex.Message}", isError:=True, displayToast:=True)
-                            AppendTranscript("system", $"Could not load thread {selectedThreadId}: {ex.Message}")
-                        End If
-                    End Sub)
-            Finally
-                RunOnUi(
-                    Sub()
-                        If loadVersion = _threadSelectionLoadVersion Then
-                            _threadContentLoading = False
-                            SetTranscriptLoadingState(False)
-                            RefreshControlStates()
-                        End If
-                    End Sub)
-
-                If _threadSelectionLoadCts Is threadLoadCts Then
-                    _threadSelectionLoadCts = Nothing
-                End If
-
-                threadLoadCts.Dispose()
-            End Try
-        End Function
-
-        Private Sub CancelActiveThreadSelectionLoad()
-            Dim cts = _threadSelectionLoadCts
-            _threadSelectionLoadCts = Nothing
-            If cts Is Nothing Then
-                Return
-            End If
-
-            Try
-                cts.Cancel()
-            Catch
-            End Try
-
-            cts.Dispose()
-        End Sub
-
-        Private Sub SetTranscriptLoadingState(isLoading As Boolean, Optional loadingText As String = "Loading thread...")
-            TranscriptLoadingOverlay.Visibility = If(isLoading, Visibility.Visible, Visibility.Collapsed)
-            LblTranscriptLoading.Text = If(isLoading, loadingText, "Loading thread...")
-        End Sub
-
-        Private Sub OnThreadsPreviewMouseRightButtonDown(sender As Object, e As MouseButtonEventArgs)
-            _threadContextTarget = Nothing
-            _threadGroupContextTarget = Nothing
-
-            Dim source = TryCast(e.OriginalSource, DependencyObject)
-            Dim container = FindVisualAncestor(Of ListBoxItem)(source)
-            If container Is Nothing Then
-                e.Handled = True
-                Return
-            End If
-
-            Dim header = TryCast(container.DataContext, ThreadGroupHeaderEntry)
-            If header IsNot Nothing Then
-                _threadGroupContextTarget = header
-                e.Handled = True
-                PrepareThreadGroupContextMenu(header)
-                ThreadItemContextMenu.PlacementTarget = container
-                ThreadItemContextMenu.IsOpen = True
-                Return
-            End If
-
-            Dim entry = TryCast(container.DataContext, ThreadListEntry)
-            If entry IsNot Nothing Then
-                _threadContextTarget = entry
-                e.Handled = True
-                PrepareThreadContextMenu(entry)
-                ThreadItemContextMenu.PlacementTarget = container
-                ThreadItemContextMenu.IsOpen = True
-                Return
-            End If
-
-            e.Handled = True
-        End Sub
-
-        Private Sub OnThreadsContextMenuOpening(sender As Object, e As ContextMenuEventArgs)
-            Dim headerTarget = ResolveContextThreadGroupEntry()
-            If headerTarget IsNot Nothing Then
-                PrepareThreadGroupContextMenu(headerTarget)
-                Return
-            End If
-
-            Dim target = ResolveContextThreadEntry()
-            If target Is Nothing Then
-                e.Handled = True
-                Return
-            End If
-
-            PrepareThreadContextMenu(target)
-        End Sub
-
-        Private Sub PrepareThreadContextMenu(target As ThreadListEntry)
-            If target Is Nothing Then
-                Return
-            End If
-
-            MnuThreadGroupNewThreadHere.Visibility = Visibility.Collapsed
-            SepThreadGroupContextTop.Visibility = Visibility.Collapsed
-            MnuThreadSelect.Visibility = Visibility.Visible
-            SepThreadContextSelectRefresh.Visibility = Visibility.Visible
-            MnuThreadRefreshSingle.Visibility = Visibility.Visible
-            SepThreadContextRefreshActions.Visibility = Visibility.Visible
-            MnuThreadFork.Visibility = Visibility.Visible
-            MnuThreadArchive.Visibility = Visibility.Visible
-            MnuThreadUnarchive.Visibility = Visibility.Visible
-            MnuThreadSelect.IsEnabled = True
-
-            Dim canRunThreadAction = _isAuthenticated AndAlso Not _threadsLoading AndAlso Not _threadContentLoading
-            MnuThreadRefreshSingle.IsEnabled = canRunThreadAction
-            MnuThreadFork.IsEnabled = canRunThreadAction
-
-            Dim archived = target.IsArchived
-            MnuThreadArchive.Visibility = If(archived, Visibility.Collapsed, Visibility.Visible)
-            MnuThreadUnarchive.Visibility = If(archived, Visibility.Visible, Visibility.Collapsed)
-            MnuThreadArchive.IsEnabled = canRunThreadAction AndAlso Not archived
-            MnuThreadUnarchive.IsEnabled = canRunThreadAction AndAlso archived
-        End Sub
-
-        Private Sub PrepareThreadGroupContextMenu(target As ThreadGroupHeaderEntry)
-            If target Is Nothing Then
-                Return
-            End If
-
-            MnuThreadGroupNewThreadHere.Visibility = Visibility.Visible
-            SepThreadGroupContextTop.Visibility = Visibility.Collapsed
-            MnuThreadSelect.Visibility = Visibility.Collapsed
-            SepThreadContextSelectRefresh.Visibility = Visibility.Collapsed
-            MnuThreadRefreshSingle.Visibility = Visibility.Collapsed
-            SepThreadContextRefreshActions.Visibility = Visibility.Collapsed
-            MnuThreadFork.Visibility = Visibility.Collapsed
-            MnuThreadArchive.Visibility = Visibility.Collapsed
-            MnuThreadUnarchive.Visibility = Visibility.Collapsed
-
-            Dim canStartHere = _isAuthenticated AndAlso
-                               Not _threadsLoading AndAlso
-                               Not _threadContentLoading AndAlso
-                               Not String.IsNullOrWhiteSpace(target.ProjectPath)
-            MnuThreadGroupNewThreadHere.IsEnabled = canStartHere
-        End Sub
-
-        Private Sub OnSelectThreadFromContextMenuClick(sender As Object, e As RoutedEventArgs)
-            Dim target = ResolveContextThreadEntry()
-            If target Is Nothing Then
-                Return
-            End If
-
-            SelectThreadEntry(target, suppressAutoLoad:=False)
-        End Sub
-
-        Private Async Function RefreshThreadFromContextMenuAsync() As Task
-            Dim target = ResolveContextThreadEntry()
-            If target Is Nothing Then
-                Throw New InvalidOperationException("Select a thread first.")
-            End If
-
-            SelectThreadEntry(target, suppressAutoLoad:=True)
-            Await AutoLoadThreadSelectionAsync(target, forceReload:=True)
-        End Function
-
-        Private Async Function ForkThreadFromContextMenuAsync() As Task
-            Dim target = ResolveContextThreadEntry()
-            If target Is Nothing Then
-                Throw New InvalidOperationException("Select a thread first.")
-            End If
-
-            Await ForkThreadAsync(target)
-        End Function
-
-        Private Async Function ArchiveThreadFromContextMenuAsync() As Task
-            Dim target = ResolveContextThreadEntry()
-            If target Is Nothing Then
-                Throw New InvalidOperationException("Select a thread first.")
-            End If
-
-            Await ArchiveThreadAsync(target)
-        End Function
-
-        Private Async Function UnarchiveThreadFromContextMenuAsync() As Task
-            Dim target = ResolveContextThreadEntry()
-            If target Is Nothing Then
-                Throw New InvalidOperationException("Select a thread first.")
-            End If
-
-            Await UnarchiveThreadAsync(target)
-        End Function
-
-        Private Async Function StartThreadFromGroupHeaderContextMenuAsync() As Task
-            Dim target = ResolveContextThreadGroupEntry()
-            If target Is Nothing OrElse String.IsNullOrWhiteSpace(target.ProjectPath) Then
-                Throw New InvalidOperationException("Select a project folder first.")
-            End If
-
-            ShowWorkspaceView()
-            _newThreadTargetOverrideCwd = target.ProjectPath
-            SyncNewThreadTargetChip()
-            Await StartThreadAsync()
-        End Function
-
-        Private Function ResolveContextThreadEntry() As ThreadListEntry
-            If _threadContextTarget IsNot Nothing Then
-                Return _threadContextTarget
-            End If
-
-            Return TryCast(LstThreads.SelectedItem, ThreadListEntry)
-        End Function
-
-        Private Function ResolveContextThreadGroupEntry() As ThreadGroupHeaderEntry
-            If _threadGroupContextTarget IsNot Nothing Then
-                Return _threadGroupContextTarget
-            End If
-
-            Return TryCast(LstThreads.SelectedItem, ThreadGroupHeaderEntry)
-        End Function
-
-        Private Sub SelectThreadEntry(entry As ThreadListEntry, suppressAutoLoad As Boolean)
-            If entry Is Nothing Then
-                Return
-            End If
-
-            If suppressAutoLoad Then
-                _suppressThreadSelectionEvents = True
-            End If
-
-            Try
-                LstThreads.SelectedItem = entry
-            Finally
-                If suppressAutoLoad Then
-                    _suppressThreadSelectionEvents = False
-                End If
-            End Try
-        End Sub
-
-        Private Shared Function FindVisualAncestor(Of T As DependencyObject)(start As DependencyObject) As T
-            Dim current = start
-            While current IsNot Nothing
-                Dim match = TryCast(current, T)
-                If match IsNot Nothing Then
-                    Return match
-                End If
-
-                current = VisualTreeHelper.GetParent(current)
-            End While
-
-            Return Nothing
-        End Function
-
-        Private Async Function ForkThreadAsync(selected As ThreadListEntry) As Task
-            Dim options = BuildThreadRequestOptions(includeModel:=False)
-            Dim threadObject = Await _threadService.ForkThreadAsync(selected.Id, options, CancellationToken.None)
-
-            ApplyCurrentThreadFromThreadObject(threadObject)
-            RenderThreadObject(threadObject)
-            AppendSystemMessage($"Forked into new thread {_currentThreadId}.")
-            ShowStatus($"Forked thread {_currentThreadId}.", displayToast:=True)
-            Await RefreshThreadsAsync()
-        End Function
-
-        Private Async Function ArchiveThreadAsync(selected As ThreadListEntry) As Task
-            Await _threadService.ArchiveThreadAsync(selected.Id, CancellationToken.None)
-            AppendSystemMessage($"Archived thread {selected.Id}.")
-            ShowStatus($"Archived thread {selected.Id}.")
-            Await RefreshThreadsAsync()
-        End Function
-
-        Private Async Function UnarchiveThreadAsync(selected As ThreadListEntry) As Task
-            Await _threadService.UnarchiveThreadAsync(selected.Id, CancellationToken.None)
-            AppendSystemMessage($"Unarchived thread {selected.Id}.")
-            ShowStatus($"Unarchived thread {selected.Id}.")
-            Await RefreshThreadsAsync()
-        End Function
-
-        Private Sub ApplyThreadFiltersAndSort()
-            Dim searchText = TxtThreadSearch.Text.Trim()
-            Dim forceExpandMatchingGroups = Not String.IsNullOrWhiteSpace(searchText)
-            Dim filtered As New List(Of ThreadListEntry)()
-
-            For Each entry In _threadEntries
-                If MatchesThreadSearch(entry, searchText) Then
-                    filtered.Add(entry)
-                End If
-            Next
-
-            filtered.Sort(AddressOf CompareThreadEntries)
-
-            Dim selectedThreadId As String = _currentThreadId
-            Dim selectedEntry = TryCast(LstThreads.SelectedItem, ThreadListEntry)
-            If selectedEntry IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(selectedEntry.Id) Then
-                selectedThreadId = selectedEntry.Id
-            End If
-
-            Dim groupedByProject As New Dictionary(Of String, ThreadProjectGroup)(StringComparer.OrdinalIgnoreCase)
-            For Each entry In filtered
-                Dim groupKey = GetProjectGroupKey(entry.Cwd)
-                Dim group As ThreadProjectGroup = Nothing
-                If Not groupedByProject.TryGetValue(groupKey, group) Then
-                    group = New ThreadProjectGroup() With {
-                        .Key = groupKey,
-                        .HeaderLabel = BuildProjectGroupLabel(entry.Cwd)
-                    }
-                    groupedByProject.Add(groupKey, group)
-                End If
-
-                group.Threads.Add(entry)
-                If entry.LastActiveSortTimestamp > group.LatestActivitySortTimestamp Then
-                    group.LatestActivitySortTimestamp = entry.LastActiveSortTimestamp
-                End If
-            Next
-
-            Dim orderedGroups As New List(Of ThreadProjectGroup)(groupedByProject.Values)
-            orderedGroups.Sort(AddressOf CompareThreadProjectGroups)
-
-            _suppressThreadSelectionEvents = True
-            Try
-                LstThreads.Items.Clear()
-                For Each group In orderedGroups
-                    Dim isExpanded = forceExpandMatchingGroups OrElse _expandedThreadProjectGroups.Contains(group.Key)
-                    LstThreads.Items.Add(New ThreadGroupHeaderEntry() With {
-                        .GroupKey = group.Key,
-                        .ProjectPath = If(StringComparer.Ordinal.Equals(group.Key, "(no-project)"), String.Empty, group.Key),
-                        .FolderName = group.HeaderLabel,
-                        .Count = group.Threads.Count,
-                        .IsExpanded = isExpanded
-                    })
-
-                    If isExpanded Then
-                        For Each entry In group.Threads
-                            LstThreads.Items.Add(entry)
-                        Next
-                    End If
-                Next
-
-                If Not String.IsNullOrWhiteSpace(selectedThreadId) Then
-                    For i = 0 To LstThreads.Items.Count - 1
-                        Dim entry = TryCast(LstThreads.Items(i), ThreadListEntry)
-                        If entry IsNot Nothing AndAlso StringComparer.Ordinal.Equals(entry.Id, selectedThreadId) Then
-                            LstThreads.SelectedIndex = i
-                            Exit For
-                        End If
-                    Next
-                End If
-            Finally
-                _suppressThreadSelectionEvents = False
-            End Try
-
-            If TryCast(LstThreads.SelectedItem, ThreadListEntry) Is Nothing Then
-                CancelActiveThreadSelectionLoad()
-                _threadContentLoading = False
-                SetTranscriptLoadingState(False)
-            End If
-
-            UpdateThreadsStateLabel(VisibleThreadCount())
-            RefreshControlStates()
-        End Sub
-
-        Private Sub ToggleThreadProjectGroupExpansion(groupKey As String)
-            If String.IsNullOrWhiteSpace(groupKey) Then
-                Return
-            End If
-
-            If _expandedThreadProjectGroups.Contains(groupKey) Then
-                _expandedThreadProjectGroups.Remove(groupKey)
-            Else
-                _expandedThreadProjectGroups.Add(groupKey)
-            End If
-        End Sub
-
-        Private Function CompareThreadProjectGroups(left As ThreadProjectGroup, right As ThreadProjectGroup) As Integer
-            If left Is Nothing AndAlso right Is Nothing Then
-                Return 0
-            End If
-
-            If left Is Nothing Then
-                Return -1
-            End If
-
-            If right Is Nothing Then
-                Return 1
-            End If
-
-            Dim result As Integer
-            Select Case CmbThreadSort.SelectedIndex
-                Case 1
-                    result = left.LatestActivitySortTimestamp.CompareTo(right.LatestActivitySortTimestamp)
-                Case 2, 3
-                    result = StringComparer.OrdinalIgnoreCase.Compare(left.HeaderLabel, right.HeaderLabel)
-                Case Else
-                    result = right.LatestActivitySortTimestamp.CompareTo(left.LatestActivitySortTimestamp)
-            End Select
-
-            If result <> 0 Then
-                Return result
-            End If
-
-            Return StringComparer.OrdinalIgnoreCase.Compare(left.Key, right.Key)
-        End Function
-
-        Private Function CompareThreadEntries(left As ThreadListEntry, right As ThreadListEntry) As Integer
-            If left Is Nothing AndAlso right Is Nothing Then
-                Return 0
-            End If
-
-            If left Is Nothing Then
-                Return -1
-            End If
-
-            If right Is Nothing Then
-                Return 1
-            End If
-
-            Dim result As Integer
-            Select Case CmbThreadSort.SelectedIndex
-                Case 1
-                    result = left.LastActiveSortTimestamp.CompareTo(right.LastActiveSortTimestamp)
-                Case 2
-                    result = StringComparer.OrdinalIgnoreCase.Compare(left.Preview, right.Preview)
-                Case 3
-                    result = StringComparer.OrdinalIgnoreCase.Compare(right.Preview, left.Preview)
-                Case Else
-                    result = right.LastActiveSortTimestamp.CompareTo(left.LastActiveSortTimestamp)
-            End Select
-
-            If result <> 0 Then
-                Return result
-            End If
-
-            result = right.LastActiveSortTimestamp.CompareTo(left.LastActiveSortTimestamp)
-            If result <> 0 Then
-                Return result
-            End If
-
-            Return StringComparer.OrdinalIgnoreCase.Compare(left.Id, right.Id)
-        End Function
-
-        Private Function MatchesThreadSearch(entry As ThreadListEntry, searchText As String) As Boolean
-            If entry Is Nothing Then
-                Return False
-            End If
-
-            If String.IsNullOrWhiteSpace(searchText) Then
-                Return True
-            End If
-
-            Return ContainsIgnoreCase(entry.Id, searchText) OrElse
-                   ContainsIgnoreCase(entry.Preview, searchText) OrElse
-                   ContainsIgnoreCase(entry.LastActiveAt, searchText) OrElse
-                   ContainsIgnoreCase(entry.Cwd, searchText) OrElse
-                   ContainsIgnoreCase(BuildProjectGroupLabel(entry.Cwd), searchText)
-        End Function
-
-        Private Shared Function ContainsIgnoreCase(value As String, searchText As String) As Boolean
-            If String.IsNullOrWhiteSpace(value) OrElse String.IsNullOrWhiteSpace(searchText) Then
-                Return False
-            End If
-
-            Return value.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0
-        End Function
-
-        Private Shared Function GetProjectGroupKey(cwd As String) As String
-            Dim normalized = NormalizeProjectPath(cwd)
-            If String.IsNullOrWhiteSpace(normalized) Then
-                Return "(no-project)"
-            End If
-
-            Return normalized
-        End Function
-
-        Private Shared Function BuildProjectGroupLabel(cwd As String) As String
-            Dim normalized = NormalizeProjectPath(cwd)
-            If String.IsNullOrWhiteSpace(normalized) Then
-                Return "No project"
-            End If
-
-            Dim folderName = Path.GetFileName(normalized)
-            If String.IsNullOrWhiteSpace(folderName) Then
-                Dim root = String.Empty
-                Try
-                    root = Path.GetPathRoot(normalized)
-                Catch
-                End Try
-
-                If Not String.IsNullOrWhiteSpace(root) AndAlso
-                   StringComparer.OrdinalIgnoreCase.Equals(root, normalized) Then
-                    folderName = normalized.TrimEnd("\"c, "/"c)
-                Else
-                    folderName = normalized
-                End If
-            End If
-
-            Return folderName
-        End Function
-
-        Private Shared Function NormalizeProjectPath(cwd As String) As String
-            If String.IsNullOrWhiteSpace(cwd) Then
-                Return String.Empty
-            End If
-
-            Dim normalized = cwd.Trim()
-            Dim root = String.Empty
-
-            Try
-                root = Path.GetPathRoot(normalized)
-            Catch
-            End Try
-
-            If Not String.IsNullOrWhiteSpace(root) AndAlso
-               StringComparer.OrdinalIgnoreCase.Equals(normalized, root) Then
-                Return normalized
-            End If
-
-            Return normalized.TrimEnd("\"c, "/"c)
-        End Function
-
-        Private Shared Function ExtractThreadWorkingDirectoryFromThreadObject(threadObject As JsonObject) As String
-            If threadObject Is Nothing Then
-                Return String.Empty
-            End If
-
-            Dim directKeys = {
-                "cwd",
-                "workingDirectory",
-                "workingDir"
-            }
-
-            For Each key In directKeys
-                Dim value = GetPropertyString(threadObject, key)
-                If Not String.IsNullOrWhiteSpace(value) Then
-                    Return NormalizeProjectPath(value)
-                End If
-            Next
-
-            Dim nestedCandidates = {
-                GetNestedProperty(threadObject, "context", "cwd"),
-                GetNestedProperty(threadObject, "context", "workingDirectory"),
-                GetNestedProperty(threadObject, "workspace", "cwd"),
-                GetNestedProperty(threadObject, "workspace", "workingDirectory"),
-                GetNestedProperty(threadObject, "project", "cwd"),
-                GetNestedProperty(threadObject, "project", "workingDirectory")
-            }
-
-            For Each candidate In nestedCandidates
-                Dim value As String = String.Empty
-                If TryGetStringValue(candidate, value) AndAlso Not String.IsNullOrWhiteSpace(value) Then
-                    Return NormalizeProjectPath(value)
-                End If
-            Next
-
-            Return String.Empty
-        End Function
-
-        Private Function VisibleThreadCount() As Integer
-            Dim count = 0
-            For Each item As Object In LstThreads.Items
-                If TypeOf item Is ThreadListEntry Then
-                    count += 1
-                End If
-            Next
-
-            Return count
-        End Function
-
-        Private Sub UpdateThreadsStateLabel(displayCount As Integer)
-            Dim connected = _client IsNot Nothing AndAlso _client.IsRunning
-
-            If Not connected Then
-                LblThreadsState.Text = "Connect to Codex App Server to load threads."
-                Return
-            End If
-
-            If Not _isAuthenticated Then
-                LblThreadsState.Text = "Authentication required. Sign in to start or load threads."
-                Return
-            End If
-
-            If _threadsLoading Then
-                LblThreadsState.Text = "Loading threads..."
-                Return
-            End If
-
-            If Not String.IsNullOrWhiteSpace(_threadLoadError) Then
-                LblThreadsState.Text = $"Error loading threads: {_threadLoadError}"
-                Return
-            End If
-
-            If _threadEntries.Count = 0 Then
-                LblThreadsState.Text = "No threads found. Start a new thread to begin."
-                Return
-            End If
-
-            If displayCount = 0 Then
-                Dim hasProjectHeaders = False
-                For Each item As Object In LstThreads.Items
-                    If TypeOf item Is ThreadGroupHeaderEntry Then
-                        hasProjectHeaders = True
-                        Exit For
-                    End If
-                Next
-
-                If hasProjectHeaders Then
-                    LblThreadsState.Text = "All project folders are collapsed. Expand a folder to view threads."
-                Else
-                    LblThreadsState.Text = "No threads match the current search/filter."
-                End If
-                Return
-            End If
-
-            LblThreadsState.Text = $"Showing {displayCount} of {_threadEntries.Count} thread(s)."
-        End Sub
-
-        Private Sub MarkThreadLastActive(threadId As String, Optional unixMilliseconds As Long = 0)
-            If String.IsNullOrWhiteSpace(threadId) Then
-                Return
-            End If
-
-            If unixMilliseconds <= 0 Then
-                unixMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-            End If
-
-            Dim localTimestamp As String
-            Try
-                localTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
-            Catch
-                localTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            End Try
-
-            Dim changed = False
-            For Each entry In _threadEntries
-                If StringComparer.Ordinal.Equals(entry.Id, threadId) Then
-                    entry.LastActiveSortTimestamp = unixMilliseconds
-                    entry.LastActiveAt = localTimestamp
-                    changed = True
-                    Exit For
-                End If
-            Next
-
-            If changed Then
-                ApplyThreadFiltersAndSort()
-            End If
-        End Sub
-
-        Private Function BuildThreadRequestOptions(includeModel As Boolean) As ThreadRequestOptions
-            Dim options As New ThreadRequestOptions() With {
-                .ApprovalPolicy = SelectedComboValue(CmbApprovalPolicy),
-                .Sandbox = SelectedComboValue(CmbSandbox),
-                .Cwd = EffectiveThreadWorkingDirectory()
-            }
-
-            If includeModel Then
-                options.Model = SelectedModelId()
-            End If
-
-            Return options
-        End Function
-
-        Private Sub RenderThreadObject(threadObject As JsonObject)
-            TxtTranscript.Clear()
-
-            Dim turns = GetPropertyArray(threadObject, "turns")
-            If turns Is Nothing OrElse turns.Count = 0 Then
-                AppendSystemMessage("No historical turns loaded for this thread.")
-                Return
-            End If
-
-            For Each turnNode In turns
-                Dim turnObject = AsObject(turnNode)
-                If turnObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim items = GetPropertyArray(turnObject, "items")
-                If items Is Nothing Then
-                    Continue For
-                End If
-
-                For Each itemNode In items
-                    Dim itemObject = AsObject(itemNode)
-                    If itemObject IsNot Nothing Then
-                        RenderItem(itemObject)
-                    End If
-                Next
-            Next
-
-            ScrollTextBoxToBottom(TxtTranscript)
-        End Sub
-
-        Private Sub ApplyThreadTranscriptSnapshot(transcriptSnapshot As String, hasTurns As Boolean)
-            TxtTranscript.Clear()
-            If Not hasTurns Then
-                AppendSystemMessage("No historical turns loaded for this thread.")
-                Return
-            End If
-
-            TxtTranscript.Text = transcriptSnapshot
-            TrimLogIfNeeded(TxtTranscript)
-            ScrollTextBoxToBottom(TxtTranscript)
-        End Sub
-
-        Private Shared Function ThreadObjectHasTurns(threadObject As JsonObject) As Boolean
-            Dim turns = GetPropertyArray(threadObject, "turns")
-            Return turns IsNot Nothing AndAlso turns.Count > 0
-        End Function
-
-        Private Shared Function BuildThreadTranscriptSnapshot(threadObject As JsonObject) As String
-            Dim turns = GetPropertyArray(threadObject, "turns")
-            If turns Is Nothing OrElse turns.Count = 0 Then
-                Return String.Empty
-            End If
-
-            Dim builder As New StringBuilder()
-            For Each turnNode In turns
-                Dim turnObject = AsObject(turnNode)
-                If turnObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim items = GetPropertyArray(turnObject, "items")
-                If items Is Nothing Then
-                    Continue For
-                End If
-
-                For Each itemNode In items
-                    Dim itemObject = AsObject(itemNode)
-                    If itemObject IsNot Nothing Then
-                        AppendSnapshotItem(builder, itemObject)
-                    End If
-                Next
-            Next
-
-            Return builder.ToString().TrimEnd()
-        End Function
-
-        Private Shared Sub AppendSnapshotItem(builder As StringBuilder, itemObject As JsonObject)
-            Dim itemType = GetPropertyString(itemObject, "type")
-
-            Select Case itemType
-                Case "userMessage"
-                    Dim content = GetPropertyArray(itemObject, "content")
-                    AppendSnapshotLine(builder, "user", FlattenUserInput(content))
-
-                Case "agentMessage"
-                    AppendSnapshotLine(builder, "assistant", GetPropertyString(itemObject, "text"))
-
-                Case "plan"
-                    AppendSnapshotLine(builder, "plan", GetPropertyString(itemObject, "text"))
-
-                Case "reasoning"
-                    AppendSnapshotLine(builder, "reasoning", GetPropertyString(itemObject, "text", "[reasoning item]"))
-
-                Case "commandExecution"
-                    Dim command = GetPropertyString(itemObject, "command")
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim output = GetPropertyString(itemObject, "aggregatedOutput")
-                    Dim summary As New StringBuilder()
-                    summary.AppendLine($"Command ({status}): {command}")
-                    If Not String.IsNullOrWhiteSpace(output) Then
-                        summary.AppendLine(output)
-                    End If
-                    AppendSnapshotLine(builder, "command", summary.ToString().TrimEnd())
-
-                Case "fileChange"
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim changes = GetPropertyArray(itemObject, "changes")
-                    Dim count = If(changes Is Nothing, 0, changes.Count)
-                    AppendSnapshotLine(builder, "fileChange", $"{count} change(s), status={status}")
-
-                Case Else
-                    Dim itemId = GetPropertyString(itemObject, "id")
-                    AppendSnapshotLine(builder, "item", $"{itemType} ({itemId})")
-            End Select
-        End Sub
-
-        Private Shared Sub AppendSnapshotLine(builder As StringBuilder, role As String, text As String)
-            If String.IsNullOrWhiteSpace(text) Then
-                Return
-            End If
-
-            builder.Append("["c)
-            builder.Append(Date.Now.ToString("HH:mm:ss"))
-            builder.Append("] ")
-            builder.Append(role)
-            builder.Append(": ")
-            builder.Append(text)
-            builder.AppendLine()
-            builder.AppendLine()
-        End Sub
-
-        Private Sub ApplyCurrentThreadFromThreadObject(threadObject As JsonObject)
-            Dim threadId = GetPropertyString(threadObject, "id")
-            If Not String.IsNullOrWhiteSpace(threadId) Then
-                _currentThreadId = threadId
-            End If
-
-            Dim loadedThreadCwd = ExtractThreadWorkingDirectoryFromThreadObject(threadObject)
-            If Not String.IsNullOrWhiteSpace(loadedThreadCwd) Then
-                _currentThreadCwd = loadedThreadCwd
-                _newThreadTargetOverrideCwd = String.Empty
-            ElseIf String.IsNullOrWhiteSpace(_newThreadTargetOverrideCwd) Then
-                _currentThreadCwd = String.Empty
-            End If
-
-            _currentTurnId = String.Empty
-            UpdateThreadTurnLabels()
-            RefreshControlStates()
-        End Sub
-
-        Private Sub EnsureThreadSelected()
-            If String.IsNullOrWhiteSpace(_currentThreadId) Then
-                Throw New InvalidOperationException("No active thread selected.")
-            End If
-        End Sub
-
-        Private Function SelectedThreadEntry() As ThreadListEntry
-            Dim selected = TryCast(LstThreads.SelectedItem, ThreadListEntry)
-            If selected Is Nothing OrElse String.IsNullOrWhiteSpace(selected.Id) Then
-                Throw New InvalidOperationException("Select a thread first.")
-            End If
-
-            Return selected
-        End Function
-
-        Private Function SelectedModelId() As String
-            Dim selected = TryCast(CmbModel.SelectedItem, ModelListEntry)
-            If selected Is Nothing Then
-                Return String.Empty
-            End If
-
-            Return selected.Id
-        End Function
-
-        Private Shared Function SelectedComboValue(comboBox As ComboBox) As String
-            If comboBox Is Nothing OrElse comboBox.SelectedItem Is Nothing Then
-                Return String.Empty
-            End If
-
-            Dim comboItem = TryCast(comboBox.SelectedItem, ComboBoxItem)
-            If comboItem IsNot Nothing Then
-                Return If(comboItem.Content, String.Empty).ToString().Trim()
-            End If
-
-            Return comboBox.SelectedItem.ToString().Trim()
-        End Function
-
-        Private Async Function StartTurnAsync() As Task
-            EnsureThreadSelected()
-
-            Dim inputText = TxtTurnInput.Text.Trim()
-            If String.IsNullOrWhiteSpace(inputText) Then
-                Throw New InvalidOperationException("Enter turn input before sending.")
-            End If
-
-            AppendTranscript("user", inputText)
-            TrackPendingUserEcho(inputText)
-
-            Dim result = Await _turnService.StartTurnAsync(_currentThreadId,
-                                                           inputText,
-                                                           SelectedModelId(),
-                                                           SelectedComboValue(CmbReasoningEffort),
-                                                           SelectedComboValue(CmbApprovalPolicy),
-                                                           CancellationToken.None)
-
-            If Not String.IsNullOrWhiteSpace(result.TurnId) Then
-                _currentTurnId = result.TurnId
-            End If
-
-            MarkThreadLastActive(_currentThreadId)
-            UpdateThreadTurnLabels()
-            RefreshControlStates()
-            TxtTurnInput.Clear()
-            ShowStatus($"Turn started: {_currentTurnId}")
-        End Function
-
-        Private Async Function SteerTurnAsync() As Task
-            EnsureThreadSelected()
-
-            If String.IsNullOrWhiteSpace(_currentTurnId) Then
-                Throw New InvalidOperationException("No active turn to steer.")
-            End If
-
-            Dim steerText = TxtTurnInput.Text.Trim()
-            If String.IsNullOrWhiteSpace(steerText) Then
-                Throw New InvalidOperationException("Enter steer input before sending.")
-            End If
-
-            AppendTranscript("user (steer)", steerText)
-            TrackPendingUserEcho(steerText)
-
-            Dim returnedTurnId = Await _turnService.SteerTurnAsync(_currentThreadId,
-                                                                   _currentTurnId,
-                                                                   steerText,
-                                                                   CancellationToken.None)
-
-            If Not String.IsNullOrWhiteSpace(returnedTurnId) Then
-                _currentTurnId = returnedTurnId
-            End If
-
-            MarkThreadLastActive(_currentThreadId)
-            UpdateThreadTurnLabels()
-            RefreshControlStates()
-            TxtTurnInput.Clear()
-            ShowStatus($"Turn steered: {_currentTurnId}")
-        End Function
-
-        Private Async Function InterruptTurnAsync() As Task
-            EnsureThreadSelected()
-
-            If String.IsNullOrWhiteSpace(_currentTurnId) Then
-                Throw New InvalidOperationException("No active turn to interrupt.")
-            End If
-
-            Await _turnService.InterruptTurnAsync(_currentThreadId,
-                                                  _currentTurnId,
-                                                  CancellationToken.None)
-
-            AppendSystemMessage($"Interrupt requested for turn {_currentTurnId}.")
-            ShowStatus($"Interrupt requested for turn {_currentTurnId}.", displayToast:=True)
-        End Function
-
-        Private Sub AppendTranscript(role As String, text As String)
-            If String.IsNullOrWhiteSpace(text) Then
-                Return
-            End If
-
-            TxtTranscript.AppendText($"[{Now:HH:mm:ss}] {role}: {text}{Environment.NewLine}{Environment.NewLine}")
-            ScrollTextBoxToBottom(TxtTranscript)
-            TrimLogIfNeeded(TxtTranscript)
-        End Sub
-
-        Private Sub AppendSystemMessage(message As String)
-            AppendTranscript("system", message)
-            ShowStatus(message)
-        End Sub
-
-        Private Sub AppendProtocol(direction As String, payload As String)
-            Dim safePayload = If(payload, String.Empty)
-            TxtProtocol.AppendText($"[{Now:HH:mm:ss}] {direction}: {safePayload}{Environment.NewLine}")
-            ScrollTextBoxToBottom(TxtProtocol)
-            TrimLogIfNeeded(TxtProtocol)
-        End Sub
-
-        Private Sub RenderItem(itemObject As JsonObject)
-            Dim itemType = GetPropertyString(itemObject, "type")
-
-            Select Case itemType
-                Case "userMessage"
-                    Dim content = GetPropertyArray(itemObject, "content")
-                    Dim userText = FlattenUserInput(content)
-                    If Not ShouldSuppressUserEcho(userText) Then
-                        AppendTranscript("user", userText)
-                    End If
-
-                Case "agentMessage"
-                    AppendTranscript("assistant", GetPropertyString(itemObject, "text"))
-
-                Case "plan"
-                    AppendTranscript("plan", GetPropertyString(itemObject, "text"))
-
-                Case "reasoning"
-                    AppendTranscript("reasoning", GetPropertyString(itemObject, "text", "[reasoning item]"))
-
-                Case "commandExecution"
-                    Dim command = GetPropertyString(itemObject, "command")
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim output = GetPropertyString(itemObject, "aggregatedOutput")
-                    Dim summary As New StringBuilder()
-                    summary.AppendLine($"Command ({status}): {command}")
-                    If Not String.IsNullOrWhiteSpace(output) Then
-                        summary.AppendLine(output)
-                    End If
-                    AppendTranscript("command", summary.ToString().TrimEnd())
-
-                Case "fileChange"
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim changes = GetPropertyArray(itemObject, "changes")
-                    Dim count = If(changes Is Nothing, 0, changes.Count)
-                    AppendTranscript("fileChange", $"{count} change(s), status={status}")
-
-                Case Else
-                    Dim itemId = GetPropertyString(itemObject, "id")
-                    AppendTranscript("item", $"{itemType} ({itemId})")
-            End Select
-        End Sub
-
-        Private Sub UpdateThreadTurnLabels()
-            LblCurrentThread.Text = If(String.IsNullOrWhiteSpace(_currentThreadId),
-                                       "New Thread",
-                                       _currentThreadId)
-
-            LblCurrentTurn.Text = If(String.IsNullOrWhiteSpace(_currentTurnId),
-                                     "Turn: 0",
-                                     $"Turn: {_currentTurnId}")
-        End Sub
-
-        Private Shared Function FlattenUserInput(content As JsonArray) As String
-            If content Is Nothing OrElse content.Count = 0 Then
-                Return String.Empty
-            End If
-
-            Dim parts As New List(Of String)()
-
-            For Each entryNode In content
-                Dim entryObject = AsObject(entryNode)
-                If entryObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim kind = GetPropertyString(entryObject, "type")
-                Select Case kind
-                    Case "text"
-                        Dim value = GetPropertyString(entryObject, "text")
-                        If Not String.IsNullOrWhiteSpace(value) Then
-                            parts.Add(value)
-                        End If
-                    Case "image"
-                        parts.Add($"[image] {GetPropertyString(entryObject, "url")}")
-                    Case "localImage"
-                        parts.Add($"[localImage] {GetPropertyString(entryObject, "path")}")
-                    Case "mention"
-                        parts.Add($"[mention] {GetPropertyString(entryObject, "name")}")
-                    Case "skill"
-                        parts.Add($"[skill] {GetPropertyString(entryObject, "name")}")
-                End Select
-            Next
-
-            Return String.Join(Environment.NewLine, parts)
-        End Function
-
-        Private Sub TrackPendingUserEcho(text As String)
-            Dim normalized = NormalizeUserEchoText(text)
-            If String.IsNullOrWhiteSpace(normalized) Then
-                Return
-            End If
-
-            _pendingLocalUserEchoes.Enqueue(New PendingUserEcho With {
-                .Text = normalized,
-                .AddedUtc = DateTimeOffset.UtcNow
-            })
-
-            PrunePendingUserEchoes(DateTimeOffset.UtcNow)
-        End Sub
-
-        Private Function ShouldSuppressUserEcho(text As String) As Boolean
-            Dim normalized = NormalizeUserEchoText(text)
-            If String.IsNullOrWhiteSpace(normalized) Then
-                Return False
-            End If
-
-            PrunePendingUserEchoes(DateTimeOffset.UtcNow)
-
-            If _pendingLocalUserEchoes.Count = 0 Then
-                Return False
-            End If
-
-            If StringComparer.Ordinal.Equals(_pendingLocalUserEchoes.Peek().Text, normalized) Then
-                _pendingLocalUserEchoes.Dequeue()
-                Return True
-            End If
-
-            Dim size = _pendingLocalUserEchoes.Count
-            Dim matched = False
-            For i = 0 To size - 1
-                Dim candidate = _pendingLocalUserEchoes.Dequeue()
-                If Not matched AndAlso StringComparer.Ordinal.Equals(candidate.Text, normalized) Then
-                    matched = True
-                    Continue For
-                End If
-
-                _pendingLocalUserEchoes.Enqueue(candidate)
-            Next
-
-            Return matched
-        End Function
-
-        Private Sub PrunePendingUserEchoes(nowUtc As DateTimeOffset)
-            While _pendingLocalUserEchoes.Count > 16
-                _pendingLocalUserEchoes.Dequeue()
-            End While
-
-            While _pendingLocalUserEchoes.Count > 0
-                Dim pending = _pendingLocalUserEchoes.Peek()
-                If nowUtc - pending.AddedUtc <= PendingUserEchoMaxAge Then
-                    Exit While
-                End If
-
-                _pendingLocalUserEchoes.Dequeue()
-            End While
-        End Sub
-
-        Private Shared Function NormalizeUserEchoText(text As String) As String
-            If text Is Nothing Then
-                Return String.Empty
-            End If
-
-            Return text.Trim()
-        End Function
-
-        Private Async Function HandleServerRequestAsync(request As RpcServerRequest) As Task
-            Dim approvalInfo As PendingApprovalInfo = Nothing
-            If _approvalService.TryCreateApproval(request, approvalInfo) Then
-                QueueApproval(approvalInfo)
-                Return
-            End If
-
-            Select Case request.MethodName
-                Case "item/tool/requestUserInput"
-                    Await HandleToolRequestUserInputAsync(request)
-
-                Case "item/tool/call"
-                    Await HandleUnsupportedToolCallAsync(request)
-
-                Case "account/chatgptAuthTokens/refresh"
-                    Await HandleChatgptTokenRefreshAsync(request)
-
-                Case Else
-                    Await CurrentClient().SendErrorAsync(request.Id, -32601, $"Unsupported server request method: {request.MethodName}")
-            End Select
-        End Function
-
-        Private Sub QueueApproval(approvalInfo As PendingApprovalInfo)
-            If approvalInfo Is Nothing Then
-                Return
-            End If
-
-            _approvalQueue.Enqueue(approvalInfo)
-            ShowNextApprovalIfNeeded()
-            AppendSystemMessage($"Approval queued: {approvalInfo.MethodName}")
-            ShowStatus($"Approval queued: {approvalInfo.MethodName}", displayToast:=True)
-        End Sub
-
-        Private Sub ShowNextApprovalIfNeeded()
-            If _activeApproval IsNot Nothing Then
-                Return
-            End If
-
-            If _approvalQueue.Count = 0 Then
-                TxtApproval.Text = "No pending approvals."
-                RefreshControlStates()
-                Return
-            End If
-
-            _activeApproval = _approvalQueue.Dequeue()
-            TxtApproval.Text = _activeApproval.Summary
-            RefreshControlStates()
-        End Sub
-
-        Private Async Function ResolveApprovalAsync(action As String) As Task
-            If _activeApproval Is Nothing Then
-                Return
-            End If
-
-            Dim decision = _approvalService.ResolveDecision(_activeApproval, action)
-            If String.IsNullOrWhiteSpace(decision) Then
-                Throw New InvalidOperationException("No decision mapping is available for this approval type.")
-            End If
-
-            Dim resultNode As New JsonObject()
-            resultNode("decision") = decision
-
-            Await CurrentClient().SendResultAsync(_activeApproval.RequestId, resultNode)
-            AppendSystemMessage($"Approval sent: {decision}")
-            ShowStatus($"Approval sent: {decision}", displayToast:=True)
-
-            _activeApproval = Nothing
-            ShowNextApprovalIfNeeded()
-        End Function
-
-        Private Async Function HandleToolRequestUserInputAsync(request As RpcServerRequest) As Task
-            Dim paramsObject = AsObject(request.ParamsNode)
-            Dim questions = GetPropertyArray(paramsObject, "questions")
-            If questions Is Nothing OrElse questions.Count = 0 Then
-                Await CurrentClient().SendErrorAsync(request.Id, -32602, "No questions were provided in item/tool/requestUserInput.")
-                Return
-            End If
-
-            Dim answersRoot As New JsonObject()
-
-            For Each questionNode In questions
-                Dim questionObject = AsObject(questionNode)
-                If questionObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim questionId = GetPropertyString(questionObject, "id")
-                If String.IsNullOrWhiteSpace(questionId) Then
-                    Continue For
-                End If
-
-                Dim header = GetPropertyString(questionObject, "header", "Input required")
-                Dim prompt = GetPropertyString(questionObject, "question", questionId)
-                Dim isSecret = GetPropertyBoolean(questionObject, "isSecret", False)
-
-                Dim options As New List(Of String)()
-                Dim optionsArray = GetPropertyArray(questionObject, "options")
-                If optionsArray IsNot Nothing Then
-                    For Each optionNode In optionsArray
-                        Dim optionObject = AsObject(optionNode)
-                        If optionObject Is Nothing Then
-                            Continue For
-                        End If
-
-                        Dim label = GetPropertyString(optionObject, "label")
-                        Dim description = GetPropertyString(optionObject, "description")
-                        If String.IsNullOrWhiteSpace(label) Then
-                            Continue For
-                        End If
-
-                        If String.IsNullOrWhiteSpace(description) Then
-                            options.Add(label)
-                        Else
-                            options.Add($"{label} - {description}")
-                        End If
-                    Next
-                End If
-
-                Dim answer As String = Nothing
-                Dim promptDialog As New QuestionPromptWindow(header, prompt, options, isSecret) With {
-                    .Owner = Me
-                }
-                Dim dialogResult = promptDialog.ShowDialog()
-                If Not dialogResult.HasValue OrElse Not dialogResult.Value Then
-                    Await CurrentClient().SendErrorAsync(request.Id, -32800, "User canceled request_user_input.")
-                    Return
-                End If
-
-                answer = promptDialog.Answer
-
-                If String.IsNullOrWhiteSpace(answer) Then
-                    Await CurrentClient().SendErrorAsync(request.Id, -32602, $"No answer provided for question '{questionId}'.")
-                    Return
-                End If
-
-                Dim answerObject As New JsonObject()
-                Dim answerList As New JsonArray()
-                answerList.Add(answer)
-                answerObject("answers") = answerList
-                answersRoot(questionId) = answerObject
-            Next
-
-            Dim response As New JsonObject()
-            response("answers") = answersRoot
-
-            Await CurrentClient().SendResultAsync(request.Id, response)
-            AppendSystemMessage("Submitted request_user_input answers.")
-            ShowStatus("Submitted request_user_input answers.", displayToast:=True)
-        End Function
-
-        Private Async Function HandleUnsupportedToolCallAsync(request As RpcServerRequest) As Task
-            Dim response As New JsonObject()
-            response("success") = False
-
-            Dim contentItems As New JsonArray()
-            Dim textItem As New JsonObject()
-            textItem("type") = "inputText"
-            textItem("text") = "This host does not expose dynamic tool callbacks yet."
-            contentItems.Add(textItem)
-
-            response("contentItems") = contentItems
-            Await CurrentClient().SendResultAsync(request.Id, response)
-            AppendSystemMessage("Declined dynamic tool call (unsupported in this host).")
-            ShowStatus("Declined dynamic tool call.", isError:=True)
-        End Function
-
-        Private Sub InitializeReliabilityLayer()
-            _watchdogTimer.Interval = TimeSpan.FromSeconds(5)
-            AddHandler _watchdogTimer.Tick, AddressOf OnWatchdogTimerTick
-            _watchdogTimer.Start()
-
-            _reconnectUiTimer.Interval = TimeSpan.FromSeconds(1)
-            AddHandler _reconnectUiTimer.Tick, AddressOf OnReconnectUiTimerTick
-            _reconnectUiTimer.Start()
-            UpdateReconnectCountdownUi()
-        End Sub
-
-        Private Sub MarkRpcActivity()
-            _lastActivityUtc = DateTimeOffset.UtcNow
-        End Sub
-
-        Private Sub CancelReconnect()
-            Dim cts = _reconnectCts
-            _reconnectCts = Nothing
-
-            If cts IsNot Nothing Then
-                Try
-                    cts.Cancel()
-                Catch
-                End Try
-
-                cts.Dispose()
-            End If
-
-            _reconnectInProgress = False
-            _reconnectAttempt = 0
-            _nextReconnectAttemptUtc = Nothing
-            UpdateReconnectCountdownUi()
-        End Sub
-
-        Private Async Function ReconnectNowAsync() As Task
-            If _client IsNot Nothing AndAlso _client.IsRunning Then
-                ShowStatus("Already connected.")
-                Return
-            End If
-
-            CancelReconnect()
-            BeginReconnect("manual reconnect requested", force:=True)
-            Await Task.CompletedTask
-        End Function
-
-        Private Sub BeginReconnect(reason As String, Optional force As Boolean = False)
-            If Not force AndAlso Not _connectionExpected Then
-                Return
-            End If
-
-            If Not force AndAlso Not IsChecked(ChkAutoReconnect) Then
-                _connectionExpected = False
-                ShowStatus("Disconnected. Auto-reconnect is disabled.", isError:=True)
-                UpdateReconnectCountdownUi()
-                Return
-            End If
-
-            If _reconnectInProgress Then
-                If force Then
-                    CancelReconnect()
-                Else
-                    Return
-                End If
-            End If
-
-            If _reconnectInProgress Then
-                Return
-            End If
-
-            _connectionExpected = True
-
-            Dim reconnectCts As New CancellationTokenSource()
-            _reconnectCts = reconnectCts
-            _reconnectInProgress = True
-            _reconnectAttempt = 0
-            _nextReconnectAttemptUtc = Nothing
-            ShowStatus($"Auto-reconnect scheduled: {reason}", isError:=True, displayToast:=True)
-            AppendSystemMessage($"Auto-reconnect scheduled: {reason}")
-            UpdateReconnectCountdownUi()
-
-            FireAndForget(ReconnectLoopAsync(reason, reconnectCts))
-        End Sub
-
-        Private Async Function ReconnectLoopAsync(reason As String,
-                                                  reconnectCts As CancellationTokenSource) As Task
-            Dim token = reconnectCts.Token
-            Dim delays As Integer() = {2, 5, 10, 20, 30}
-
-            Try
-                For attempt = 1 To delays.Length + 1
-                    token.ThrowIfCancellationRequested()
-
-                    Dim currentAttempt = attempt
-                    _reconnectAttempt = currentAttempt
-                    _nextReconnectAttemptUtc = Nothing
-                    RunOnUi(
-                        Sub()
-                            ShowStatus($"Reconnect attempt {currentAttempt}/{delays.Length + 1}: {reason}", isError:=True)
-                            UpdateReconnectCountdownUi()
-                        End Sub)
-
-                    Dim delayBeforeRetry As TimeSpan? = Nothing
-                    Try
-                        Await RunOnUiAsync(Function() ConnectCoreAsync(isReconnect:=True, cancellationToken:=token))
-
-                        RunOnUi(
-                            Sub()
-                                ShowStatus("Reconnected successfully.", displayToast:=True)
-                                AppendSystemMessage("Reconnected successfully.")
-                            End Sub)
-
-                        Return
-                    Catch ex As OperationCanceledException
-                        Throw
-                    Catch ex As Exception
-                        RunOnUi(
-                            Sub()
-                                AppendSystemMessage($"Reconnect attempt {currentAttempt} failed: {ex.Message}")
-                                ShowStatus($"Reconnect attempt {currentAttempt} failed.", isError:=True)
-                            End Sub)
-
-                        If currentAttempt <= delays.Length Then
-                            delayBeforeRetry = TimeSpan.FromSeconds(delays(currentAttempt - 1))
-                        End If
-                    End Try
-
-                    If delayBeforeRetry.HasValue Then
-                        _nextReconnectAttemptUtc = DateTimeOffset.UtcNow.Add(delayBeforeRetry.Value)
-                        RunOnUi(Sub() UpdateReconnectCountdownUi())
-                        Await Task.Delay(delayBeforeRetry.Value, token)
-                    End If
-                Next
-
-                RunOnUi(
-                    Sub()
-                        _connectionExpected = False
-                        _nextReconnectAttemptUtc = Nothing
-                        UpdateReconnectCountdownUi()
-                        ShowStatus("Auto-reconnect failed. Please reconnect manually.",
-                                   isError:=True,
-                                   displayToast:=True)
-                    End Sub)
-            Catch ex As OperationCanceledException
-                RunOnUi(
-                    Sub()
-                        _nextReconnectAttemptUtc = Nothing
-                        UpdateReconnectCountdownUi()
-                        ShowStatus("Auto-reconnect canceled.")
-                    End Sub)
-            Finally
-                RunOnUi(
-                    Sub()
-                        If ReferenceEquals(_reconnectCts, reconnectCts) Then
-                            _reconnectCts = Nothing
-                        End If
-
-                        reconnectCts.Dispose()
-                        _reconnectInProgress = False
-                        _reconnectAttempt = 0
-                        _nextReconnectAttemptUtc = Nothing
-                        UpdateReconnectCountdownUi()
-                    End Sub)
-            End Try
-        End Function
-
-        Private Sub OnWatchdogTimerTick(sender As Object, e As EventArgs)
-            If Not _connectionExpected Then
-                Return
-            End If
-
-            Dim connected = _client IsNot Nothing AndAlso _client.IsRunning
-            If Not connected Then
-                BeginReconnect("watchdog detected a disconnected client")
-                Return
-            End If
-
-            Dim inactiveFor = DateTimeOffset.UtcNow - _lastActivityUtc
-            If inactiveFor < TimeSpan.FromSeconds(90) Then
-                Return
-            End If
-
-            If DateTimeOffset.UtcNow - _lastWatchdogWarningUtc < TimeSpan.FromSeconds(30) Then
-                Return
-            End If
-
-            _lastWatchdogWarningUtc = DateTimeOffset.UtcNow
-            ShowStatus($"No app-server activity for {CInt(inactiveFor.TotalSeconds)}s. Monitoring connection.",
-                       isError:=True)
-        End Sub
-
-        Private Sub OnReconnectUiTimerTick(sender As Object, e As EventArgs)
-            UpdateReconnectCountdownUi()
-        End Sub
-
-        Private Sub UpdateReconnectCountdownUi()
-            If _client IsNot Nothing AndAlso _client.IsRunning Then
-                LblReconnectCountdown.Text = "Reconnect: connected."
-                Return
-            End If
-
-            If _reconnectInProgress Then
-                If _nextReconnectAttemptUtc.HasValue Then
-                    Dim remaining = _nextReconnectAttemptUtc.Value - DateTimeOffset.UtcNow
-                    Dim secondsLeft = Math.Max(0, CInt(Math.Ceiling(remaining.TotalSeconds)))
-                    LblReconnectCountdown.Text = $"Reconnect: next attempt in {secondsLeft}s."
-                    Return
-                End If
-
-                Dim attemptText = If(_reconnectAttempt > 0, _reconnectAttempt.ToString(), "?")
-                LblReconnectCountdown.Text = $"Reconnect: attempt {attemptText} running..."
-                Return
-            End If
-
-            If _connectionExpected AndAlso IsChecked(ChkAutoReconnect) Then
-                LblReconnectCountdown.Text = "Reconnect: standing by."
-                Return
-            End If
-
-            LblReconnectCountdown.Text = "Reconnect: not scheduled."
-        End Sub
-
         Private Async Function ExportDiagnosticsAsync() As Task
             SaveSettings()
+            SyncSessionStateViewModel()
 
             Dim diagnosticsRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
                                                "CodexNativeAgentDiagnostics")
@@ -3555,10 +2931,10 @@ Namespace CodexNativeAgent.Ui
             Dim outputFolder = Path.Combine(diagnosticsRoot, $"diag-{stamp}")
             Directory.CreateDirectory(outputFolder)
 
-            File.WriteAllText(Path.Combine(outputFolder, "transcript.log"), TxtTranscript.Text)
-            File.WriteAllText(Path.Combine(outputFolder, "protocol.log"), TxtProtocol.Text)
-            File.WriteAllText(Path.Combine(outputFolder, "approval.txt"), TxtApproval.Text)
-            File.WriteAllText(Path.Combine(outputFolder, "rate-limits.txt"), TxtRateLimits.Text)
+            File.WriteAllText(Path.Combine(outputFolder, "transcript.log"), _viewModel.TranscriptPanel.TranscriptText)
+            File.WriteAllText(Path.Combine(outputFolder, "protocol.log"), _viewModel.TranscriptPanel.ProtocolText)
+            File.WriteAllText(Path.Combine(outputFolder, "approval.txt"), _viewModel.ApprovalPanel.SummaryText)
+            File.WriteAllText(Path.Combine(outputFolder, "rate-limits.txt"), _viewModel.SettingsPanel.RateLimitsText)
 
             Dim threadBuilder As New StringBuilder()
             For Each entry In _threadEntries
@@ -3567,43 +2943,84 @@ Namespace CodexNativeAgent.Ui
             File.WriteAllText(Path.Combine(outputFolder, "threads.tsv"), threadBuilder.ToString())
 
             Dim settingsObject As New JsonObject()
-            settingsObject("codexPath") = TxtCodexPath.Text.Trim()
-            settingsObject("serverArgs") = TxtServerArgs.Text.Trim()
-            settingsObject("workingDir") = TxtWorkingDir.Text.Trim()
-            settingsObject("windowsCodexHome") = TxtWindowsCodexHome.Text.Trim()
-            settingsObject("rememberApiKey") = IsChecked(ChkRememberApiKey)
-            settingsObject("autoLoginApiKey") = IsChecked(ChkAutoLoginApiKey)
-            settingsObject("autoReconnect") = IsChecked(ChkAutoReconnect)
+            settingsObject("codexPath") = _viewModel.SettingsPanel.CodexPath.Trim()
+            settingsObject("serverArgs") = _viewModel.SettingsPanel.ServerArgs.Trim()
+            settingsObject("workingDir") = _viewModel.SettingsPanel.WorkingDir.Trim()
+            settingsObject("windowsCodexHome") = _viewModel.SettingsPanel.WindowsCodexHome.Trim()
+            settingsObject("rememberApiKey") = _viewModel.SettingsPanel.RememberApiKey
+            settingsObject("autoLoginApiKey") = _viewModel.SettingsPanel.AutoLoginApiKey
+            settingsObject("autoReconnect") = _viewModel.SettingsPanel.AutoReconnect
+            settingsObject("disableWorkspaceHintOverlay") = _viewModel.SettingsPanel.DisableWorkspaceHintOverlay
+            settingsObject("disableConnectionInitializedToast") = _viewModel.SettingsPanel.DisableConnectionInitializedToast
+            settingsObject("disableThreadsPanelHints") = _viewModel.SettingsPanel.DisableThreadsPanelHints
             settingsObject("theme") = _currentTheme
             settingsObject("density") = _currentDensity
-            settingsObject("apiKeyMasked") = MaskSecret(TxtApiKey.Text.Trim(), 4)
-            settingsObject("externalAccessTokenMasked") = MaskSecret(TxtExternalAccessToken.Text.Trim(), 6)
-            settingsObject("externalAccountIdMasked") = MaskSecret(TxtExternalAccountId.Text.Trim(), 4)
+            settingsObject("apiKeyMasked") = MaskSecret(_viewModel.SettingsPanel.ApiKey.Trim(), 4)
+            settingsObject("externalAccessTokenMasked") = MaskSecret(_viewModel.SettingsPanel.ExternalAccessToken.Trim(), 6)
+            settingsObject("externalAccountIdMasked") = MaskSecret(_viewModel.SettingsPanel.ExternalAccountId.Trim(), 4)
 
             Dim connectionObject As New JsonObject()
-            connectionObject("isConnected") = (_client IsNot Nothing AndAlso _client.IsRunning)
-            connectionObject("expectedConnection") = _connectionExpected
-            connectionObject("reconnectInProgress") = _reconnectInProgress
-            connectionObject("reconnectAttempt") = _reconnectAttempt
-            connectionObject("currentThreadId") = _currentThreadId
-            connectionObject("currentTurnId") = _currentTurnId
-            connectionObject("lastActivityUtc") = _lastActivityUtc.ToString("O")
-            connectionObject("processId") = If(_client Is Nothing, 0, _client.ProcessId)
+            connectionObject("isConnected") = _viewModel.SessionState.IsConnected
+            connectionObject("isAuthenticated") = _viewModel.SessionState.IsAuthenticated
+            connectionObject("expectedConnection") = _viewModel.SessionState.ConnectionExpected
+            connectionObject("reconnectInProgress") = _viewModel.SessionState.IsReconnectInProgress
+            connectionObject("reconnectAttempt") = _viewModel.SessionState.ReconnectAttempt
+            connectionObject("currentLoginId") = _viewModel.SessionState.CurrentLoginId
+            connectionObject("currentThreadId") = _viewModel.SessionState.CurrentThreadId
+            connectionObject("currentTurnId") = _viewModel.SessionState.CurrentTurnId
+            connectionObject("lastActivityUtc") = _viewModel.SessionState.LastActivityUtc.ToString("O")
+            connectionObject("processId") = _viewModel.SessionState.ProcessId
+            connectionObject("nextReconnectAttemptUtc") = If(_viewModel.SessionState.NextReconnectAttemptUtc.HasValue,
+                                                             _viewModel.SessionState.NextReconnectAttemptUtc.Value.ToString("O"),
+                                                             String.Empty)
 
             Dim uiObject As New JsonObject()
-            uiObject("threadSearch") = TxtThreadSearch.Text
-            uiObject("threadSort") = SelectedComboValue(CmbThreadSort)
-            uiObject("model") = SelectedModelId()
-            uiObject("approvalPolicy") = SelectedComboValue(CmbApprovalPolicy)
-            uiObject("sandbox") = SelectedComboValue(CmbSandbox)
-            uiObject("reasoningEffort") = SelectedComboValue(CmbReasoningEffort)
+            uiObject("threadSearch") = _viewModel.ThreadsPanel.SearchText
+            uiObject("threadSort") = ThreadSortLabel(_viewModel.ThreadsPanel.SortIndex)
+            uiObject("model") = _viewModel.TurnComposer.SelectedModelId
+            uiObject("approvalPolicy") = _viewModel.TurnComposer.SelectedApprovalPolicy
+            uiObject("sandbox") = _viewModel.TurnComposer.SelectedSandbox
+            uiObject("reasoningEffort") = _viewModel.TurnComposer.SelectedReasoningEffort
+            uiObject("approvalSummary") = _viewModel.ApprovalPanel.SummaryText
+            uiObject("approvalPendingQueueCount") = _viewModel.ApprovalPanel.PendingQueueCount
+            uiObject("approvalActiveMethodName") = _viewModel.ApprovalPanel.ActiveMethodName
+            uiObject("approvalLastQueuedMethodName") = _viewModel.ApprovalPanel.LastQueuedMethodName
+            uiObject("approvalLastResolvedAction") = _viewModel.ApprovalPanel.LastResolvedAction
+            uiObject("approvalLastResolvedDecision") = _viewModel.ApprovalPanel.LastResolvedDecision
+            uiObject("approvalLastError") = _viewModel.ApprovalPanel.LastErrorText
+            uiObject("approvalLastQueueUpdatedUtc") = If(_viewModel.ApprovalPanel.LastQueueUpdatedUtc.HasValue,
+                                                         _viewModel.ApprovalPanel.LastQueueUpdatedUtc.Value.ToString("O"),
+                                                         String.Empty)
+            uiObject("approvalLastResolvedUtc") = If(_viewModel.ApprovalPanel.LastResolvedUtc.HasValue,
+                                                     _viewModel.ApprovalPanel.LastResolvedUtc.Value.ToString("O"),
+                                                     String.Empty)
+            uiObject("threadsLoading") = _viewModel.ThreadsPanel.IsLoading
+            uiObject("threadContentLoading") = _viewModel.ThreadsPanel.IsThreadContentLoading
+            uiObject("threadRefreshError") = _viewModel.ThreadsPanel.RefreshErrorText
+            uiObject("threadRefreshLastCount") = _viewModel.ThreadsPanel.LastRefreshThreadCount
+            uiObject("threadRefreshLastStartedUtc") = If(_viewModel.ThreadsPanel.LastRefreshStartedUtc.HasValue,
+                                                         _viewModel.ThreadsPanel.LastRefreshStartedUtc.Value.ToString("O"),
+                                                         String.Empty)
+            uiObject("threadRefreshLastCompletedUtc") = If(_viewModel.ThreadsPanel.LastRefreshCompletedUtc.HasValue,
+                                                           _viewModel.ThreadsPanel.LastRefreshCompletedUtc.Value.ToString("O"),
+                                                           String.Empty)
+            uiObject("threadSelectionLoadVersion") = _viewModel.ThreadsPanel.SelectionLoadVersion
+            uiObject("threadSelectionLoadThreadId") = _viewModel.ThreadsPanel.SelectionLoadThreadId
+            uiObject("threadSelectionHasActiveLoad") = _viewModel.ThreadsPanel.HasActiveSelectionLoad
+            uiObject("threadSelectionLastError") = _viewModel.ThreadsPanel.LastSelectionLoadErrorText
+            uiObject("threadSelectionLastStartedUtc") = If(_viewModel.ThreadsPanel.LastSelectionLoadStartedUtc.HasValue,
+                                                           _viewModel.ThreadsPanel.LastSelectionLoadStartedUtc.Value.ToString("O"),
+                                                           String.Empty)
+            uiObject("threadSelectionLastCompletedUtc") = If(_viewModel.ThreadsPanel.LastSelectionLoadCompletedUtc.HasValue,
+                                                             _viewModel.ThreadsPanel.LastSelectionLoadCompletedUtc.Value.ToString("O"),
+                                                             String.Empty)
             uiObject("theme") = _currentTheme
             uiObject("density") = _currentDensity
 
             Dim snapshot As New JsonObject()
             snapshot("generatedAtLocal") = DateTime.Now.ToString("O")
             snapshot("generatedAtUtc") = DateTimeOffset.UtcNow.ToString("O")
-            snapshot("statusText") = LblStatus.Text
+            snapshot("statusText") = StatusBarPaneHost.LblStatus.Text
             snapshot("settings") = settingsObject
             snapshot("connection") = connectionObject
             snapshot("ui") = uiObject
@@ -3638,9 +3055,313 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Shared Sub ScrollTextBoxToBottom(textBox As TextBox)
+            If textBox Is Nothing Then
+                Return
+            End If
+
             textBox.CaretIndex = textBox.Text.Length
             textBox.ScrollToEnd()
         End Sub
+
+        Private Sub OnTranscriptScrollChanged(sender As Object, e As ScrollChangedEventArgs)
+            If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
+                Return
+            End If
+
+            Dim scroller = TryCast(e.OriginalSource, ScrollViewer)
+            If scroller Is Nothing Then
+                Dim root = TryCast(sender, DependencyObject)
+                If root Is Nothing Then
+                    Return
+                End If
+
+                scroller = FindVisualDescendant(Of ScrollViewer)(root)
+            End If
+
+            If scroller Is Nothing Then
+                Return
+            End If
+
+            If Not IsTurnInProgressForTranscriptAutoScroll() Then
+                _transcriptAutoScrollEnabled = True
+                Return
+            End If
+
+            If IsScrollViewerNearBottom(scroller) Then
+                _transcriptAutoScrollEnabled = True
+                Return
+            End If
+
+            If e.VerticalChange < 0 Then
+                _transcriptAutoScrollEnabled = False
+            End If
+        End Sub
+
+        Private Function IsTurnInProgressForTranscriptAutoScroll() As Boolean
+            Dim session = If(_viewModel, Nothing)?.SessionState
+            Return session IsNot Nothing AndAlso session.HasCurrentTurn
+        End Function
+
+        Private Function IsWorkspaceHintOverlayContext() As Boolean
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.WorkspaceHintOverlay Is Nothing Then
+                Return False
+            End If
+
+            Dim hintText = If(_viewModel, Nothing)?.WorkspaceHintText
+            If String.IsNullOrWhiteSpace(hintText) Then
+                Return False
+            End If
+
+            Dim transcriptPanel = If(_viewModel, Nothing)?.TranscriptPanel
+            If transcriptPanel IsNot Nothing AndAlso transcriptPanel.LoadingOverlayVisibility = Visibility.Visible Then
+                Return False
+            End If
+
+            Dim session = If(_viewModel, Nothing)?.SessionState
+            If session Is Nothing Then
+                Return False
+            End If
+
+            Return session.IsConnectedAndAuthenticated AndAlso
+                   Not session.HasCurrentThread AndAlso
+                   Not session.HasCurrentTurn
+        End Function
+
+        Private Shared Function IsThreadsPanelHintStateText(stateText As String) As Boolean
+            Dim normalized = If(stateText, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return False
+            End If
+
+            Select Case normalized
+                Case "No threads loaded yet.",
+                     "Connect to Codex App Server to load threads.",
+                     "Authentication required. Sign in to start or load threads.",
+                     "No threads found. Start a new thread to begin.",
+                     "All project folders are collapsed. Expand a folder to view threads.",
+                     "No threads match the current search/filter."
+                    Return True
+            End Select
+
+            Return False
+        End Function
+
+        Private Sub UpdateThreadsPanelStateHintBubbleVisibility()
+            If SidebarPaneHost Is Nothing Then
+                Return
+            End If
+
+            Dim bubble = SidebarPaneHost.ThreadsStateHintBubble
+            Dim dismissButton = SidebarPaneHost.BtnDismissThreadsStateHint
+            If bubble Is Nothing OrElse dismissButton Is Nothing Then
+                Return
+            End If
+
+            Dim stateText = If(_viewModel, Nothing)?.ThreadsPanel?.StateText
+            Dim hasStateText = Not String.IsNullOrWhiteSpace(stateText)
+            If Not hasStateText Then
+                bubble.Visibility = Visibility.Collapsed
+                dismissButton.Visibility = Visibility.Collapsed
+                _threadsPanelHintBubbleHintKey = String.Empty
+                _threadsPanelHintBubbleDismissedForCurrentHint = False
+                Return
+            End If
+
+            Dim bubbleDisabled = _viewModel IsNot Nothing AndAlso
+                                 _viewModel.SettingsPanel IsNot Nothing AndAlso
+                                 _viewModel.SettingsPanel.DisableThreadsPanelHints
+            If bubbleDisabled Then
+                bubble.Visibility = Visibility.Collapsed
+                dismissButton.Visibility = Visibility.Collapsed
+                Return
+            End If
+
+            Dim trimmedStateText = stateText.Trim()
+            Dim isHint = IsThreadsPanelHintStateText(trimmedStateText)
+            dismissButton.Visibility = If(isHint, Visibility.Visible, Visibility.Collapsed)
+
+            If Not isHint Then
+                bubble.Visibility = Visibility.Visible
+                _threadsPanelHintBubbleHintKey = String.Empty
+                _threadsPanelHintBubbleDismissedForCurrentHint = False
+                Return
+            End If
+
+            Dim hintChanged = Not StringComparer.Ordinal.Equals(trimmedStateText, _threadsPanelHintBubbleHintKey)
+            If hintChanged Then
+                _threadsPanelHintBubbleHintKey = trimmedStateText
+                _threadsPanelHintBubbleDismissedForCurrentHint = False
+            End If
+
+            If _threadsPanelHintBubbleDismissedForCurrentHint Then
+                bubble.Visibility = Visibility.Collapsed
+                Return
+            End If
+
+            bubble.Visibility = Visibility.Visible
+        End Sub
+
+        Private Sub UpdateWorkspaceHintOverlayVisibility()
+            If WorkspacePaneHost Is Nothing Then
+                Return
+            End If
+
+            Dim banner = WorkspacePaneHost.WorkspaceHintBanner
+            Dim overlay = WorkspacePaneHost.WorkspaceHintOverlay
+            If banner Is Nothing OrElse overlay Is Nothing Then
+                Return
+            End If
+
+            Dim hintText = If(_viewModel, Nothing)?.WorkspaceHintText
+            Dim hasHintText = Not String.IsNullOrWhiteSpace(hintText)
+            Dim overlayContext = IsWorkspaceHintOverlayContext()
+            Dim hintsDisabled = _viewModel IsNot Nothing AndAlso
+                                _viewModel.SettingsPanel IsNot Nothing AndAlso
+                                _viewModel.SettingsPanel.DisableWorkspaceHintOverlay
+            Dim overlayAllowed = overlayContext AndAlso Not hintsDisabled
+
+            banner.Visibility = If(hasHintText AndAlso Not overlayContext AndAlso Not hintsDisabled,
+                                   Visibility.Visible,
+                                   Visibility.Collapsed)
+
+            If Not overlayAllowed Then
+                _workspaceHintOverlayTimer.Stop()
+                overlay.Visibility = Visibility.Collapsed
+                If Not overlayContext Then
+                    _workspaceHintOverlayHintKey = String.Empty
+                    _workspaceHintOverlayDismissedForCurrentHint = False
+                End If
+                Return
+            End If
+
+            Dim hintKey = hintText.Trim()
+            Dim hintChanged = Not StringComparer.Ordinal.Equals(hintKey, _workspaceHintOverlayHintKey)
+            If hintChanged Then
+                _workspaceHintOverlayHintKey = hintKey
+                _workspaceHintOverlayDismissedForCurrentHint = False
+            End If
+
+            If _workspaceHintOverlayDismissedForCurrentHint Then
+                overlay.Visibility = Visibility.Collapsed
+                _workspaceHintOverlayTimer.Stop()
+                Return
+            End If
+
+            If overlay.Visibility <> Visibility.Visible OrElse hintChanged Then
+                overlay.Visibility = Visibility.Visible
+                _workspaceHintOverlayTimer.Stop()
+                _workspaceHintOverlayTimer.Start()
+            End If
+        End Sub
+
+        Private Sub DismissWorkspaceHintOverlay(Optional dismissCurrentHint As Boolean = True)
+            _workspaceHintOverlayTimer.Stop()
+            If dismissCurrentHint Then
+                _workspaceHintOverlayDismissedForCurrentHint = True
+            End If
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.WorkspaceHintOverlay Is Nothing Then
+                Return
+            End If
+
+            WorkspacePaneHost.WorkspaceHintOverlay.Visibility = Visibility.Collapsed
+        End Sub
+
+        Private Sub DismissThreadsPanelStateHint(Optional dismissCurrentHint As Boolean = True)
+            If dismissCurrentHint Then
+                _threadsPanelHintBubbleDismissedForCurrentHint = True
+            End If
+
+            If SidebarPaneHost Is Nothing OrElse SidebarPaneHost.ThreadsStateHintBubble Is Nothing Then
+                Return
+            End If
+
+            SidebarPaneHost.ThreadsStateHintBubble.Visibility = Visibility.Collapsed
+        End Sub
+
+        Private Sub UpdateWorkspaceEmptyStateVisibility()
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.ImgTimeToBuildEmptyState Is Nothing Then
+                Return
+            End If
+
+            Dim transcriptPanel = If(_viewModel, Nothing)?.TranscriptPanel
+            Dim hasVisibleTranscriptEntries = transcriptPanel IsNot Nothing AndAlso
+                                            transcriptPanel.Items IsNot Nothing AndAlso
+                                            transcriptPanel.Items.Count > 0
+            Dim transcriptLoading = transcriptPanel IsNot Nothing AndAlso
+                                    transcriptPanel.LoadingOverlayVisibility = Visibility.Visible
+            Dim noThreadSelected = String.IsNullOrWhiteSpace(_currentThreadId)
+            Dim noActiveTurn = String.IsNullOrWhiteSpace(_currentTurnId)
+            Dim showDraftNewThreadEmptyState = _pendingNewThreadFirstPromptSelection
+            Dim showEmptyState = (noThreadSelected OrElse showDraftNewThreadEmptyState) AndAlso
+                                 noActiveTurn AndAlso
+                                 Not hasVisibleTranscriptEntries AndAlso
+                                 Not transcriptLoading
+
+            WorkspacePaneHost.ImgTimeToBuildEmptyState.Visibility = If(showEmptyState, Visibility.Visible, Visibility.Collapsed)
+        End Sub
+
+        Private Shared Function IsScrollViewerNearBottom(scroller As ScrollViewer) As Boolean
+            If scroller Is Nothing Then
+                Return True
+            End If
+
+            Const bottomEpsilon As Double = 2.0
+            Return scroller.VerticalOffset >= Math.Max(0, scroller.ScrollableHeight - bottomEpsilon)
+        End Function
+
+        Private Sub ScrollTranscriptToBottom()
+            If WorkspacePaneHost Is Nothing Then
+                Return
+            End If
+
+            UpdateWorkspaceEmptyStateVisibility()
+
+            If Not IsTurnInProgressForTranscriptAutoScroll() Then
+                _transcriptAutoScrollEnabled = True
+            ElseIf Not _transcriptAutoScrollEnabled Then
+                Return
+            End If
+
+            Dim transcriptList = WorkspacePaneHost.LstTranscript
+            If transcriptList IsNot Nothing Then
+                Dim scroller = FindVisualDescendant(Of ScrollViewer)(transcriptList)
+                If scroller IsNot Nothing Then
+                    _suppressTranscriptScrollTracking = True
+                    Try
+                        scroller.ScrollToBottom()
+                    Finally
+                        _suppressTranscriptScrollTracking = False
+                    End Try
+                ElseIf transcriptList.Items IsNot Nothing AndAlso transcriptList.Items.Count > 0 Then
+                    transcriptList.ScrollIntoView(transcriptList.Items(transcriptList.Items.Count - 1))
+                End If
+            End If
+
+            ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+        End Sub
+
+        Private Shared Function FindVisualDescendant(Of T As DependencyObject)(root As DependencyObject) As T
+            If root Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim childCount = VisualTreeHelper.GetChildrenCount(root)
+            For i = 0 To childCount - 1
+                Dim child = VisualTreeHelper.GetChild(root, i)
+                Dim typed = TryCast(child, T)
+                If typed IsNot Nothing Then
+                    Return typed
+                End If
+
+                Dim nested = FindVisualDescendant(Of T)(child)
+                If nested IsNot Nothing Then
+                    Return nested
+                End If
+            Next
+
+            Return Nothing
+        End Function
 
         Private Shared Sub TrimLogIfNeeded(textBox As TextBox)
             Const maxChars As Integer = 500000

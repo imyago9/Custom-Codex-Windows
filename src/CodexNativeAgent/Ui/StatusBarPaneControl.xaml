@@ -1,0 +1,43 @@
+<UserControl x:Class="CodexNativeAgent.Ui.StatusBarPaneControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent">
+        <Border
+                Background="{DynamicResource SurfaceContrastBrush}"
+                BorderBrush="{DynamicResource BorderStrongBrush}"
+                BorderThickness="1,1,0,0"
+                CornerRadius="10,10,0,0"
+                Padding="12,7"
+                Margin="{DynamicResource StatusBarMargin}">
+            <DockPanel>
+                <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <ComboBox x:Name="CmbApprovalPolicy"
+                              Width="150"
+                              Margin="0,0,8,0"
+                              IsEnabled="{Binding TurnComposer.IsApprovalPolicyEnabled}"
+                              SelectedValuePath="Content"
+                              SelectedValue="{Binding TurnComposer.SelectedApprovalPolicy, Mode=TwoWay}"
+                              ToolTip="Approval policy">
+                        <ComboBoxItem Content="untrusted" />
+                        <ComboBoxItem Content="on-failure" />
+                        <ComboBoxItem Content="on-request" />
+                        <ComboBoxItem Content="never" />
+                    </ComboBox>
+
+                    <ComboBox x:Name="CmbSandbox"
+                              Width="175"
+                              IsEnabled="{Binding TurnComposer.IsSandboxEnabled}"
+                              SelectedValuePath="Content"
+                              SelectedValue="{Binding TurnComposer.SelectedSandbox, Mode=TwoWay}"
+                              ToolTip="Sandbox mode">
+                        <ComboBoxItem Content="workspace-write" />
+                        <ComboBoxItem Content="read-only" />
+                        <ComboBoxItem Content="danger-full-access" />
+                    </ComboBox>
+                </WrapPanel>
+
+                <TextBlock Text="Status" Style="{StaticResource CaptionTextStyle}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                <TextBlock x:Name="LblStatus" Text="{Binding StatusText}" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+</UserControl>
