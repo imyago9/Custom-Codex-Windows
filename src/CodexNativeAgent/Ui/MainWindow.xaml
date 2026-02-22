@@ -63,10 +63,62 @@
                             Margin="0,0,0,10">
                         <StackPanel>
                             <Button x:Name="BtnSidebarNewThread" Style="{StaticResource SidebarButtonStyle}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE70F;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="New Thread" VerticalAlignment="Center" />
-                                </StackPanel>
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="SidebarNewThreadContextMenu"
+                                                 Background="{DynamicResource SurfaceRaisedBrush}"
+                                                 BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                 BorderThickness="1"
+                                                 Padding="6">
+                                        <ContextMenu.Resources>
+                                            <Style TargetType="MenuItem">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                <Setter Property="Padding" Value="10,7" />
+                                                <Setter Property="Margin" Value="2" />
+                                                <Setter Property="FontSize" Value="12.8" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="MenuItem">
+                                                            <Border x:Name="ItemChrome"
+                                                                    Background="Transparent"
+                                                                    BorderBrush="Transparent"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="8"
+                                                                    Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsHighlighted" Value="True">
+                                                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                                    <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsEnabled" Value="False">
+                                                                    <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ContextMenu.Resources>
+                                        <MenuItem x:Name="MnuSidebarNewThreadChooseFolder" Header="Choose folder..." />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="&#xE70F;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock x:Name="LblSidebarNewThreadText"
+                                               Grid.Column="1"
+                                               Text="New thread"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" />
+                                </Grid>
                             </Button>
 
                             <Button x:Name="BtnSidebarAutomations" Style="{StaticResource SidebarButtonStyle}">
@@ -175,7 +227,14 @@
                                                                   StaysOpenOnClick="True" />
                                                     </ContextMenu>
                                                 </Button.ContextMenu>
-                                                <TextBlock Text="&#xE71C;" FontFamily="Segoe MDL2 Assets" FontSize="14" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                                <TextBlock Text="&#xE71C;"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="14"
+                                                           LineHeight="14"
+                                                           LineStackingStrategy="BlockLineHeight"
+                                                           TextAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Center" />
                                             </Button>
 
                                             <Button x:Name="BtnThreadSortMenu"
@@ -200,7 +259,14 @@
                                                         <MenuItem x:Name="MnuThreadSortPreviewZa" Header="Preview Z-A" IsCheckable="True" />
                                                     </ContextMenu>
                                                 </Button.ContextMenu>
-                                                <TextBlock Text="&#xE8CB;" FontFamily="Segoe MDL2 Assets" FontSize="14" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                                <TextBlock Text="&#xE8CB;"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="14"
+                                                           LineHeight="14"
+                                                           LineStackingStrategy="BlockLineHeight"
+                                                           TextAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Center" />
                                             </Button>
                                         </StackPanel>
                                     </DockPanel>
@@ -421,10 +487,12 @@
                                                     </Setter>
                                                 </Style>
                                             </ContextMenu.Resources>
+                                            <MenuItem x:Name="MnuThreadGroupNewThreadHere" Header="New Thread Here" Visibility="Collapsed" />
+                                            <Separator x:Name="SepThreadGroupContextTop" Visibility="Collapsed" />
                                             <MenuItem x:Name="MnuThreadSelect" Header="Select" />
-                                            <Separator />
+                                            <Separator x:Name="SepThreadContextSelectRefresh" />
                                             <MenuItem x:Name="MnuThreadRefreshSingle" Header="Refresh Thread" />
-                                            <Separator />
+                                            <Separator x:Name="SepThreadContextRefreshActions" />
                                             <MenuItem x:Name="MnuThreadFork" Header="Fork" />
                                             <MenuItem x:Name="MnuThreadArchive" Header="Archive" />
                                             <MenuItem x:Name="MnuThreadUnarchive" Header="Unarchive" />
@@ -648,6 +716,41 @@
                                             </StackPanel>
                                         </Grid>
                                     </GroupBox>
+
+                                    <GroupBox Header="Keybinds">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl+Enter" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Send turn input" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl+Shift+N" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="Start a new thread" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl+F" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="2" Grid.Column="1" Text="Focus thread search" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Ctrl+," Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Text="Open Settings" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="F5" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="4" Grid.Column="1" Text="Refresh thread list" Margin="0,0,0,8" VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="F6" Margin="0,0,10,0" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="5" Grid.Column="1" Text="Refresh models" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </GroupBox>
                                 </StackPanel>
                             </ScrollViewer>
                         </Grid>
@@ -664,8 +767,8 @@
                           Opacity="0.55" />
 
             <Border Grid.Column="2"
-                    Style="{StaticResource CardBorderStyle}"
-                    Background="{DynamicResource SurfaceBrush}"
+                    Background="Transparent"
+                    BorderThickness="0"
                     Padding="{DynamicResource MainShellPadding}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -709,59 +812,56 @@
                     </Border>
 
                     <Border Grid.Row="2"
-                            Style="{StaticResource CardBorderStyle}"
-                            Background="{DynamicResource SurfaceBrush}"
+                            Background="Transparent"
+                            BorderThickness="0"
                             Padding="10"
                             Margin="0,0,0,12">
-                        <TabControl>
-                            <TabItem Header="Transcript">
-                                <Grid>
-                                    <TextBox x:Name="TxtTranscript"
-                                             IsReadOnly="True"
-                                             AcceptsReturn="True"
-                                             TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Auto"
-                                             Background="Transparent"
-                                             BorderThickness="0"
-                                             FontFamily="Cascadia Code" />
+                        <Grid>
+                            <TextBox x:Name="TxtTranscript"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     FontFamily="Cascadia Code" />
 
-                                    <Border x:Name="TranscriptLoadingOverlay"
-                                            Panel.ZIndex="10"
-                                            Visibility="Collapsed"
-                                            Background="{DynamicResource SurfaceRaisedBrush}"
-                                            BorderBrush="{DynamicResource BorderStrongBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="12"
-                                            Padding="16"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center">
-                                        <StackPanel Width="230">
-                                            <ProgressBar IsIndeterminate="True"
-                                                         Height="7"
-                                                         Foreground="{DynamicResource AccentBrush}"
-                                                         Background="{DynamicResource SurfaceContrastBrush}" />
-                                            <TextBlock x:Name="LblTranscriptLoading"
-                                                       Margin="0,10,0,0"
-                                                       HorizontalAlignment="Center"
-                                                       Text="Loading thread..."
-                                                       Style="{StaticResource CaptionTextStyle}" />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-                            </TabItem>
-                            <TabItem Header="Protocol">
-                                <TextBox x:Name="TxtProtocol"
-                                         IsReadOnly="True"
-                                         AcceptsReturn="True"
-                                         TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Auto"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         FontFamily="Cascadia Code" />
-                            </TabItem>
-                        </TabControl>
+                            <!-- Hidden protocol buffer is retained for logging/export and the protocol dialog. -->
+                            <TextBox x:Name="TxtProtocol"
+                                     Visibility="Collapsed"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     FontFamily="Cascadia Code" />
+
+                            <Border x:Name="TranscriptLoadingOverlay"
+                                    Panel.ZIndex="10"
+                                    Visibility="Collapsed"
+                                    Background="{DynamicResource SurfaceRaisedBrush}"
+                                    BorderBrush="{DynamicResource BorderStrongBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="16"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <StackPanel Width="230">
+                                    <ProgressBar IsIndeterminate="True"
+                                                 Height="7"
+                                                 Foreground="{DynamicResource AccentBrush}"
+                                                 Background="{DynamicResource SurfaceContrastBrush}" />
+                                    <TextBlock x:Name="LblTranscriptLoading"
+                                               Margin="0,10,0,0"
+                                               HorizontalAlignment="Center"
+                                               Text="Loading thread..."
+                                               Style="{StaticResource CaptionTextStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
                     </Border>
 
                     <Border Grid.Row="3"
@@ -848,36 +948,41 @@
                                     <ComboBox x:Name="CmbModel" Width="260" Margin="0,0,12,6" />
 
                                     <ComboBox x:Name="CmbReasoningEffort" Width="150" Margin="0,0,12,6">
-                                        <ComboBoxItem Content="" />
-                                        <ComboBoxItem Content="none" />
                                         <ComboBoxItem Content="minimal" />
                                         <ComboBoxItem Content="low" />
                                         <ComboBoxItem Content="medium" />
                                         <ComboBoxItem Content="high" />
                                         <ComboBoxItem Content="xhigh" />
                                     </ComboBox>
-
-                                    <ComboBox x:Name="CmbApprovalPolicy" Width="150" Margin="0,0,12,6">
-                                        <ComboBoxItem Content="untrusted" />
-                                        <ComboBoxItem Content="on-failure" />
-                                        <ComboBoxItem Content="on-request" />
-                                        <ComboBoxItem Content="never" />
-                                    </ComboBox>
-
-                                    <ComboBox x:Name="CmbSandbox" Width="175" Margin="0,0,12,6">
-                                        <ComboBoxItem Content="workspace-write" />
-                                        <ComboBoxItem Content="read-only" />
-                                        <ComboBoxItem Content="danger-full-access" />
-                                    </ComboBox>
-
-                                    <Button x:Name="BtnRefreshModels" Content="Refresh Models" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,0,6" />
                                 </WrapPanel>
 
                                 <WrapPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <Button x:Name="BtnClearInput" Content="Clear" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
                                     <Button x:Name="BtnTurnSteer" Content="Steer Active Turn" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,6,6" />
-                                    <Button x:Name="BtnTurnInterrupt" Content="Interrupt" Style="{StaticResource DangerButtonStyle}" Margin="0,0,6,6" />
-                                    <Button x:Name="BtnTurnStart" Content="Send (Ctrl+Enter)" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,0,6" />
+                                    <Button x:Name="BtnTurnStart"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Width="42"
+                                            MinWidth="42"
+                                            Padding="0"
+                                            Margin="0,0,0,6"
+                                            ToolTip="Send (Ctrl+Enter)">
+                                        <Image Source="pack://application:,,,/Assets/send-input.png"
+                                               Width="16"
+                                               Height="16"
+                                               Stretch="Uniform" />
+                                    </Button>
+                                    <Button x:Name="BtnTurnInterrupt"
+                                            Style="{StaticResource DangerButtonStyle}"
+                                            Width="42"
+                                            MinWidth="42"
+                                            Padding="0"
+                                            Margin="0,0,0,6"
+                                            Visibility="Collapsed"
+                                            ToolTip="Interrupt">
+                                        <Image Source="pack://application:,,,/Assets/interrupt.png"
+                                               Width="14"
+                                               Height="14"
+                                               Stretch="Uniform" />
+                                    </Button>
                                 </WrapPanel>
                             </Grid>
                         </Grid>
@@ -909,8 +1014,35 @@
                 Padding="12,7"
                 Margin="{DynamicResource StatusBarMargin}">
             <DockPanel>
+                <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <ComboBox x:Name="CmbApprovalPolicy"
+                              Width="150"
+                              Margin="0,0,8,0"
+                              ToolTip="Approval policy">
+                        <ComboBoxItem Content="untrusted" />
+                        <ComboBoxItem Content="on-failure" />
+                        <ComboBoxItem Content="on-request" />
+                        <ComboBoxItem Content="never" />
+                    </ComboBox>
+
+                    <ComboBox x:Name="CmbSandbox"
+                              Width="175"
+                              ToolTip="Sandbox mode">
+                        <ComboBoxItem Content="workspace-write" />
+                        <ComboBoxItem Content="read-only" />
+                        <ComboBoxItem Content="danger-full-access" />
+                    </ComboBox>
+                </WrapPanel>
+
                 <TextBlock Text="Status" Style="{StaticResource CaptionTextStyle}" Margin="0,0,8,0" VerticalAlignment="Center" />
                 <TextBlock x:Name="LblStatus" Text="Ready." VerticalAlignment="Center" />
+                <Button x:Name="BtnOpenProtocolDialog"
+                        Content="Protocol"
+                        Style="{StaticResource ButtonBaseStyle}"
+                        Margin="10,0,0,0"
+                        Padding="10,4"
+                        MinHeight="28"
+                        VerticalAlignment="Center" />
             </DockPanel>
         </Border>
     </Grid>

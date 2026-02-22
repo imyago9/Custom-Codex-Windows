@@ -27,11 +27,7 @@ Namespace CodexNativeAgent.Ui
 
             Public Overrides Function ToString() As String
                 Dim name = If(String.IsNullOrWhiteSpace(DisplayName), Id, DisplayName)
-                If IsDefault Then
-                    Return $"{name} ({Id}) [default]"
-                End If
-
-                Return $"{name} ({Id})"
+                Return name
             End Function
         End Class
 
@@ -140,6 +136,7 @@ Namespace CodexNativeAgent.Ui
 
         Private NotInheritable Class ThreadGroupHeaderEntry
             Public Property GroupKey As String = String.Empty
+            Public Property ProjectPath As String = String.Empty
             Public Property FolderName As String = String.Empty
             Public Property Count As Integer
             Public Property IsExpanded As Boolean
@@ -232,6 +229,9 @@ Namespace CodexNativeAgent.Ui
         Private _suppressThreadSelectionEvents As Boolean
         Private _suppressThreadToolbarMenuEvents As Boolean
         Private _threadContextTarget As ThreadListEntry
+        Private _threadGroupContextTarget As ThreadGroupHeaderEntry
+        Private _currentThreadCwd As String = String.Empty
+        Private _newThreadTargetOverrideCwd As String = String.Empty
         Private _connectionExpected As Boolean
         Private _reconnectInProgress As Boolean
         Private _reconnectAttempt As Integer
@@ -276,7 +276,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If CmbReasoningEffort.SelectedIndex < 0 Then
-                CmbReasoningEffort.SelectedIndex = 4
+                CmbReasoningEffort.SelectedIndex = 2
             End If
 
             If CmbApprovalPolicy.SelectedIndex < 0 Then
@@ -316,6 +316,7 @@ Namespace CodexNativeAgent.Ui
             UpdateSidebarSelectionState(showSettings:=False)
             SyncAppearanceControls()
             SyncThreadToolbarMenus()
+            SyncNewThreadTargetChip()
         End Sub
 
         Private Sub InitializeEventHandlers()
@@ -323,10 +324,16 @@ Namespace CodexNativeAgent.Ui
                                                        ShowWorkspaceView()
                                                        Await RunUiActionAsync(AddressOf StartThreadAsync)
                                                    End Sub
+            AddHandler SidebarNewThreadContextMenu.Opened, Sub(sender, e) SyncSidebarNewThreadMenu()
+            AddHandler MnuSidebarNewThreadChooseFolder.Click, Async Sub(sender, e)
+                                                               ShowWorkspaceView()
+                                                               Await RunUiActionAsync(AddressOf ChooseFolderAndStartNewThreadAsync)
+                                                           End Sub
             AddHandler BtnSidebarSettings.Click, Sub(sender, e) ShowSettingsView()
             AddHandler BtnSettingsBack.Click, Sub(sender, e) ShowWorkspaceView()
             AddHandler BtnToggleTheme.Click, Sub(sender, e) ToggleTheme()
             AddHandler CmbDensity.SelectionChanged, Sub(sender, e) OnDensitySelectionChanged()
+            AddHandler TxtWorkingDir.TextChanged, Sub(sender, e) SyncNewThreadTargetChip()
 
             AddHandler BtnConnect.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ConnectAsync)
             AddHandler BtnDisconnect.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf DisconnectAsync)
@@ -371,7 +378,12 @@ Namespace CodexNativeAgent.Ui
             AddHandler MnuThreadFilterWorkingDir.Unchecked, AddressOf OnThreadFilterMenuItemToggled
             AddHandler LstThreads.PreviewMouseRightButtonDown, AddressOf OnThreadsPreviewMouseRightButtonDown
             AddHandler LstThreads.ContextMenuOpening, AddressOf OnThreadsContextMenuOpening
-            AddHandler ThreadItemContextMenu.Closed, Sub(sender, e) _threadContextTarget = Nothing
+            AddHandler ThreadItemContextMenu.Closed,
+                Sub(sender, e)
+                    _threadContextTarget = Nothing
+                    _threadGroupContextTarget = Nothing
+                End Sub
+            AddHandler MnuThreadGroupNewThreadHere.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf StartThreadFromGroupHeaderContextMenuAsync)
             AddHandler MnuThreadSelect.Click, AddressOf OnSelectThreadFromContextMenuClick
             AddHandler MnuThreadRefreshSingle.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadFromContextMenuAsync)
             AddHandler MnuThreadFork.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ForkThreadFromContextMenuAsync)
@@ -408,9 +420,6 @@ Namespace CodexNativeAgent.Ui
             AddHandler BtnTurnStart.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf StartTurnAsync)
             AddHandler BtnTurnSteer.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf SteerTurnAsync)
             AddHandler BtnTurnInterrupt.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf InterruptTurnAsync)
-            AddHandler BtnClearInput.Click, Sub(sender, e) TxtTurnInput.Clear()
-            AddHandler BtnRefreshModels.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshModelsAsync)
-
             AddHandler BtnApprovalAccept.Click, Async Sub(sender, e) Await RunUiActionAsync(Function() ResolveApprovalAsync("accept"))
             AddHandler BtnApprovalAcceptSession.Click, Async Sub(sender, e) Await RunUiActionAsync(Function() ResolveApprovalAsync("accept_session"))
             AddHandler BtnApprovalDecline.Click, Async Sub(sender, e) Await RunUiActionAsync(Function() ResolveApprovalAsync("decline"))
@@ -418,6 +427,7 @@ Namespace CodexNativeAgent.Ui
 
             AddHandler BtnQuickOpenVsc.Click, Sub(sender, e) ShowStatus("Open VSC action not implemented yet.")
             AddHandler BtnQuickOpenTerminal.Click, Sub(sender, e) ShowStatus("Open Terminal action not implemented yet.")
+            AddHandler BtnOpenProtocolDialog.Click, Sub(sender, e) ShowProtocolDialog()
         End Sub
 
         Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
@@ -427,6 +437,91 @@ Namespace CodexNativeAgent.Ui
 
             _startupConnectAttempted = True
             FireAndForget(RunUiActionAsync(AddressOf AutoConnectOnStartupAsync))
+        End Sub
+
+        Private Sub ShowProtocolDialog()
+            Dim protocolText = If(TxtProtocol.Text, String.Empty)
+            If String.IsNullOrWhiteSpace(protocolText) Then
+                protocolText = "No protocol entries yet."
+            End If
+
+            Dim closeButton As New Button() With {
+                .Content = "Close",
+                .Style = TryCast(TryFindResource("ButtonBaseStyle"), Style),
+                .Width = 90,
+                .HorizontalAlignment = HorizontalAlignment.Right
+            }
+
+            Dim protocolViewer As New TextBox() With {
+                .Text = protocolText,
+                .IsReadOnly = True,
+                .AcceptsReturn = True,
+                .TextWrapping = TextWrapping.Wrap,
+                .VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                .HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                .Background = Brushes.Transparent,
+                .BorderThickness = New Thickness(0),
+                .FontFamily = New FontFamily("Cascadia Code")
+            }
+
+            Dim viewerChrome As New Border() With {
+                .Background = ResolveBrush("SurfaceBrush", Brushes.White),
+                .BorderBrush = ResolveBrush("BorderBrush", Brushes.LightGray),
+                .BorderThickness = New Thickness(1),
+                .CornerRadius = New CornerRadius(12),
+                .Padding = New Thickness(10),
+                .Child = protocolViewer
+            }
+
+            Dim headerTitle As New TextBlock() With {
+                .Text = "Protocol",
+                .FontSize = 16,
+                .FontWeight = FontWeights.SemiBold
+            }
+
+            Dim headerCaption As New TextBlock() With {
+                .Text = "Request/response log snapshot",
+                .Margin = New Thickness(0, 2, 0, 0)
+            }
+            headerCaption.Style = TryCast(TryFindResource("CaptionTextStyle"), Style)
+
+            Dim headerStack As New StackPanel()
+            headerStack.Children.Add(headerTitle)
+            headerStack.Children.Add(headerCaption)
+
+            Dim layout As New Grid()
+            layout.RowDefinitions.Add(New RowDefinition() With {.Height = GridLength.Auto})
+            layout.RowDefinitions.Add(New RowDefinition() With {.Height = New GridLength(1, GridUnitType.Star)})
+            layout.RowDefinitions.Add(New RowDefinition() With {.Height = GridLength.Auto})
+
+            Grid.SetRow(headerStack, 0)
+            layout.Children.Add(headerStack)
+
+            viewerChrome.Margin = New Thickness(0, 10, 0, 10)
+            Grid.SetRow(viewerChrome, 1)
+            layout.Children.Add(viewerChrome)
+
+            Grid.SetRow(closeButton, 2)
+            layout.Children.Add(closeButton)
+
+            Dim dialog As New Window() With {
+                .Owner = Me,
+                .Title = "Protocol",
+                .Width = 980,
+                .Height = 680,
+                .MinWidth = 680,
+                .MinHeight = 460,
+                .WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                .Background = ResolveBrush("AppBackgroundBrush", Brushes.White),
+                .Content = New Border() With {
+                    .Padding = New Thickness(14),
+                    .Child = layout
+                }
+            }
+
+            AddHandler closeButton.Click, Sub(sender, e) dialog.Close()
+
+            dialog.ShowDialog()
         End Sub
 
         Private Sub OnThreadSortMenuButtonClick(sender As Object, e As RoutedEventArgs)
@@ -535,6 +630,87 @@ Namespace CodexNativeAgent.Ui
             SyncThreadToolbarMenus()
         End Sub
 
+        Private Sub SyncSidebarNewThreadMenu()
+            If MnuSidebarNewThreadChooseFolder Is Nothing Then
+                Return
+            End If
+
+            MnuSidebarNewThreadChooseFolder.IsEnabled = BtnSidebarNewThread IsNot Nothing AndAlso BtnSidebarNewThread.IsEnabled
+        End Sub
+
+        Private Function ResolveNewThreadTargetCwd(Optional ByRef sourceLabel As String = Nothing) As String
+            Dim explicitTarget = NormalizeProjectPath(_newThreadTargetOverrideCwd)
+            If Not String.IsNullOrWhiteSpace(explicitTarget) Then
+                sourceLabel = "selected folder"
+                Return explicitTarget
+            End If
+
+            Dim currentThreadTarget = NormalizeProjectPath(_currentThreadCwd)
+            If Not String.IsNullOrWhiteSpace(currentThreadTarget) Then
+                sourceLabel = "active thread"
+                Return currentThreadTarget
+            End If
+
+            Dim workingDir = EffectiveThreadWorkingDirectory()
+            If String.IsNullOrWhiteSpace(workingDir) Then
+                workingDir = Environment.CurrentDirectory
+            End If
+
+            sourceLabel = "working dir"
+            Return workingDir.Trim()
+        End Function
+
+        Private Sub SyncNewThreadTargetChip()
+            If BtnSidebarNewThread Is Nothing OrElse LblSidebarNewThreadText Is Nothing Then
+                Return
+            End If
+
+            Dim source As String = String.Empty
+            Dim targetCwd = ResolveNewThreadTargetCwd(source)
+            If String.IsNullOrWhiteSpace(targetCwd) Then
+                LblSidebarNewThreadText.Text = "New thread"
+                BtnSidebarNewThread.ToolTip = Nothing
+                Return
+            End If
+
+            Dim folderLabel = BuildProjectGroupLabel(targetCwd)
+            LblSidebarNewThreadText.Text = $"New thread for {folderLabel}"
+            BtnSidebarNewThread.ToolTip = $"{source}: {targetCwd}"
+        End Sub
+
+        Private Function ShowNewThreadFolderPicker() As String
+            Dim initialDirectory = ResolveNewThreadTargetCwd()
+            Dim dialog As New Microsoft.Win32.OpenFolderDialog() With {
+                .Title = "Choose folder for new thread"
+            }
+
+            If Not String.IsNullOrWhiteSpace(initialDirectory) AndAlso Directory.Exists(initialDirectory) Then
+                dialog.InitialDirectory = initialDirectory
+            End If
+
+            Dim result = dialog.ShowDialog(Me)
+            If Not result.HasValue OrElse Not result.Value Then
+                Return String.Empty
+            End If
+
+            Return If(dialog.FolderName, String.Empty).Trim()
+        End Function
+
+        Private Async Function ChooseFolderAndStartNewThreadAsync() As Task
+            If Not (BtnSidebarNewThread IsNot Nothing AndAlso BtnSidebarNewThread.IsEnabled) Then
+                Return
+            End If
+
+            Dim chosenFolder = ShowNewThreadFolderPicker()
+            If String.IsNullOrWhiteSpace(chosenFolder) Then
+                Return
+            End If
+
+            _newThreadTargetOverrideCwd = chosenFolder
+            SyncNewThreadTargetChip()
+            Await StartThreadAsync()
+        End Function
+
         Private Sub MainWindow_Closing(sender As Object, e As ComponentModel.CancelEventArgs) Handles Me.Closing
             _toastTimer.Stop()
             _watchdogTimer.Stop()
@@ -563,6 +739,14 @@ Namespace CodexNativeAgent.Ui
             If e.Key = Key.F5 Then
                 If CanRunFullThreadRefresh() Then
                     FireAndForget(RunUiActionAsync(AddressOf RefreshThreadsAsync))
+                    e.Handled = True
+                End If
+                Return
+            End If
+
+            If e.Key = Key.F6 Then
+                If _isAuthenticated Then
+                    FireAndForget(RunUiActionAsync(AddressOf RefreshModelsAsync))
                     e.Handled = True
                 End If
                 Return
@@ -730,11 +914,14 @@ Namespace CodexNativeAgent.Ui
             BtnReadRateLimits.IsEnabled = authenticated
             BtnLoginExternalTokens.IsEnabled = connected
 
-            BtnRefreshModels.IsEnabled = authenticated
+            Dim hasActiveTurn = Not String.IsNullOrWhiteSpace(_currentTurnId)
+            Dim canUseTurnControls = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId)
 
-            BtnTurnStart.IsEnabled = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId)
-            BtnTurnSteer.IsEnabled = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not String.IsNullOrWhiteSpace(_currentTurnId)
-            BtnTurnInterrupt.IsEnabled = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not String.IsNullOrWhiteSpace(_currentTurnId)
+            BtnTurnStart.IsEnabled = canUseTurnControls AndAlso Not hasActiveTurn
+            BtnTurnSteer.IsEnabled = canUseTurnControls AndAlso hasActiveTurn
+            BtnTurnInterrupt.IsEnabled = canUseTurnControls AndAlso hasActiveTurn
+            BtnTurnStart.Visibility = If(BtnTurnInterrupt.IsEnabled, Visibility.Collapsed, Visibility.Visible)
+            BtnTurnInterrupt.Visibility = If(BtnTurnInterrupt.IsEnabled, Visibility.Visible, Visibility.Collapsed)
             TxtTurnInput.IsEnabled = authenticated
             BtnSidebarNewThread.IsEnabled = authenticated AndAlso Not _threadContentLoading
             BtnSidebarAutomations.IsEnabled = True
@@ -768,6 +955,8 @@ Namespace CodexNativeAgent.Ui
 
             UpdateRuntimeFieldState()
             SyncThreadToolbarMenus()
+            SyncSidebarNewThreadMenu()
+            SyncNewThreadTargetChip()
         End Sub
 
         Private Function BuildWorkspaceHint(connected As Boolean, authenticated As Boolean) As String
@@ -974,6 +1163,7 @@ Namespace CodexNativeAgent.Ui
             TxtApproval.Text = "No pending approvals."
             TxtRateLimits.Text = "No rate-limit data loaded yet."
             SyncThreadToolbarMenus()
+            SyncNewThreadTargetChip()
         End Sub
 
         Private Shared Function IsPathLike(value As String) As Boolean
@@ -1146,6 +1336,8 @@ Namespace CodexNativeAgent.Ui
             LblConnectionState.Text = "Disconnected"
             _currentThreadId = String.Empty
             _currentTurnId = String.Empty
+            _currentThreadCwd = String.Empty
+            _newThreadTargetOverrideCwd = String.Empty
             _currentLoginId = String.Empty
             _isAuthenticated = False
             _authRequiredNoticeShown = False
@@ -1497,6 +1689,8 @@ Namespace CodexNativeAgent.Ui
             _isAuthenticated = False
             _currentThreadId = String.Empty
             _currentTurnId = String.Empty
+            _currentThreadCwd = String.Empty
+            _newThreadTargetOverrideCwd = String.Empty
             _threadsLoading = False
             _threadLoadError = String.Empty
             _threadContentLoading = False
@@ -1731,7 +1925,12 @@ Namespace CodexNativeAgent.Ui
             _threadContentLoading = False
             SetTranscriptLoadingState(False)
 
+            Dim targetCwd = ResolveNewThreadTargetCwd()
             Dim options = BuildThreadRequestOptions(includeModel:=True)
+            If Not String.IsNullOrWhiteSpace(targetCwd) Then
+                options.Cwd = targetCwd
+            End If
+
             Dim threadObject = Await _threadService.StartThreadAsync(options, CancellationToken.None)
 
             ApplyCurrentThreadFromThreadObject(threadObject)
@@ -1827,9 +2026,14 @@ Namespace CodexNativeAgent.Ui
             ShowStatus("Loading selected thread...")
 
             Try
-                Dim threadObject = Await _threadService.ReadThreadAsync(selectedThreadId,
+                Dim threadObject = Await _threadService.ResumeThreadAsync(selectedThreadId,
+                                                                          New ThreadRequestOptions(),
+                                                                          cancellationToken).ConfigureAwait(False)
+                If Not ThreadObjectHasTurns(threadObject) Then
+                    threadObject = Await _threadService.ReadThreadAsync(selectedThreadId,
                                                                         includeTurns:=True,
                                                                         cancellationToken:=cancellationToken).ConfigureAwait(False)
+                End If
                 cancellationToken.ThrowIfCancellationRequested()
 
                 Dim hasTurns = ThreadObjectHasTurns(threadObject)
@@ -1902,6 +2106,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub OnThreadsPreviewMouseRightButtonDown(sender As Object, e As MouseButtonEventArgs)
             _threadContextTarget = Nothing
+            _threadGroupContextTarget = Nothing
 
             Dim source = TryCast(e.OriginalSource, DependencyObject)
             Dim container = FindVisualAncestor(Of ListBoxItem)(source)
@@ -1910,20 +2115,36 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            Dim entry = TryCast(container.DataContext, ThreadListEntry)
-            If entry Is Nothing Then
+            Dim header = TryCast(container.DataContext, ThreadGroupHeaderEntry)
+            If header IsNot Nothing Then
+                _threadGroupContextTarget = header
                 e.Handled = True
+                PrepareThreadGroupContextMenu(header)
+                ThreadItemContextMenu.PlacementTarget = container
+                ThreadItemContextMenu.IsOpen = True
                 Return
             End If
 
-            _threadContextTarget = entry
+            Dim entry = TryCast(container.DataContext, ThreadListEntry)
+            If entry IsNot Nothing Then
+                _threadContextTarget = entry
+                e.Handled = True
+                PrepareThreadContextMenu(entry)
+                ThreadItemContextMenu.PlacementTarget = container
+                ThreadItemContextMenu.IsOpen = True
+                Return
+            End If
+
             e.Handled = True
-            PrepareThreadContextMenu(entry)
-            ThreadItemContextMenu.PlacementTarget = container
-            ThreadItemContextMenu.IsOpen = True
         End Sub
 
         Private Sub OnThreadsContextMenuOpening(sender As Object, e As ContextMenuEventArgs)
+            Dim headerTarget = ResolveContextThreadGroupEntry()
+            If headerTarget IsNot Nothing Then
+                PrepareThreadGroupContextMenu(headerTarget)
+                Return
+            End If
+
             Dim target = ResolveContextThreadEntry()
             If target Is Nothing Then
                 e.Handled = True
@@ -1938,6 +2159,15 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            MnuThreadGroupNewThreadHere.Visibility = Visibility.Collapsed
+            SepThreadGroupContextTop.Visibility = Visibility.Collapsed
+            MnuThreadSelect.Visibility = Visibility.Visible
+            SepThreadContextSelectRefresh.Visibility = Visibility.Visible
+            MnuThreadRefreshSingle.Visibility = Visibility.Visible
+            SepThreadContextRefreshActions.Visibility = Visibility.Visible
+            MnuThreadFork.Visibility = Visibility.Visible
+            MnuThreadArchive.Visibility = Visibility.Visible
+            MnuThreadUnarchive.Visibility = Visibility.Visible
             MnuThreadSelect.IsEnabled = True
 
             Dim canRunThreadAction = _isAuthenticated AndAlso Not _threadsLoading AndAlso Not _threadContentLoading
@@ -1949,6 +2179,28 @@ Namespace CodexNativeAgent.Ui
             MnuThreadUnarchive.Visibility = If(archived, Visibility.Visible, Visibility.Collapsed)
             MnuThreadArchive.IsEnabled = canRunThreadAction AndAlso Not archived
             MnuThreadUnarchive.IsEnabled = canRunThreadAction AndAlso archived
+        End Sub
+
+        Private Sub PrepareThreadGroupContextMenu(target As ThreadGroupHeaderEntry)
+            If target Is Nothing Then
+                Return
+            End If
+
+            MnuThreadGroupNewThreadHere.Visibility = Visibility.Visible
+            SepThreadGroupContextTop.Visibility = Visibility.Collapsed
+            MnuThreadSelect.Visibility = Visibility.Collapsed
+            SepThreadContextSelectRefresh.Visibility = Visibility.Collapsed
+            MnuThreadRefreshSingle.Visibility = Visibility.Collapsed
+            SepThreadContextRefreshActions.Visibility = Visibility.Collapsed
+            MnuThreadFork.Visibility = Visibility.Collapsed
+            MnuThreadArchive.Visibility = Visibility.Collapsed
+            MnuThreadUnarchive.Visibility = Visibility.Collapsed
+
+            Dim canStartHere = _isAuthenticated AndAlso
+                               Not _threadsLoading AndAlso
+                               Not _threadContentLoading AndAlso
+                               Not String.IsNullOrWhiteSpace(target.ProjectPath)
+            MnuThreadGroupNewThreadHere.IsEnabled = canStartHere
         End Sub
 
         Private Sub OnSelectThreadFromContextMenuClick(sender As Object, e As RoutedEventArgs)
@@ -1997,12 +2249,32 @@ Namespace CodexNativeAgent.Ui
             Await UnarchiveThreadAsync(target)
         End Function
 
+        Private Async Function StartThreadFromGroupHeaderContextMenuAsync() As Task
+            Dim target = ResolveContextThreadGroupEntry()
+            If target Is Nothing OrElse String.IsNullOrWhiteSpace(target.ProjectPath) Then
+                Throw New InvalidOperationException("Select a project folder first.")
+            End If
+
+            ShowWorkspaceView()
+            _newThreadTargetOverrideCwd = target.ProjectPath
+            SyncNewThreadTargetChip()
+            Await StartThreadAsync()
+        End Function
+
         Private Function ResolveContextThreadEntry() As ThreadListEntry
             If _threadContextTarget IsNot Nothing Then
                 Return _threadContextTarget
             End If
 
             Return TryCast(LstThreads.SelectedItem, ThreadListEntry)
+        End Function
+
+        Private Function ResolveContextThreadGroupEntry() As ThreadGroupHeaderEntry
+            If _threadGroupContextTarget IsNot Nothing Then
+                Return _threadGroupContextTarget
+            End If
+
+            Return TryCast(LstThreads.SelectedItem, ThreadGroupHeaderEntry)
         End Function
 
         Private Sub SelectThreadEntry(entry As ThreadListEntry, suppressAutoLoad As Boolean)
@@ -2109,6 +2381,7 @@ Namespace CodexNativeAgent.Ui
                     Dim isExpanded = forceExpandMatchingGroups OrElse _expandedThreadProjectGroups.Contains(group.Key)
                     LstThreads.Items.Add(New ThreadGroupHeaderEntry() With {
                         .GroupKey = group.Key,
+                        .ProjectPath = If(StringComparer.Ordinal.Equals(group.Key, "(no-project)"), String.Empty, group.Key),
                         .FolderName = group.HeaderLabel,
                         .Count = group.Threads.Count,
                         .IsExpanded = isExpanded
@@ -2300,6 +2573,43 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Return normalized.TrimEnd("\"c, "/"c)
+        End Function
+
+        Private Shared Function ExtractThreadWorkingDirectoryFromThreadObject(threadObject As JsonObject) As String
+            If threadObject Is Nothing Then
+                Return String.Empty
+            End If
+
+            Dim directKeys = {
+                "cwd",
+                "workingDirectory",
+                "workingDir"
+            }
+
+            For Each key In directKeys
+                Dim value = GetPropertyString(threadObject, key)
+                If Not String.IsNullOrWhiteSpace(value) Then
+                    Return NormalizeProjectPath(value)
+                End If
+            Next
+
+            Dim nestedCandidates = {
+                GetNestedProperty(threadObject, "context", "cwd"),
+                GetNestedProperty(threadObject, "context", "workingDirectory"),
+                GetNestedProperty(threadObject, "workspace", "cwd"),
+                GetNestedProperty(threadObject, "workspace", "workingDirectory"),
+                GetNestedProperty(threadObject, "project", "cwd"),
+                GetNestedProperty(threadObject, "project", "workingDirectory")
+            }
+
+            For Each candidate In nestedCandidates
+                Dim value As String = String.Empty
+                If TryGetStringValue(candidate, value) AndAlso Not String.IsNullOrWhiteSpace(value) Then
+                    Return NormalizeProjectPath(value)
+                End If
+            Next
+
+            Return String.Empty
         End Function
 
         Private Function VisibleThreadCount() As Integer
@@ -2542,6 +2852,14 @@ Namespace CodexNativeAgent.Ui
             Dim threadId = GetPropertyString(threadObject, "id")
             If Not String.IsNullOrWhiteSpace(threadId) Then
                 _currentThreadId = threadId
+            End If
+
+            Dim loadedThreadCwd = ExtractThreadWorkingDirectoryFromThreadObject(threadObject)
+            If Not String.IsNullOrWhiteSpace(loadedThreadCwd) Then
+                _currentThreadCwd = loadedThreadCwd
+                _newThreadTargetOverrideCwd = String.Empty
+            ElseIf String.IsNullOrWhiteSpace(_newThreadTargetOverrideCwd) Then
+                _currentThreadCwd = String.Empty
             End If
 
             _currentTurnId = String.Empty

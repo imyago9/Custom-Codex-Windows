@@ -10,4 +10,13 @@
     <OptionInfer>On</OptionInfer>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\assets\send-input.png">
+      <Link>Assets\send-input.png</Link>
+    </Resource>
+    <Resource Include="..\..\assets\interrupt.png">
+      <Link>Assets\interrupt.png</Link>
+    </Resource>
+  </ItemGroup>
 </Project>
