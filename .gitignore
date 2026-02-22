@@ -1,0 +1,62 @@
+# Build outputs
+**/[Bb]in/
+**/[Oo]bj/
+
+# Package artifacts
+*.nupkg
+*.snupkg
+
+# Test and coverage artifacts
+TestResults/
+*.trx
+coverage/
+coverage.*
+
+# IDE and editor state
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+# Local .NET CLI state
+.dotnet/
+.dotnet-cli/
+
+# Temp/work directories
+tmp/
+tmpbuild/
+artifacts/
+*.tmp
+*.temp
+*.cache
+*.bak
+
+# Logs and diagnostics
+*.log
+*.trace
+CodexNativeAgentDiagnostics/
+diag-*/
+
+# Environment and secret material
+.env
+.env.*
+!.env.example
+*.pfx
+*.pem
+*.key
+*.snk
+
+# Local Codex runtime data (can contain private history/auth)
+auth.json
+history.jsonl
+sessions/
+.codex/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,401 @@
+<Window x:Class="CodexNativeAgent.Ui.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Codex Native Agent (WPF)"
+        Width="1500"
+        Height="980"
+        MinWidth="1120"
+        MinHeight="760"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="520" MinWidth="420" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Vertical" Margin="12,12,12,8">
+                    <Button x:Name="BtnSidebarNewThread" Content="New Thread" HorizontalContentAlignment="Left" Margin="0,0,0,6" />
+                    <Button x:Name="BtnSidebarAutomations" Content="Automations" HorizontalContentAlignment="Left" Margin="0,0,0,6" />
+                    <Button x:Name="BtnSidebarSkills" Content="Skills" HorizontalContentAlignment="Left" Margin="0,0,0,6" />
+                    <Button x:Name="BtnSidebarSettings" Content="Settings" HorizontalContentAlignment="Left" />
+                </StackPanel>
+
+                <Grid Grid.Row="1" Margin="12,0,12,12">
+                    <Grid x:Name="LeftMainView">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <WrapPanel Grid.Row="0" Margin="0,0,0,6">
+                            <CheckBox x:Name="ChkShowArchivedThreads" Content="Show archived" Margin="0,0,12,0" />
+                            <CheckBox x:Name="ChkFilterThreadsByWorkingDir" Content="Filter by working dir" />
+                        </WrapPanel>
+
+                        <Grid Grid.Row="1" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="70" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Search" VerticalAlignment="Center" />
+                            <TextBox x:Name="TxtThreadSearch" Grid.Column="1" />
+                        </Grid>
+
+                        <Grid Grid.Row="2" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="70" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Sort" VerticalAlignment="Center" />
+                            <ComboBox x:Name="CmbThreadSort" Grid.Column="1">
+                                <ComboBoxItem Content="Newest first" />
+                                <ComboBoxItem Content="Oldest first" />
+                                <ComboBoxItem Content="Preview A-Z" />
+                                <ComboBoxItem Content="Preview Z-A" />
+                            </ComboBox>
+                        </Grid>
+
+                        <TextBlock x:Name="LblThreadsState" Grid.Row="3" Text="No threads loaded yet." Margin="0,0,0,6" TextWrapping="Wrap" />
+
+                        <WrapPanel Grid.Row="4" Margin="0,0,0,6">
+                            <Button x:Name="BtnStartThread" Content="New Thread (Ctrl+Shift+N)" Margin="0,0,6,6" />
+                            <Button x:Name="BtnRefreshThreads" Content="Refresh (F5)" Margin="0,0,6,6" />
+                            <Button x:Name="BtnResumeThread" Content="Resume" Margin="0,0,6,6" />
+                            <Button x:Name="BtnReadThread" Content="Read" Margin="0,0,6,6" />
+                            <Button x:Name="BtnForkThread" Content="Fork" Margin="0,0,6,6" />
+                            <Button x:Name="BtnArchiveThread" Content="Archive" Margin="0,0,6,6" />
+                            <Button x:Name="BtnUnarchiveThread" Content="Unarchive" Margin="0,0,6,6" />
+                        </WrapPanel>
+
+                        <ListBox x:Name="LstThreads"
+                                 Grid.Row="5"
+                                 HorizontalContentAlignment="Stretch"
+                                 BorderThickness="0"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                    </Grid>
+
+                    <Grid x:Name="LeftSettingsView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0"
+                                    Orientation="Horizontal"
+                                    Margin="0,0,0,8">
+                            <Button x:Name="BtnSettingsBack" Content="Go Back" />
+                            <TextBlock Text="Settings" VerticalAlignment="Center" Margin="8,0,0,0" FontWeight="SemiBold" />
+                        </StackPanel>
+
+                        <ScrollViewer Grid.Row="1"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <GroupBox Header="Connection" Margin="0,0,0,8">
+                                    <Grid Margin="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Codex path" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtCodexPath" Grid.Row="0" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Args" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtServerArgs" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Working dir" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtWorkingDir" Grid.Row="2" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Codex home" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtWindowsCodexHome" Grid.Row="3" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="4" Grid.Column="0" />
+                                        <WrapPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,6">
+                                            <Button x:Name="BtnConnect" Content="Connect" Margin="0,0,6,6" />
+                                            <Button x:Name="BtnDisconnect" Content="Disconnect" Margin="0,0,6,6" />
+                                        </WrapPanel>
+
+                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Reliability" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <WrapPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,6">
+                                            <CheckBox x:Name="ChkAutoReconnect" Content="Auto-reconnect" Margin="0,0,12,6" />
+                                            <Button x:Name="BtnReconnectNow" Content="Reconnect Now" Margin="0,0,6,6" />
+                                            <Button x:Name="BtnExportDiagnostics" Content="Export Diagnostics" Margin="0,0,6,6" />
+                                        </WrapPanel>
+
+                                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Reconnect" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBlock x:Name="LblReconnectCountdown" Grid.Row="6" Grid.Column="1" Text="Reconnect: not scheduled." VerticalAlignment="Center" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="7" Grid.Column="0" Text="State" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock x:Name="LblConnectionState" Grid.Row="7" Grid.Column="1" Text="Disconnected" VerticalAlignment="Center" />
+                                    </Grid>
+                                </GroupBox>
+
+                                <GroupBox Header="OpenAI Auth">
+                                    <Grid Margin="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Status" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBlock x:Name="LblAccountState" Grid.Row="0" Grid.Column="1" Text="Account: unknown" VerticalAlignment="Center" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Actions" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <WrapPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,6">
+                                            <Button x:Name="BtnAccountRead" Content="Read Account" Margin="0,0,6,6" />
+                                            <Button x:Name="BtnLoginChatGpt" Content="Login ChatGPT" Margin="0,0,6,6" />
+                                            <Button x:Name="BtnCancelLogin" Content="Cancel Login" Margin="0,0,6,6" />
+                                            <Button x:Name="BtnLogout" Content="Logout" Margin="0,0,6,6" />
+                                            <Button x:Name="BtnReadRateLimits" Content="Rate Limits" Margin="0,0,6,6" />
+                                        </WrapPanel>
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="API key" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtApiKey" Grid.Row="2" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="3" Grid.Column="0" />
+                                        <Button x:Name="BtnLoginApiKey" Grid.Row="3" Grid.Column="1" Content="Login API Key" HorizontalAlignment="Left" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="External token" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtExternalAccessToken" Grid.Row="4" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Account id" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtExternalAccountId" Grid.Row="5" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Plan type" VerticalAlignment="Center" Margin="0,0,8,6" />
+                                        <ComboBox x:Name="CmbExternalPlanType" Grid.Row="6" Grid.Column="1" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="7" Grid.Column="0" />
+                                        <Button x:Name="BtnLoginExternalTokens" Grid.Row="7" Grid.Column="1" Content="Login Tokens" HorizontalAlignment="Left" Margin="0,0,0,6" />
+
+                                        <TextBlock Grid.Row="8" Grid.Column="0" Text="Rate limits" VerticalAlignment="Top" Margin="0,0,8,6" />
+                                        <TextBox x:Name="TxtRateLimits"
+                                                 Grid.Row="8"
+                                                 Grid.Column="1"
+                                                 Margin="0,0,0,6"
+                                                 Height="140"
+                                                 IsReadOnly="True"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 VerticalScrollBarVisibility="Auto" />
+
+                                        <TextBlock Grid.Row="9" Grid.Column="0" Text="API key prefs" VerticalAlignment="Top" Margin="0,0,8,0" />
+                                        <StackPanel Grid.Row="9" Grid.Column="1">
+                                            <CheckBox x:Name="ChkRememberApiKey" Content="Remember API key (encrypted)" Margin="0,0,0,4" />
+                                            <CheckBox x:Name="ChkAutoLoginApiKey" Content="Auto-login API key on connect" />
+                                        </StackPanel>
+                                    </Grid>
+                                </GroupBox>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </Grid>
+
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          ShowsPreview="True"
+                          Background="#22000000" />
+
+            <Grid Grid.Column="2" Margin="16,8,16,14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,0,0,8">
+                    <TextBlock x:Name="LblCurrentThread" Text="New Thread" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock x:Name="LblCurrentTurn" Text="Turn: 0" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <DockPanel Grid.Row="1" Margin="0,0,0,6">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button x:Name="BtnQuickOpenVsc" Content="Open VSC" Margin="0,0,6,0" />
+                        <Button x:Name="BtnQuickOpenTerminal" Content="Open Terminal" />
+                    </StackPanel>
+                </DockPanel>
+
+                <TextBlock x:Name="LblWorkspaceHint"
+                           Grid.Row="2"
+                           Text="Connect to begin."
+                           Margin="0,0,0,8"
+                           TextWrapping="Wrap" />
+
+                <TabControl Grid.Row="3">
+                    <TabItem Header="Transcript">
+                        <TextBox x:Name="TxtTranscript"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto" />
+                    </TabItem>
+                    <TabItem Header="Protocol">
+                        <TextBox x:Name="TxtProtocol"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto" />
+                    </TabItem>
+                </TabControl>
+
+                <Grid Grid.Row="4" Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Border x:Name="InlineApprovalCard"
+                            Grid.Row="0"
+                            BorderBrush="#44000000"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="8"
+                            Margin="0,0,0,8"
+                            Visibility="Collapsed">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBox x:Name="TxtApproval"
+                                     Grid.Row="0"
+                                     Height="120"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto" />
+                            <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+                                <Button x:Name="BtnApprovalAccept" Content="Accept" Margin="0,0,6,6" />
+                                <Button x:Name="BtnApprovalAcceptSession" Content="Accept Session" Margin="0,0,6,6" />
+                                <Button x:Name="BtnApprovalDecline" Content="Decline" Margin="0,0,6,6" />
+                                <Button x:Name="BtnApprovalCancel" Content="Cancel Turn" Margin="0,0,6,6" />
+                            </WrapPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Grid.Row="1" Text="Turn Input" Margin="0,0,0,6" />
+
+                    <TextBox x:Name="TxtTurnInput"
+                             Grid.Row="2"
+                             Height="130"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" />
+
+                    <Grid Grid.Row="3" Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Model" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <ComboBox x:Name="CmbModel" Width="250" Margin="0,0,12,0" />
+                            <TextBlock Text="Reasoning" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <ComboBox x:Name="CmbReasoningEffort" Width="140" Margin="0,0,12,0">
+                                <ComboBoxItem Content="" />
+                                <ComboBoxItem Content="none" />
+                                <ComboBoxItem Content="minimal" />
+                                <ComboBoxItem Content="low" />
+                                <ComboBoxItem Content="medium" />
+                                <ComboBoxItem Content="high" />
+                                <ComboBoxItem Content="xhigh" />
+                            </ComboBox>
+                            <TextBlock Text="Approval" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <ComboBox x:Name="CmbApprovalPolicy" Width="140" Margin="0,0,12,0">
+                                <ComboBoxItem Content="untrusted" />
+                                <ComboBoxItem Content="on-failure" />
+                                <ComboBoxItem Content="on-request" />
+                                <ComboBoxItem Content="never" />
+                            </ComboBox>
+                            <TextBlock Text="Sandbox" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <ComboBox x:Name="CmbSandbox" Width="170" Margin="0,0,12,0">
+                                <ComboBoxItem Content="workspace-write" />
+                                <ComboBoxItem Content="read-only" />
+                                <ComboBoxItem Content="danger-full-access" />
+                            </ComboBox>
+                            <Button x:Name="BtnRefreshModels" Content="Refresh Models" />
+                        </WrapPanel>
+
+                        <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                            <Button x:Name="BtnClearInput" Content="Clear" Margin="0,0,6,0" />
+                            <Button x:Name="BtnTurnSteer" Content="Steer Active Turn" Margin="0,0,6,0" />
+                            <Button x:Name="BtnTurnInterrupt" Content="Interrupt" Margin="0,0,6,0" />
+                            <Button x:Name="BtnTurnStart" Content="Send (Ctrl+Enter)" />
+                        </WrapPanel>
+                    </Grid>
+                </Grid>
+            </Grid>
+
+            <Border x:Name="ToastOverlay"
+                    Grid.ColumnSpan="3"
+                    Background="#FFF7E8"
+                    BorderBrush="#99B8860B"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,8"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="18"
+                    Visibility="Collapsed">
+                <TextBlock x:Name="LblToastText" TextWrapping="Wrap" MaxWidth="680" />
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="1"
+                BorderThickness="1,1,0,0"
+                BorderBrush="#22000000"
+                Padding="10,6">
+            <TextBlock x:Name="LblStatus" Text="Ready." />
+        </Border>
+    </Grid>
+</Window>
