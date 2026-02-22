@@ -11,6 +11,7 @@ Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Controls
 Imports System.Windows.Input
+Imports System.Windows.Media
 Imports System.Windows.Threading
 Imports CodexNativeAgent.AppServer
 Imports CodexNativeAgent.Services
@@ -40,27 +41,136 @@ Namespace CodexNativeAgent.Ui
             Public Property LastActiveAt As String = String.Empty
             Public Property LastActiveSortTimestamp As Long
             Public Property Cwd As String = String.Empty
+            Public Property IsArchived As Boolean
+
+            Public ReadOnly Property ListLeftText As String
+                Get
+                    Return NormalizePreviewSnippet(Preview)
+                End Get
+            End Property
+
+            Public ReadOnly Property ListRightText As String
+                Get
+                    Return FormatCompactAge(LastActiveSortTimestamp)
+                End Get
+            End Property
+
+            Public ReadOnly Property ListLeftMargin As Thickness
+                Get
+                    Return New Thickness(18, 0, 0, 0)
+                End Get
+            End Property
+
+            Public ReadOnly Property ListLeftFontWeight As FontWeight
+                Get
+                    Return FontWeights.Normal
+                End Get
+            End Property
 
             Public Overrides Function ToString() As String
-                Dim label = If(String.IsNullOrWhiteSpace(Preview), "(untitled)", Preview)
-                If label.Length > 70 Then
-                    label = label.Substring(0, 67) & "..."
+                Dim snippet = ListLeftText
+                Dim age = ListRightText
+                If String.IsNullOrWhiteSpace(age) Then
+                    Return $"    {snippet}"
                 End If
 
-                If String.IsNullOrWhiteSpace(LastActiveAt) Then
-                    Return $"{label} [{Id}]"
+                Return $"    {snippet} | {age}"
+            End Function
+
+            Private Shared Function NormalizePreviewSnippet(value As String) As String
+                Dim text = If(String.IsNullOrWhiteSpace(value), "(untitled)", value)
+                text = text.Replace(ControlChars.Cr, " "c).
+                            Replace(ControlChars.Lf, " "c).
+                            Replace(ControlChars.Tab, " "c).
+                            Trim()
+
+                Do While text.Contains("  ", StringComparison.Ordinal)
+                    text = text.Replace("  ", " ", StringComparison.Ordinal)
+                Loop
+
+                Const maxLength As Integer = 72
+                If text.Length > maxLength Then
+                    Return text.Substring(0, maxLength - 3) & "..."
                 End If
 
-                Return $"{label} [{Id}] (Last active: {LastActiveAt})"
+                Return text
+            End Function
+
+            Private Shared Function FormatCompactAge(unixMilliseconds As Long) As String
+                If unixMilliseconds <= 0 OrElse unixMilliseconds = Long.MinValue Then
+                    Return String.Empty
+                End If
+
+                Try
+                    Dim age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds)
+                    If age < TimeSpan.Zero Then
+                        age = TimeSpan.Zero
+                    End If
+
+                    If age.TotalMinutes < 1 Then
+                        Return "now"
+                    End If
+
+                    If age.TotalHours < 1 Then
+                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalMinutes)))}m"
+                    End If
+
+                    If age.TotalDays < 1 Then
+                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalHours)))}h"
+                    End If
+
+                    If age.TotalDays < 7 Then
+                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays)))}d"
+                    End If
+
+                    If age.TotalDays < 30 Then
+                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays / 7)))}w"
+                    End If
+
+                    If age.TotalDays < 365 Then
+                        Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays / 30)))}mo"
+                    End If
+
+                    Return $"{Math.Max(1, CInt(Math.Floor(age.TotalDays / 365)))}y"
+                Catch
+                    Return String.Empty
+                End Try
             End Function
         End Class
 
         Private NotInheritable Class ThreadGroupHeaderEntry
-            Public Property Label As String = String.Empty
+            Public Property GroupKey As String = String.Empty
+            Public Property FolderName As String = String.Empty
             Public Property Count As Integer
+            Public Property IsExpanded As Boolean
+
+            Public ReadOnly Property ListLeftText As String
+                Get
+                    Dim folderIcon = Char.ConvertFromUtf32(If(IsExpanded, &H1F4C2, &H1F4C1))
+                    Return $"{folderIcon} {FolderName}"
+                End Get
+            End Property
+
+            Public ReadOnly Property ListRightText As String
+                Get
+                    Return Count.ToString()
+                End Get
+            End Property
+
+            Public ReadOnly Property ListLeftMargin As Thickness
+                Get
+                    Return New Thickness(0)
+                End Get
+            End Property
+
+            Public ReadOnly Property ListLeftFontWeight As FontWeight
+                Get
+                    Return FontWeights.SemiBold
+                End Get
+            End Property
 
             Public Overrides Function ToString() As String
-                Return $"{Label} ({Count})"
+                Return $"{ListLeftText} ({Count})"
             End Function
         End Class
 
@@ -86,6 +196,8 @@ Namespace CodexNativeAgent.Ui
             Public Property AutoReconnect As Boolean = True
             Public Property FilterThreadsByWorkingDir As Boolean
             Public Property EncryptedApiKey As String = String.Empty
+            Public Property ThemeMode As String = AppAppearanceManager.LightTheme
+            Public Property DensityMode As String = AppAppearanceManager.ComfortableDensity
         End Class
 
         Private ReadOnly _accountService As IAccountService
@@ -102,6 +214,7 @@ Namespace CodexNativeAgent.Ui
         Private ReadOnly _reconnectUiTimer As New DispatcherTimer()
         Private ReadOnly _approvalQueue As New Queue(Of PendingApprovalInfo)()
         Private ReadOnly _threadEntries As New List(Of ThreadListEntry)()
+        Private ReadOnly _expandedThreadProjectGroups As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Private ReadOnly _streamingAgentItemIds As New HashSet(Of String)(StringComparer.Ordinal)
         Private ReadOnly _pendingLocalUserEchoes As New Queue(Of PendingUserEcho)()
         Private Shared ReadOnly PendingUserEchoMaxAge As TimeSpan = TimeSpan.FromSeconds(30)
@@ -113,6 +226,12 @@ Namespace CodexNativeAgent.Ui
         Private _disconnecting As Boolean
         Private _threadsLoading As Boolean
         Private _threadLoadError As String = String.Empty
+        Private _threadSelectionLoadCts As CancellationTokenSource
+        Private _threadSelectionLoadVersion As Integer
+        Private _threadContentLoading As Boolean
+        Private _suppressThreadSelectionEvents As Boolean
+        Private _suppressThreadToolbarMenuEvents As Boolean
+        Private _threadContextTarget As ThreadListEntry
         Private _connectionExpected As Boolean
         Private _reconnectInProgress As Boolean
         Private _reconnectAttempt As Integer
@@ -127,6 +246,9 @@ Namespace CodexNativeAgent.Ui
         Private _threadsLoadedAtLeastOnce As Boolean
         Private _workspaceBootstrapInProgress As Boolean
         Private _activeApproval As PendingApprovalInfo
+        Private _currentTheme As String = AppAppearanceManager.LightTheme
+        Private _currentDensity As String = AppAppearanceManager.ComfortableDensity
+        Private _suppressAppearanceUiChange As Boolean
         Private _settings As New AppSettings()
 
         Public Sub New()
@@ -165,6 +287,10 @@ Namespace CodexNativeAgent.Ui
                 CmbSandbox.SelectedIndex = 0
             End If
 
+            If CmbDensity.SelectedIndex < 0 Then
+                CmbDensity.SelectedIndex = 0
+            End If
+
             If CmbExternalPlanType.Items.Count = 0 Then
                 CmbExternalPlanType.Items.Add("")
                 CmbExternalPlanType.Items.Add("free")
@@ -185,7 +311,11 @@ Namespace CodexNativeAgent.Ui
             LblCurrentTurn.Text = "Turn: 0"
             LblConnectionState.Text = "Disconnected"
             LblReconnectCountdown.Text = "Reconnect: not scheduled."
+            SetTranscriptLoadingState(False)
             InlineApprovalCard.Visibility = Visibility.Collapsed
+            UpdateSidebarSelectionState(showSettings:=False)
+            SyncAppearanceControls()
+            SyncThreadToolbarMenus()
         End Sub
 
         Private Sub InitializeEventHandlers()
@@ -195,6 +325,8 @@ Namespace CodexNativeAgent.Ui
                                                    End Sub
             AddHandler BtnSidebarSettings.Click, Sub(sender, e) ShowSettingsView()
             AddHandler BtnSettingsBack.Click, Sub(sender, e) ShowWorkspaceView()
+            AddHandler BtnToggleTheme.Click, Sub(sender, e) ToggleTheme()
+            AddHandler CmbDensity.SelectionChanged, Sub(sender, e) OnDensitySelectionChanged()
 
             AddHandler BtnConnect.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ConnectAsync)
             AddHandler BtnDisconnect.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf DisconnectAsync)
@@ -215,27 +347,62 @@ Namespace CodexNativeAgent.Ui
             AddHandler ChkAutoLoginApiKey.Checked, Sub(sender, e) SaveSettings()
             AddHandler ChkAutoLoginApiKey.Unchecked, Sub(sender, e) SaveSettings()
 
-            AddHandler BtnStartThread.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf StartThreadAsync)
-            AddHandler BtnRefreshThreads.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
-            AddHandler BtnResumeThread.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ResumeSelectedThreadAsync)
-            AddHandler BtnReadThread.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ReadSelectedThreadAsync)
-            AddHandler BtnForkThread.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ForkSelectedThreadAsync)
-            AddHandler BtnArchiveThread.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ArchiveSelectedThreadAsync)
-            AddHandler BtnUnarchiveThread.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf UnarchiveSelectedThreadAsync)
             AddHandler ChkShowArchivedThreads.Checked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
             AddHandler ChkShowArchivedThreads.Unchecked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
             AddHandler ChkFilterThreadsByWorkingDir.Checked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
             AddHandler ChkFilterThreadsByWorkingDir.Unchecked, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadsAsync)
             AddHandler TxtThreadSearch.TextChanged, Sub(sender, e) ApplyThreadFiltersAndSort()
-            AddHandler CmbThreadSort.SelectionChanged, Sub(sender, e) ApplyThreadFiltersAndSort()
-            AddHandler LstThreads.SelectionChanged, Sub(sender, e) RefreshControlStates()
-            AddHandler LstThreads.MouseDoubleClick,
-                Async Sub(sender, e)
-                    If TryCast(LstThreads.SelectedItem, ThreadListEntry) Is Nothing Then
+            AddHandler CmbThreadSort.SelectionChanged,
+                Sub(sender, e)
+                    ApplyThreadFiltersAndSort()
+                    SyncThreadToolbarMenus()
+                End Sub
+            AddHandler BtnThreadSortMenu.Click, AddressOf OnThreadSortMenuButtonClick
+            AddHandler BtnThreadFilterMenu.Click, AddressOf OnThreadFilterMenuButtonClick
+            AddHandler ThreadSortContextMenu.Opened, Sub(sender, e) SyncThreadToolbarMenus()
+            AddHandler ThreadFilterContextMenu.Opened, Sub(sender, e) SyncThreadToolbarMenus()
+            AddHandler MnuThreadSortNewest.Click, AddressOf OnThreadSortMenuItemClick
+            AddHandler MnuThreadSortOldest.Click, AddressOf OnThreadSortMenuItemClick
+            AddHandler MnuThreadSortPreviewAz.Click, AddressOf OnThreadSortMenuItemClick
+            AddHandler MnuThreadSortPreviewZa.Click, AddressOf OnThreadSortMenuItemClick
+            AddHandler MnuThreadFilterArchived.Checked, AddressOf OnThreadFilterMenuItemToggled
+            AddHandler MnuThreadFilterArchived.Unchecked, AddressOf OnThreadFilterMenuItemToggled
+            AddHandler MnuThreadFilterWorkingDir.Checked, AddressOf OnThreadFilterMenuItemToggled
+            AddHandler MnuThreadFilterWorkingDir.Unchecked, AddressOf OnThreadFilterMenuItemToggled
+            AddHandler LstThreads.PreviewMouseRightButtonDown, AddressOf OnThreadsPreviewMouseRightButtonDown
+            AddHandler LstThreads.ContextMenuOpening, AddressOf OnThreadsContextMenuOpening
+            AddHandler ThreadItemContextMenu.Closed, Sub(sender, e) _threadContextTarget = Nothing
+            AddHandler MnuThreadSelect.Click, AddressOf OnSelectThreadFromContextMenuClick
+            AddHandler MnuThreadRefreshSingle.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf RefreshThreadFromContextMenuAsync)
+            AddHandler MnuThreadFork.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ForkThreadFromContextMenuAsync)
+            AddHandler MnuThreadArchive.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf ArchiveThreadFromContextMenuAsync)
+            AddHandler MnuThreadUnarchive.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf UnarchiveThreadFromContextMenuAsync)
+            AddHandler LstThreads.SelectionChanged,
+                Sub(sender, e)
+                    If _suppressThreadSelectionEvents Then
                         Return
                     End If
 
-                    Await RunUiActionAsync(AddressOf ResumeSelectedThreadAsync)
+                    Dim selectedHeader = TryCast(LstThreads.SelectedItem, ThreadGroupHeaderEntry)
+                    If selectedHeader IsNot Nothing Then
+                        _suppressThreadSelectionEvents = True
+                        LstThreads.SelectedItem = Nothing
+                        _suppressThreadSelectionEvents = False
+                        ToggleThreadProjectGroupExpansion(selectedHeader.GroupKey)
+                        ApplyThreadFiltersAndSort()
+                        Return
+                    End If
+
+                    Dim selected = TryCast(LstThreads.SelectedItem, ThreadListEntry)
+                    If selected Is Nothing Then
+                        CancelActiveThreadSelectionLoad()
+                        _threadContentLoading = False
+                        SetTranscriptLoadingState(False)
+                    Else
+                        FireAndForget(AutoLoadThreadSelectionAsync(selected))
+                    End If
+
+                    RefreshControlStates()
                 End Sub
 
             AddHandler BtnTurnStart.Click, Async Sub(sender, e) Await RunUiActionAsync(AddressOf StartTurnAsync)
@@ -262,11 +429,118 @@ Namespace CodexNativeAgent.Ui
             FireAndForget(RunUiActionAsync(AddressOf AutoConnectOnStartupAsync))
         End Sub
 
+        Private Sub OnThreadSortMenuButtonClick(sender As Object, e As RoutedEventArgs)
+            OpenThreadToolbarMenu(TryCast(sender, Button), ThreadSortContextMenu)
+        End Sub
+
+        Private Sub OnThreadFilterMenuButtonClick(sender As Object, e As RoutedEventArgs)
+            OpenThreadToolbarMenu(TryCast(sender, Button), ThreadFilterContextMenu)
+        End Sub
+
+        Private Sub OpenThreadToolbarMenu(button As Button, menu As ContextMenu)
+            If button Is Nothing OrElse menu Is Nothing OrElse Not button.IsEnabled Then
+                Return
+            End If
+
+            SyncThreadToolbarMenus()
+
+            If menu.IsOpen Then
+                menu.IsOpen = False
+                Return
+            End If
+
+            menu.PlacementTarget = button
+            menu.IsOpen = True
+        End Sub
+
+        Private Sub SyncThreadToolbarMenus()
+            If MnuThreadSortNewest Is Nothing OrElse
+               MnuThreadSortOldest Is Nothing OrElse
+               MnuThreadSortPreviewAz Is Nothing OrElse
+               MnuThreadSortPreviewZa Is Nothing OrElse
+               MnuThreadFilterArchived Is Nothing OrElse
+               MnuThreadFilterWorkingDir Is Nothing Then
+                Return
+            End If
+
+            _suppressThreadToolbarMenuEvents = True
+            Try
+                Dim sortIndex = Math.Max(0, CmbThreadSort.SelectedIndex)
+                MnuThreadSortNewest.IsChecked = (sortIndex = 0)
+                MnuThreadSortOldest.IsChecked = (sortIndex = 1)
+                MnuThreadSortPreviewAz.IsChecked = (sortIndex = 2)
+                MnuThreadSortPreviewZa.IsChecked = (sortIndex = 3)
+
+                MnuThreadFilterArchived.IsChecked = IsChecked(ChkShowArchivedThreads)
+                MnuThreadFilterWorkingDir.IsChecked = IsChecked(ChkFilterThreadsByWorkingDir)
+            Finally
+                _suppressThreadToolbarMenuEvents = False
+            End Try
+        End Sub
+
+        Private Sub OnThreadSortMenuItemClick(sender As Object, e As RoutedEventArgs)
+            If _suppressThreadToolbarMenuEvents Then
+                Return
+            End If
+
+            Dim targetIndex As Integer = -1
+            If ReferenceEquals(sender, MnuThreadSortNewest) Then
+                targetIndex = 0
+            ElseIf ReferenceEquals(sender, MnuThreadSortOldest) Then
+                targetIndex = 1
+            ElseIf ReferenceEquals(sender, MnuThreadSortPreviewAz) Then
+                targetIndex = 2
+            ElseIf ReferenceEquals(sender, MnuThreadSortPreviewZa) Then
+                targetIndex = 3
+            End If
+
+            If targetIndex < 0 Then
+                Return
+            End If
+
+            If CmbThreadSort.SelectedIndex <> targetIndex Then
+                CmbThreadSort.SelectedIndex = targetIndex
+            Else
+                SyncThreadToolbarMenus()
+            End If
+
+            If ThreadSortContextMenu IsNot Nothing Then
+                ThreadSortContextMenu.IsOpen = False
+            End If
+        End Sub
+
+        Private Sub OnThreadFilterMenuItemToggled(sender As Object, e As RoutedEventArgs)
+            If _suppressThreadToolbarMenuEvents Then
+                Return
+            End If
+
+            Dim archivedChecked = MnuThreadFilterArchived IsNot Nothing AndAlso MnuThreadFilterArchived.IsChecked
+            Dim workingDirChecked = MnuThreadFilterWorkingDir IsNot Nothing AndAlso MnuThreadFilterWorkingDir.IsChecked
+
+            Dim changed As Boolean = False
+            If ChkShowArchivedThreads IsNot Nothing AndAlso IsChecked(ChkShowArchivedThreads) <> archivedChecked Then
+                ChkShowArchivedThreads.IsChecked = archivedChecked
+                changed = True
+            End If
+
+            If ChkFilterThreadsByWorkingDir IsNot Nothing AndAlso IsChecked(ChkFilterThreadsByWorkingDir) <> workingDirChecked Then
+                ChkFilterThreadsByWorkingDir.IsChecked = workingDirChecked
+                changed = True
+            End If
+
+            If changed Then
+                SaveSettings()
+            End If
+
+            SyncThreadToolbarMenus()
+        End Sub
+
         Private Sub MainWindow_Closing(sender As Object, e As ComponentModel.CancelEventArgs) Handles Me.Closing
             _toastTimer.Stop()
             _watchdogTimer.Stop()
             _reconnectUiTimer.Stop()
             CancelReconnect()
+            CancelActiveThreadSelectionLoad()
             SaveSettings()
 
             If _client IsNot Nothing Then
@@ -286,8 +560,8 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If e.Key = Key.F5 OrElse (Keyboard.Modifiers = ModifierKeys.Control AndAlso e.Key = Key.R) Then
-                If BtnRefreshThreads.IsEnabled Then
+            If e.Key = Key.F5 Then
+                If CanRunFullThreadRefresh() Then
                     FireAndForget(RunUiActionAsync(AddressOf RefreshThreadsAsync))
                     e.Handled = True
                 End If
@@ -295,7 +569,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If Keyboard.Modifiers = (ModifierKeys.Control Or ModifierKeys.Shift) AndAlso e.Key = Key.N Then
-                If BtnStartThread.IsEnabled Then
+                If BtnSidebarNewThread.IsEnabled Then
                     FireAndForget(RunUiActionAsync(AddressOf StartThreadAsync))
                     e.Handled = True
                 End If
@@ -315,6 +589,11 @@ Namespace CodexNativeAgent.Ui
                 e.Handled = True
             End If
         End Sub
+
+        Private Function CanRunFullThreadRefresh() As Boolean
+            Dim connected = _client IsNot Nothing AndAlso _client.IsRunning
+            Return connected AndAlso _isAuthenticated AndAlso Not _threadsLoading AndAlso Not _threadContentLoading
+        End Function
 
         Private Async Function RunUiActionAsync(operation As Func(Of Task)) As Task
             Try
@@ -373,12 +652,16 @@ Namespace CodexNativeAgent.Ui
             _toastTimer.Interval = TimeSpan.FromMilliseconds(3500)
             AddHandler _toastTimer.Tick, AddressOf OnToastTimerTick
             LblStatus.Text = "Ready."
+            LblStatus.Foreground = ResolveBrush("TextPrimaryBrush", Brushes.Black)
         End Sub
 
         Private Sub ShowStatus(message As String,
                                Optional isError As Boolean = False,
                                Optional displayToast As Boolean = False)
             LblStatus.Text = message
+            LblStatus.Foreground = If(isError,
+                                      ResolveBrush("DangerBrush", Brushes.DarkRed),
+                                      ResolveBrush("TextPrimaryBrush", Brushes.Black))
 
             If displayToast Then
                 ShowToast(message, isError)
@@ -391,10 +674,29 @@ Namespace CodexNativeAgent.Ui
             End If
 
             LblToastText.Text = message
+            If isError Then
+                ToastOverlay.Background = ResolveBrush("ToastErrorBackgroundBrush", New SolidColorBrush(Color.FromRgb(255, 244, 242)))
+                ToastOverlay.BorderBrush = ResolveBrush("ToastErrorBorderBrush", New SolidColorBrush(Color.FromRgb(242, 184, 177)))
+                LblToastText.Foreground = ResolveBrush("DangerBrush", Brushes.DarkRed)
+            Else
+                ToastOverlay.Background = ResolveBrush("ToastInfoBackgroundBrush", New SolidColorBrush(Color.FromRgb(238, 247, 255)))
+                ToastOverlay.BorderBrush = ResolveBrush("ToastInfoBorderBrush", New SolidColorBrush(Color.FromRgb(181, 208, 244)))
+                LblToastText.Foreground = ResolveBrush("TextPrimaryBrush", Brushes.Black)
+            End If
+
             ToastOverlay.Visibility = Visibility.Visible
             _toastTimer.Stop()
             _toastTimer.Start()
         End Sub
+
+        Private Function ResolveBrush(resourceKey As String, fallback As Brush) As Brush
+            If String.IsNullOrWhiteSpace(resourceKey) Then
+                Return fallback
+            End If
+
+            Dim resolved = TryCast(TryFindResource(resourceKey), Brush)
+            Return If(resolved, fallback)
+        End Function
 
         Private Sub OnToastTimerTick(sender As Object, e As EventArgs)
             _toastTimer.Stop()
@@ -414,7 +716,6 @@ Namespace CodexNativeAgent.Ui
         Private Sub RefreshControlStates()
             Dim connected = _client IsNot Nothing AndAlso _client.IsRunning
             Dim authenticated = connected AndAlso _isAuthenticated
-            Dim hasSelectedThread = TryCast(LstThreads.SelectedItem, ThreadListEntry) IsNot Nothing
 
             BtnConnect.IsEnabled = Not connected
             BtnDisconnect.IsEnabled = connected
@@ -430,19 +731,12 @@ Namespace CodexNativeAgent.Ui
             BtnLoginExternalTokens.IsEnabled = connected
 
             BtnRefreshModels.IsEnabled = authenticated
-            BtnStartThread.IsEnabled = authenticated
-            BtnRefreshThreads.IsEnabled = authenticated AndAlso Not _threadsLoading
-            BtnResumeThread.IsEnabled = authenticated AndAlso hasSelectedThread AndAlso Not _threadsLoading
-            BtnReadThread.IsEnabled = authenticated AndAlso hasSelectedThread AndAlso Not _threadsLoading
-            BtnForkThread.IsEnabled = authenticated AndAlso hasSelectedThread AndAlso Not _threadsLoading
-            BtnArchiveThread.IsEnabled = authenticated AndAlso hasSelectedThread AndAlso Not _threadsLoading
-            BtnUnarchiveThread.IsEnabled = authenticated AndAlso hasSelectedThread AndAlso Not _threadsLoading
 
-            BtnTurnStart.IsEnabled = authenticated AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId)
-            BtnTurnSteer.IsEnabled = authenticated AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not String.IsNullOrWhiteSpace(_currentTurnId)
-            BtnTurnInterrupt.IsEnabled = authenticated AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not String.IsNullOrWhiteSpace(_currentTurnId)
+            BtnTurnStart.IsEnabled = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId)
+            BtnTurnSteer.IsEnabled = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not String.IsNullOrWhiteSpace(_currentTurnId)
+            BtnTurnInterrupt.IsEnabled = authenticated AndAlso Not _threadContentLoading AndAlso Not String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not String.IsNullOrWhiteSpace(_currentTurnId)
             TxtTurnInput.IsEnabled = authenticated
-            BtnSidebarNewThread.IsEnabled = BtnStartThread.IsEnabled
+            BtnSidebarNewThread.IsEnabled = authenticated AndAlso Not _threadContentLoading
             BtnSidebarAutomations.IsEnabled = True
             BtnSidebarSkills.IsEnabled = True
             BtnSidebarSettings.IsEnabled = True
@@ -465,12 +759,15 @@ Namespace CodexNativeAgent.Ui
             ChkFilterThreadsByWorkingDir.IsEnabled = authenticated
             TxtThreadSearch.IsEnabled = authenticated
             CmbThreadSort.IsEnabled = authenticated
+            BtnThreadSortMenu.IsEnabled = authenticated
+            BtnThreadFilterMenu.IsEnabled = authenticated
             LstThreads.IsEnabled = authenticated AndAlso Not _threadsLoading
             ChkAutoReconnect.IsEnabled = True
 
             LblWorkspaceHint.Text = BuildWorkspaceHint(connected, authenticated)
 
             UpdateRuntimeFieldState()
+            SyncThreadToolbarMenus()
         End Sub
 
         Private Function BuildWorkspaceHint(connected As Boolean, authenticated As Boolean) As String
@@ -483,7 +780,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If String.IsNullOrWhiteSpace(_currentThreadId) Then
-                Return "Start or resume a thread from the left panel, then send your first instruction."
+                Return "Start a new thread or select one from the left panel, then send your first instruction."
             End If
 
             If String.IsNullOrWhiteSpace(_currentTurnId) Then
@@ -508,11 +805,69 @@ Namespace CodexNativeAgent.Ui
         Private Sub ShowSettingsView()
             LeftMainView.Visibility = Visibility.Collapsed
             LeftSettingsView.Visibility = Visibility.Visible
+            UpdateSidebarSelectionState(showSettings:=True)
         End Sub
 
         Private Sub ShowWorkspaceView()
             LeftSettingsView.Visibility = Visibility.Collapsed
             LeftMainView.Visibility = Visibility.Visible
+            UpdateSidebarSelectionState(showSettings:=False)
+        End Sub
+
+        Private Sub UpdateSidebarSelectionState(showSettings As Boolean)
+            BtnSidebarNewThread.Tag = If(showSettings, Nothing, "Active")
+            BtnSidebarSettings.Tag = If(showSettings, "Active", Nothing)
+            BtnSidebarAutomations.Tag = Nothing
+            BtnSidebarSkills.Tag = Nothing
+        End Sub
+
+        Private Sub ToggleTheme()
+            Dim nextTheme = AppAppearanceManager.ToggleTheme(_currentTheme)
+            ApplyAppearance(nextTheme, _currentDensity, persist:=True)
+            ShowStatus($"Theme switched to {AppAppearanceManager.DisplayTheme(_currentTheme)}.", displayToast:=True)
+        End Sub
+
+        Private Sub OnDensitySelectionChanged()
+            If _suppressAppearanceUiChange Then
+                Return
+            End If
+
+            Dim selectedDensity = AppAppearanceManager.NormalizeDensity(SelectedComboValue(CmbDensity))
+            If StringComparer.OrdinalIgnoreCase.Equals(selectedDensity, _currentDensity) Then
+                Return
+            End If
+
+            ApplyAppearance(_currentTheme, selectedDensity, persist:=True)
+
+            Dim densityLabel = If(StringComparer.OrdinalIgnoreCase.Equals(_currentDensity, AppAppearanceManager.CompactDensity),
+                                  "Compact",
+                                  "Comfortable")
+            ShowStatus($"Density set to {densityLabel}.", displayToast:=True)
+        End Sub
+
+        Private Sub ApplyAppearance(themeMode As String, densityMode As String, persist As Boolean)
+            _currentTheme = AppAppearanceManager.NormalizeTheme(themeMode)
+            _currentDensity = AppAppearanceManager.NormalizeDensity(densityMode)
+
+            AppAppearanceManager.ApplyDensity(_currentDensity)
+            AppAppearanceManager.ApplyTheme(_currentTheme)
+            SyncAppearanceControls()
+
+            If persist Then
+                SaveSettings()
+            End If
+        End Sub
+
+        Private Sub SyncAppearanceControls()
+            _suppressAppearanceUiChange = True
+            Try
+                Dim compact = StringComparer.OrdinalIgnoreCase.Equals(_currentDensity, AppAppearanceManager.CompactDensity)
+                CmbDensity.SelectedIndex = If(compact, 1, 0)
+                LblThemeState.Text = $"Current: {AppAppearanceManager.DisplayTheme(_currentTheme)}"
+                BtnToggleTheme.Content = AppAppearanceManager.ThemeButtonLabel(_currentTheme)
+            Finally
+                _suppressAppearanceUiChange = False
+            End Try
         End Sub
 
         Private Function LoadSettings() As AppSettings
@@ -558,10 +913,14 @@ Namespace CodexNativeAgent.Ui
             _settings.AutoLoginApiKey = IsChecked(ChkAutoLoginApiKey)
             _settings.AutoReconnect = IsChecked(ChkAutoReconnect)
             _settings.FilterThreadsByWorkingDir = IsChecked(ChkFilterThreadsByWorkingDir)
+            _settings.ThemeMode = _currentTheme
+            _settings.DensityMode = _currentDensity
         End Sub
 
         Private Sub InitializeDefaults()
             _settings = LoadSettings()
+            _settings.ThemeMode = AppAppearanceManager.NormalizeTheme(_settings.ThemeMode)
+            _settings.DensityMode = AppAppearanceManager.NormalizeDensity(_settings.DensityMode)
 
             Dim detectedCodexPath = _connectionService.DetectCodexExecutablePath()
 
@@ -602,6 +961,7 @@ Namespace CodexNativeAgent.Ui
             ChkAutoLoginApiKey.IsChecked = _settings.AutoLoginApiKey
             ChkAutoReconnect.IsChecked = _settings.AutoReconnect
             ChkFilterThreadsByWorkingDir.IsChecked = _settings.FilterThreadsByWorkingDir
+            ApplyAppearance(_settings.ThemeMode, _settings.DensityMode, persist:=False)
 
             If IsChecked(ChkRememberApiKey) Then
                 Dim decryptedApiKey = ReadPersistedApiKey()
@@ -613,6 +973,7 @@ Namespace CodexNativeAgent.Ui
             UpdateRuntimeFieldState()
             TxtApproval.Text = "No pending approvals."
             TxtRateLimits.Text = "No rate-limit data loaded yet."
+            SyncThreadToolbarMenus()
         End Sub
 
         Private Shared Function IsPathLike(value As String) As Boolean
@@ -781,6 +1142,7 @@ Namespace CodexNativeAgent.Ui
         Private Sub ResetDisconnectedUiState(message As String,
                                              isError As Boolean,
                                              displayToast As Boolean)
+            CancelActiveThreadSelectionLoad()
             LblConnectionState.Text = "Disconnected"
             _currentThreadId = String.Empty
             _currentTurnId = String.Empty
@@ -792,7 +1154,9 @@ Namespace CodexNativeAgent.Ui
             _workspaceBootstrapInProgress = False
             _threadsLoading = False
             _threadLoadError = String.Empty
+            _threadContentLoading = False
             _threadEntries.Clear()
+            _expandedThreadProjectGroups.Clear()
             _approvalQueue.Clear()
             _activeApproval = Nothing
             _streamingAgentItemIds.Clear()
@@ -802,6 +1166,7 @@ Namespace CodexNativeAgent.Ui
             ApplyThreadFiltersAndSort()
             UpdateReconnectCountdownUi()
             UpdateThreadTurnLabels()
+            SetTranscriptLoadingState(False)
             RefreshControlStates()
             AppendSystemMessage(message)
             ShowStatus(message, isError:=isError, displayToast:=displayToast)
@@ -1128,15 +1493,18 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub ApplyAuthenticationRequiredState(Optional showPrompt As Boolean = False)
+            CancelActiveThreadSelectionLoad()
             _isAuthenticated = False
             _currentThreadId = String.Empty
             _currentTurnId = String.Empty
             _threadsLoading = False
             _threadLoadError = String.Empty
+            _threadContentLoading = False
             _modelsLoadedAtLeastOnce = False
             _threadsLoadedAtLeastOnce = False
             _workspaceBootstrapInProgress = False
             _threadEntries.Clear()
+            _expandedThreadProjectGroups.Clear()
             _streamingAgentItemIds.Clear()
             _pendingLocalUserEchoes.Clear()
             _approvalQueue.Clear()
@@ -1148,6 +1516,7 @@ Namespace CodexNativeAgent.Ui
 
             UpdateThreadTurnLabels()
             UpdateThreadsStateLabel(0)
+            SetTranscriptLoadingState(False)
             RefreshControlStates()
 
             If showPrompt AndAlso Not _authRequiredNoticeShown Then
@@ -1358,6 +1727,10 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Async Function StartThreadAsync() As Task
+            CancelActiveThreadSelectionLoad()
+            _threadContentLoading = False
+            SetTranscriptLoadingState(False)
+
             Dim options = BuildThreadRequestOptions(includeModel:=True)
             Dim threadObject = Await _threadService.StartThreadAsync(options, CancellationToken.None)
 
@@ -1403,7 +1776,8 @@ Namespace CodexNativeAgent.Ui
                         .Preview = summary.Preview,
                         .LastActiveAt = lastActiveText,
                         .LastActiveSortTimestamp = lastActiveSortTimestamp,
-                        .Cwd = summary.Cwd
+                        .Cwd = summary.Cwd,
+                        .IsArchived = summary.IsArchived
                     })
                 Next
 
@@ -1423,32 +1797,247 @@ Namespace CodexNativeAgent.Ui
             End Try
         End Function
 
-        Private Async Function ResumeSelectedThreadAsync() As Task
-            Dim selected = SelectedThreadEntry()
-            Dim options = BuildThreadRequestOptions(includeModel:=True)
-            Dim threadObject = Await _threadService.ResumeThreadAsync(selected.Id, options, CancellationToken.None)
+        Private Async Function AutoLoadThreadSelectionAsync(selected As ThreadListEntry,
+                                                            Optional forceReload As Boolean = False) As Task
+            If selected Is Nothing OrElse String.IsNullOrWhiteSpace(selected.Id) Then
+                Return
+            End If
 
-            ApplyCurrentThreadFromThreadObject(threadObject)
-            RenderThreadObject(threadObject)
-            AppendSystemMessage($"Resumed thread {_currentThreadId}.")
-            ShowStatus($"Resumed thread {_currentThreadId}.")
-            Await RefreshThreadsAsync()
+            If _threadsLoading OrElse _client Is Nothing OrElse Not _client.IsRunning OrElse Not _isAuthenticated Then
+                Return
+            End If
+
+            Dim selectedThreadId = selected.Id.Trim()
+            If Not forceReload AndAlso
+               StringComparer.Ordinal.Equals(selectedThreadId, _currentThreadId) AndAlso
+               Not _threadContentLoading Then
+                Return
+            End If
+
+            Dim loadVersion = Interlocked.Increment(_threadSelectionLoadVersion)
+            CancelActiveThreadSelectionLoad()
+
+            Dim threadLoadCts As New CancellationTokenSource()
+            _threadSelectionLoadCts = threadLoadCts
+            Dim cancellationToken = threadLoadCts.Token
+
+            _threadContentLoading = True
+            SetTranscriptLoadingState(True, "Loading selected thread...")
+            RefreshControlStates()
+            ShowStatus("Loading selected thread...")
+
+            Try
+                Dim threadObject = Await _threadService.ReadThreadAsync(selectedThreadId,
+                                                                        includeTurns:=True,
+                                                                        cancellationToken:=cancellationToken).ConfigureAwait(False)
+                cancellationToken.ThrowIfCancellationRequested()
+
+                Dim hasTurns = ThreadObjectHasTurns(threadObject)
+                Dim transcriptSnapshot = Await Task.Run(Function() BuildThreadTranscriptSnapshot(threadObject), cancellationToken).ConfigureAwait(False)
+                cancellationToken.ThrowIfCancellationRequested()
+
+                Await RunOnUiAsync(
+                    Function()
+                        If cancellationToken.IsCancellationRequested OrElse loadVersion <> _threadSelectionLoadVersion Then
+                            Return Task.CompletedTask
+                        End If
+
+                        Dim selectedNow = TryCast(LstThreads.SelectedItem, ThreadListEntry)
+                        If selectedNow Is Nothing OrElse Not StringComparer.Ordinal.Equals(selectedNow.Id, selectedThreadId) Then
+                            Return Task.CompletedTask
+                        End If
+
+                        ApplyCurrentThreadFromThreadObject(threadObject)
+                        ApplyThreadTranscriptSnapshot(transcriptSnapshot, hasTurns)
+                        AppendSystemMessage($"Loaded thread {_currentThreadId} from history.")
+                        ShowStatus($"Loaded thread {_currentThreadId}.")
+                        Return Task.CompletedTask
+                    End Function).ConfigureAwait(False)
+            Catch ex As OperationCanceledException
+            Catch ex As Exception
+                RunOnUi(
+                    Sub()
+                        If loadVersion = _threadSelectionLoadVersion Then
+                            ShowStatus($"Could not load thread {selectedThreadId}: {ex.Message}", isError:=True, displayToast:=True)
+                            AppendTranscript("system", $"Could not load thread {selectedThreadId}: {ex.Message}")
+                        End If
+                    End Sub)
+            Finally
+                RunOnUi(
+                    Sub()
+                        If loadVersion = _threadSelectionLoadVersion Then
+                            _threadContentLoading = False
+                            SetTranscriptLoadingState(False)
+                            RefreshControlStates()
+                        End If
+                    End Sub)
+
+                If _threadSelectionLoadCts Is threadLoadCts Then
+                    _threadSelectionLoadCts = Nothing
+                End If
+
+                threadLoadCts.Dispose()
+            End Try
         End Function
 
-        Private Async Function ReadSelectedThreadAsync() As Task
-            Dim selected = SelectedThreadEntry()
-            Dim threadObject = Await _threadService.ReadThreadAsync(selected.Id,
-                                                                    includeTurns:=True,
-                                                                    cancellationToken:=CancellationToken.None)
+        Private Sub CancelActiveThreadSelectionLoad()
+            Dim cts = _threadSelectionLoadCts
+            _threadSelectionLoadCts = Nothing
+            If cts Is Nothing Then
+                Return
+            End If
 
-            ApplyCurrentThreadFromThreadObject(threadObject)
-            RenderThreadObject(threadObject)
-            AppendSystemMessage($"Loaded thread {_currentThreadId} from history.")
-            ShowStatus($"Loaded thread {_currentThreadId}.")
+            Try
+                cts.Cancel()
+            Catch
+            End Try
+
+            cts.Dispose()
+        End Sub
+
+        Private Sub SetTranscriptLoadingState(isLoading As Boolean, Optional loadingText As String = "Loading thread...")
+            TranscriptLoadingOverlay.Visibility = If(isLoading, Visibility.Visible, Visibility.Collapsed)
+            LblTranscriptLoading.Text = If(isLoading, loadingText, "Loading thread...")
+        End Sub
+
+        Private Sub OnThreadsPreviewMouseRightButtonDown(sender As Object, e As MouseButtonEventArgs)
+            _threadContextTarget = Nothing
+
+            Dim source = TryCast(e.OriginalSource, DependencyObject)
+            Dim container = FindVisualAncestor(Of ListBoxItem)(source)
+            If container Is Nothing Then
+                e.Handled = True
+                Return
+            End If
+
+            Dim entry = TryCast(container.DataContext, ThreadListEntry)
+            If entry Is Nothing Then
+                e.Handled = True
+                Return
+            End If
+
+            _threadContextTarget = entry
+            e.Handled = True
+            PrepareThreadContextMenu(entry)
+            ThreadItemContextMenu.PlacementTarget = container
+            ThreadItemContextMenu.IsOpen = True
+        End Sub
+
+        Private Sub OnThreadsContextMenuOpening(sender As Object, e As ContextMenuEventArgs)
+            Dim target = ResolveContextThreadEntry()
+            If target Is Nothing Then
+                e.Handled = True
+                Return
+            End If
+
+            PrepareThreadContextMenu(target)
+        End Sub
+
+        Private Sub PrepareThreadContextMenu(target As ThreadListEntry)
+            If target Is Nothing Then
+                Return
+            End If
+
+            MnuThreadSelect.IsEnabled = True
+
+            Dim canRunThreadAction = _isAuthenticated AndAlso Not _threadsLoading AndAlso Not _threadContentLoading
+            MnuThreadRefreshSingle.IsEnabled = canRunThreadAction
+            MnuThreadFork.IsEnabled = canRunThreadAction
+
+            Dim archived = target.IsArchived
+            MnuThreadArchive.Visibility = If(archived, Visibility.Collapsed, Visibility.Visible)
+            MnuThreadUnarchive.Visibility = If(archived, Visibility.Visible, Visibility.Collapsed)
+            MnuThreadArchive.IsEnabled = canRunThreadAction AndAlso Not archived
+            MnuThreadUnarchive.IsEnabled = canRunThreadAction AndAlso archived
+        End Sub
+
+        Private Sub OnSelectThreadFromContextMenuClick(sender As Object, e As RoutedEventArgs)
+            Dim target = ResolveContextThreadEntry()
+            If target Is Nothing Then
+                Return
+            End If
+
+            SelectThreadEntry(target, suppressAutoLoad:=False)
+        End Sub
+
+        Private Async Function RefreshThreadFromContextMenuAsync() As Task
+            Dim target = ResolveContextThreadEntry()
+            If target Is Nothing Then
+                Throw New InvalidOperationException("Select a thread first.")
+            End If
+
+            SelectThreadEntry(target, suppressAutoLoad:=True)
+            Await AutoLoadThreadSelectionAsync(target, forceReload:=True)
         End Function
 
-        Private Async Function ForkSelectedThreadAsync() As Task
-            Dim selected = SelectedThreadEntry()
+        Private Async Function ForkThreadFromContextMenuAsync() As Task
+            Dim target = ResolveContextThreadEntry()
+            If target Is Nothing Then
+                Throw New InvalidOperationException("Select a thread first.")
+            End If
+
+            Await ForkThreadAsync(target)
+        End Function
+
+        Private Async Function ArchiveThreadFromContextMenuAsync() As Task
+            Dim target = ResolveContextThreadEntry()
+            If target Is Nothing Then
+                Throw New InvalidOperationException("Select a thread first.")
+            End If
+
+            Await ArchiveThreadAsync(target)
+        End Function
+
+        Private Async Function UnarchiveThreadFromContextMenuAsync() As Task
+            Dim target = ResolveContextThreadEntry()
+            If target Is Nothing Then
+                Throw New InvalidOperationException("Select a thread first.")
+            End If
+
+            Await UnarchiveThreadAsync(target)
+        End Function
+
+        Private Function ResolveContextThreadEntry() As ThreadListEntry
+            If _threadContextTarget IsNot Nothing Then
+                Return _threadContextTarget
+            End If
+
+            Return TryCast(LstThreads.SelectedItem, ThreadListEntry)
+        End Function
+
+        Private Sub SelectThreadEntry(entry As ThreadListEntry, suppressAutoLoad As Boolean)
+            If entry Is Nothing Then
+                Return
+            End If
+
+            If suppressAutoLoad Then
+                _suppressThreadSelectionEvents = True
+            End If
+
+            Try
+                LstThreads.SelectedItem = entry
+            Finally
+                If suppressAutoLoad Then
+                    _suppressThreadSelectionEvents = False
+                End If
+            End Try
+        End Sub
+
+        Private Shared Function FindVisualAncestor(Of T As DependencyObject)(start As DependencyObject) As T
+            Dim current = start
+            While current IsNot Nothing
+                Dim match = TryCast(current, T)
+                If match IsNot Nothing Then
+                    Return match
+                End If
+
+                current = VisualTreeHelper.GetParent(current)
+            End While
+
+            Return Nothing
+        End Function
+
+        Private Async Function ForkThreadAsync(selected As ThreadListEntry) As Task
             Dim options = BuildThreadRequestOptions(includeModel:=False)
             Dim threadObject = Await _threadService.ForkThreadAsync(selected.Id, options, CancellationToken.None)
 
@@ -1459,16 +2048,14 @@ Namespace CodexNativeAgent.Ui
             Await RefreshThreadsAsync()
         End Function
 
-        Private Async Function ArchiveSelectedThreadAsync() As Task
-            Dim selected = SelectedThreadEntry()
+        Private Async Function ArchiveThreadAsync(selected As ThreadListEntry) As Task
             Await _threadService.ArchiveThreadAsync(selected.Id, CancellationToken.None)
             AppendSystemMessage($"Archived thread {selected.Id}.")
             ShowStatus($"Archived thread {selected.Id}.")
             Await RefreshThreadsAsync()
         End Function
 
-        Private Async Function UnarchiveSelectedThreadAsync() As Task
-            Dim selected = SelectedThreadEntry()
+        Private Async Function UnarchiveThreadAsync(selected As ThreadListEntry) As Task
             Await _threadService.UnarchiveThreadAsync(selected.Id, CancellationToken.None)
             AppendSystemMessage($"Unarchived thread {selected.Id}.")
             ShowStatus($"Unarchived thread {selected.Id}.")
@@ -1477,6 +2064,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub ApplyThreadFiltersAndSort()
             Dim searchText = TxtThreadSearch.Text.Trim()
+            Dim forceExpandMatchingGroups = Not String.IsNullOrWhiteSpace(searchText)
             Dim filtered As New List(Of ThreadListEntry)()
 
             For Each entry In _threadEntries
@@ -1514,30 +2102,58 @@ Namespace CodexNativeAgent.Ui
             Dim orderedGroups As New List(Of ThreadProjectGroup)(groupedByProject.Values)
             orderedGroups.Sort(AddressOf CompareThreadProjectGroups)
 
-            LstThreads.Items.Clear()
-            For Each group In orderedGroups
-                LstThreads.Items.Add(New ThreadGroupHeaderEntry() With {
-                    .Label = group.HeaderLabel,
-                    .Count = group.Threads.Count
-                })
+            _suppressThreadSelectionEvents = True
+            Try
+                LstThreads.Items.Clear()
+                For Each group In orderedGroups
+                    Dim isExpanded = forceExpandMatchingGroups OrElse _expandedThreadProjectGroups.Contains(group.Key)
+                    LstThreads.Items.Add(New ThreadGroupHeaderEntry() With {
+                        .GroupKey = group.Key,
+                        .FolderName = group.HeaderLabel,
+                        .Count = group.Threads.Count,
+                        .IsExpanded = isExpanded
+                    })
 
-                For Each entry In group.Threads
-                    LstThreads.Items.Add(entry)
-                Next
-            Next
-
-            If Not String.IsNullOrWhiteSpace(selectedThreadId) Then
-                For i = 0 To LstThreads.Items.Count - 1
-                    Dim entry = TryCast(LstThreads.Items(i), ThreadListEntry)
-                    If entry IsNot Nothing AndAlso StringComparer.Ordinal.Equals(entry.Id, selectedThreadId) Then
-                        LstThreads.SelectedIndex = i
-                        Exit For
+                    If isExpanded Then
+                        For Each entry In group.Threads
+                            LstThreads.Items.Add(entry)
+                        Next
                     End If
                 Next
+
+                If Not String.IsNullOrWhiteSpace(selectedThreadId) Then
+                    For i = 0 To LstThreads.Items.Count - 1
+                        Dim entry = TryCast(LstThreads.Items(i), ThreadListEntry)
+                        If entry IsNot Nothing AndAlso StringComparer.Ordinal.Equals(entry.Id, selectedThreadId) Then
+                            LstThreads.SelectedIndex = i
+                            Exit For
+                        End If
+                    Next
+                End If
+            Finally
+                _suppressThreadSelectionEvents = False
+            End Try
+
+            If TryCast(LstThreads.SelectedItem, ThreadListEntry) Is Nothing Then
+                CancelActiveThreadSelectionLoad()
+                _threadContentLoading = False
+                SetTranscriptLoadingState(False)
             End If
 
-            UpdateThreadsStateLabel(filtered.Count)
+            UpdateThreadsStateLabel(VisibleThreadCount())
             RefreshControlStates()
+        End Sub
+
+        Private Sub ToggleThreadProjectGroupExpansion(groupKey As String)
+            If String.IsNullOrWhiteSpace(groupKey) Then
+                Return
+            End If
+
+            If _expandedThreadProjectGroups.Contains(groupKey) Then
+                _expandedThreadProjectGroups.Remove(groupKey)
+            Else
+                _expandedThreadProjectGroups.Add(groupKey)
+            End If
         End Sub
 
         Private Function CompareThreadProjectGroups(left As ThreadProjectGroup, right As ThreadProjectGroup) As Integer
@@ -1648,14 +2264,21 @@ Namespace CodexNativeAgent.Ui
 
             Dim folderName = Path.GetFileName(normalized)
             If String.IsNullOrWhiteSpace(folderName) Then
-                folderName = normalized
+                Dim root = String.Empty
+                Try
+                    root = Path.GetPathRoot(normalized)
+                Catch
+                End Try
+
+                If Not String.IsNullOrWhiteSpace(root) AndAlso
+                   StringComparer.OrdinalIgnoreCase.Equals(root, normalized) Then
+                    folderName = normalized.TrimEnd("\"c, "/"c)
+                Else
+                    folderName = normalized
+                End If
             End If
 
-            If StringComparer.OrdinalIgnoreCase.Equals(folderName, normalized) Then
-                Return folderName
-            End If
-
-            Return $"{folderName} - {normalized}"
+            Return folderName
         End Function
 
         Private Shared Function NormalizeProjectPath(cwd As String) As String
@@ -1699,7 +2322,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If Not _isAuthenticated Then
-                LblThreadsState.Text = "Authentication required. Sign in to start or resume threads."
+                LblThreadsState.Text = "Authentication required. Sign in to start or load threads."
                 Return
             End If
 
@@ -1719,7 +2342,19 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If displayCount = 0 Then
-                LblThreadsState.Text = "No threads match the current search/filter."
+                Dim hasProjectHeaders = False
+                For Each item As Object In LstThreads.Items
+                    If TypeOf item Is ThreadGroupHeaderEntry Then
+                        hasProjectHeaders = True
+                        Exit For
+                    End If
+                Next
+
+                If hasProjectHeaders Then
+                    LblThreadsState.Text = "All project folders are collapsed. Expand a folder to view threads."
+                Else
+                    LblThreadsState.Text = "No threads match the current search/filter."
+                End If
                 Return
             End If
 
@@ -1800,6 +2435,107 @@ Namespace CodexNativeAgent.Ui
             Next
 
             ScrollTextBoxToBottom(TxtTranscript)
+        End Sub
+
+        Private Sub ApplyThreadTranscriptSnapshot(transcriptSnapshot As String, hasTurns As Boolean)
+            TxtTranscript.Clear()
+            If Not hasTurns Then
+                AppendSystemMessage("No historical turns loaded for this thread.")
+                Return
+            End If
+
+            TxtTranscript.Text = transcriptSnapshot
+            TrimLogIfNeeded(TxtTranscript)
+            ScrollTextBoxToBottom(TxtTranscript)
+        End Sub
+
+        Private Shared Function ThreadObjectHasTurns(threadObject As JsonObject) As Boolean
+            Dim turns = GetPropertyArray(threadObject, "turns")
+            Return turns IsNot Nothing AndAlso turns.Count > 0
+        End Function
+
+        Private Shared Function BuildThreadTranscriptSnapshot(threadObject As JsonObject) As String
+            Dim turns = GetPropertyArray(threadObject, "turns")
+            If turns Is Nothing OrElse turns.Count = 0 Then
+                Return String.Empty
+            End If
+
+            Dim builder As New StringBuilder()
+            For Each turnNode In turns
+                Dim turnObject = AsObject(turnNode)
+                If turnObject Is Nothing Then
+                    Continue For
+                End If
+
+                Dim items = GetPropertyArray(turnObject, "items")
+                If items Is Nothing Then
+                    Continue For
+                End If
+
+                For Each itemNode In items
+                    Dim itemObject = AsObject(itemNode)
+                    If itemObject IsNot Nothing Then
+                        AppendSnapshotItem(builder, itemObject)
+                    End If
+                Next
+            Next
+
+            Return builder.ToString().TrimEnd()
+        End Function
+
+        Private Shared Sub AppendSnapshotItem(builder As StringBuilder, itemObject As JsonObject)
+            Dim itemType = GetPropertyString(itemObject, "type")
+
+            Select Case itemType
+                Case "userMessage"
+                    Dim content = GetPropertyArray(itemObject, "content")
+                    AppendSnapshotLine(builder, "user", FlattenUserInput(content))
+
+                Case "agentMessage"
+                    AppendSnapshotLine(builder, "assistant", GetPropertyString(itemObject, "text"))
+
+                Case "plan"
+                    AppendSnapshotLine(builder, "plan", GetPropertyString(itemObject, "text"))
+
+                Case "reasoning"
+                    AppendSnapshotLine(builder, "reasoning", GetPropertyString(itemObject, "text", "[reasoning item]"))
+
+                Case "commandExecution"
+                    Dim command = GetPropertyString(itemObject, "command")
+                    Dim status = GetPropertyString(itemObject, "status")
+                    Dim output = GetPropertyString(itemObject, "aggregatedOutput")
+                    Dim summary As New StringBuilder()
+                    summary.AppendLine($"Command ({status}): {command}")
+                    If Not String.IsNullOrWhiteSpace(output) Then
+                        summary.AppendLine(output)
+                    End If
+                    AppendSnapshotLine(builder, "command", summary.ToString().TrimEnd())
+
+                Case "fileChange"
+                    Dim status = GetPropertyString(itemObject, "status")
+                    Dim changes = GetPropertyArray(itemObject, "changes")
+                    Dim count = If(changes Is Nothing, 0, changes.Count)
+                    AppendSnapshotLine(builder, "fileChange", $"{count} change(s), status={status}")
+
+                Case Else
+                    Dim itemId = GetPropertyString(itemObject, "id")
+                    AppendSnapshotLine(builder, "item", $"{itemType} ({itemId})")
+            End Select
+        End Sub
+
+        Private Shared Sub AppendSnapshotLine(builder As StringBuilder, role As String, text As String)
+            If String.IsNullOrWhiteSpace(text) Then
+                Return
+            End If
+
+            builder.Append("["c)
+            builder.Append(Date.Now.ToString("HH:mm:ss"))
+            builder.Append("] ")
+            builder.Append(role)
+            builder.Append(": ")
+            builder.Append(text)
+            builder.AppendLine()
+            builder.AppendLine()
         End Sub
 
         Private Sub ApplyCurrentThreadFromThreadObject(threadObject As JsonObject)
@@ -2520,6 +3256,8 @@ Namespace CodexNativeAgent.Ui
             settingsObject("rememberApiKey") = IsChecked(ChkRememberApiKey)
             settingsObject("autoLoginApiKey") = IsChecked(ChkAutoLoginApiKey)
             settingsObject("autoReconnect") = IsChecked(ChkAutoReconnect)
+            settingsObject("theme") = _currentTheme
+            settingsObject("density") = _currentDensity
             settingsObject("apiKeyMasked") = MaskSecret(TxtApiKey.Text.Trim(), 4)
             settingsObject("externalAccessTokenMasked") = MaskSecret(TxtExternalAccessToken.Text.Trim(), 6)
             settingsObject("externalAccountIdMasked") = MaskSecret(TxtExternalAccountId.Text.Trim(), 4)
@@ -2541,6 +3279,8 @@ Namespace CodexNativeAgent.Ui
             uiObject("approvalPolicy") = SelectedComboValue(CmbApprovalPolicy)
             uiObject("sandbox") = SelectedComboValue(CmbSandbox)
             uiObject("reasoningEffort") = SelectedComboValue(CmbReasoningEffort)
+            uiObject("theme") = _currentTheme
+            uiObject("density") = _currentDensity
 
             Dim snapshot As New JsonObject()
             snapshot("generatedAtLocal") = DateTime.Now.ToString("O")

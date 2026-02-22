@@ -8,6 +8,8 @@ Namespace CodexNativeAgent
                 .ShutdownMode = ShutdownMode.OnMainWindowClose
             }
 
+            Ui.AppAppearanceManager.Initialize(app)
+
             Dim window As New Ui.MainWindow()
             app.Run(window)
         End Sub

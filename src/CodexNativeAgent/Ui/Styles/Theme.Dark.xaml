@@ -1,0 +1,85 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#171818" />
+    <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#1D1F1E" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#252726" />
+    <SolidColorBrush x:Key="SurfaceMutedBrush" Color="#2A2D2B" />
+    <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#252726" />
+    <SolidColorBrush x:Key="SurfaceContrastBrush" Color="#303331" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#3C423E" />
+    <SolidColorBrush x:Key="BorderStrongBrush" Color="#4B544D" />
+
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#E4E8E3" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#B4BCB3" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#919A92" />
+
+    <SolidColorBrush x:Key="AccentBrush" Color="#5E7F67" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#52705A" />
+    <SolidColorBrush x:Key="AccentPressedBrush" Color="#435C4A" />
+    <SolidColorBrush x:Key="AccentSubtleBrush" Color="#344037" />
+    <SolidColorBrush x:Key="AccentGlowBrush" Color="#5F7765" />
+
+    <SolidColorBrush x:Key="SuccessBrush" Color="#67A576" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#C59C62" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#E58A83" />
+    <SolidColorBrush x:Key="DangerSubtleBrush" Color="#4A3533" />
+
+    <SolidColorBrush x:Key="ButtonHoverBrush" Color="#303733" />
+    <SolidColorBrush x:Key="ButtonPressedBrush" Color="#3A443E" />
+    <SolidColorBrush x:Key="InputFocusedBackgroundBrush" Color="#333D36" />
+
+    <SolidColorBrush x:Key="DangerBorderBrush" Color="#8C605C" />
+    <SolidColorBrush x:Key="DangerHoverBrush" Color="#5A403D" />
+    <SolidColorBrush x:Key="DangerHoverBorderBrush" Color="#B37B75" />
+    <SolidColorBrush x:Key="DangerPressedBrush" Color="#664946" />
+
+    <SolidColorBrush x:Key="SidebarHoverBrush" Color="#323A35" />
+    <SolidColorBrush x:Key="SidebarPressedBrush" Color="#39443D" />
+    <SolidColorBrush x:Key="SidebarActiveBackgroundBrush" Color="#3B4A40" />
+    <SolidColorBrush x:Key="SidebarActiveBorderBrush" Color="#617965" />
+
+    <SolidColorBrush x:Key="TabHoverBackgroundBrush" Color="#313A35" />
+    <SolidColorBrush x:Key="TabHoverBorderBrush" Color="#4A5B4F" />
+    <SolidColorBrush x:Key="TabSelectedBorderBrush" Color="#6B856E" />
+
+    <SolidColorBrush x:Key="ListItemHoverBackgroundBrush" Color="#313934" />
+    <SolidColorBrush x:Key="ListItemHoverBorderBrush" Color="#495A4E" />
+    <SolidColorBrush x:Key="ListItemSelectedBorderBrush" Color="#6A846D" />
+
+    <SolidColorBrush x:Key="ApprovalCardBorderBrush" Color="#8B7A55" />
+    <SolidColorBrush x:Key="ApprovalCardBackgroundBrush" Color="#463F31" />
+    <SolidColorBrush x:Key="ApprovalInputBackgroundBrush" Color="#393327" />
+
+    <SolidColorBrush x:Key="ToastInfoBackgroundBrush" Color="#2D3931" />
+    <SolidColorBrush x:Key="ToastInfoBorderBrush" Color="#506452" />
+    <SolidColorBrush x:Key="ToastErrorBackgroundBrush" Color="#4D3634" />
+    <SolidColorBrush x:Key="ToastErrorBorderBrush" Color="#8D625E" />
+
+    <SolidColorBrush x:Key="HeroBlobBrushA" Color="#152B2E2A" />
+    <SolidColorBrush x:Key="HeroBlobBrushB" Color="#1438352B" />
+    <SolidColorBrush x:Key="HeroBlobBrushC" Color="#143E3A2B" />
+    <SolidColorBrush x:Key="DialogBlobBrush" Color="#18363228" />
+
+    <LinearGradientBrush x:Key="MainBackgroundGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#191B1A" Offset="0" />
+        <GradientStop Color="#171918" Offset="0.45" />
+        <GradientStop Color="#161817" Offset="1" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="WindowBackgroundGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#1B1D1C" Offset="0" />
+        <GradientStop Color="#171918" Offset="1" />
+    </LinearGradientBrush>
+
+    <DropShadowEffect x:Key="CardShadowEffect"
+                      BlurRadius="20"
+                      ShadowDepth="0"
+                      Direction="270"
+                      Color="#66000000" />
+
+    <DropShadowEffect x:Key="FloatingShadowEffect"
+                      BlurRadius="18"
+                      ShadowDepth="0"
+                      Direction="270"
+                      Color="#7A000000" />
+</ResourceDictionary>

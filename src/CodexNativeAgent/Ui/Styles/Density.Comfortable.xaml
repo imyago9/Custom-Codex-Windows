@@ -1,0 +1,25 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <sys:Double x:Key="BaseTextSize">13.5</sys:Double>
+    <sys:Double x:Key="CaptionTextSize">12.5</sys:Double>
+    <sys:Double x:Key="SectionTitleSize">17</sys:Double>
+    <sys:Double x:Key="LineHeightSize">19</sys:Double>
+
+    <sys:Double x:Key="ControlMinHeight">36</sys:Double>
+    <sys:Double x:Key="ButtonMinWidth">90</sys:Double>
+    <sys:Double x:Key="SectionGapSize">12</sys:Double>
+
+    <Thickness x:Key="InputPadding">10,8</Thickness>
+    <Thickness x:Key="ButtonPadding">13,8</Thickness>
+    <Thickness x:Key="SidebarButtonPadding">12,9</Thickness>
+    <Thickness x:Key="ListItemPadding">12,9</Thickness>
+    <Thickness x:Key="ListItemMargin">0,0,0,6</Thickness>
+    <Thickness x:Key="TabHeaderPadding">14,8</Thickness>
+    <Thickness x:Key="GroupPadding">12</Thickness>
+
+    <Thickness x:Key="MainSurfaceMargin">18,18,18,12</Thickness>
+    <Thickness x:Key="StatusBarMargin">18,0,18,10</Thickness>
+    <Thickness x:Key="SidebarShellPadding">14</Thickness>
+    <Thickness x:Key="MainShellPadding">16</Thickness>
+</ResourceDictionary>

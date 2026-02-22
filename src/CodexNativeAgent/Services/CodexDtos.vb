@@ -15,6 +15,7 @@ Namespace CodexNativeAgent.Services
         Public Property LastActiveText As String = String.Empty
         Public Property LastActiveSortValue As Long
         Public Property Cwd As String = String.Empty
+        Public Property IsArchived As Boolean
     End Class
 
     Public NotInheritable Class ThreadRequestOptions

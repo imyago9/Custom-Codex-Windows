@@ -134,7 +134,8 @@ Namespace CodexNativeAgent.Services
                             .UpdatedSortValue = lastActiveSortValue,
                             .LastActiveText = lastActiveText,
                             .LastActiveSortValue = lastActiveSortValue,
-                            .Cwd = ExtractThreadWorkingDirectory(threadObject)
+                            .Cwd = ExtractThreadWorkingDirectory(threadObject),
+                            .IsArchived = GetPropertyBoolean(threadObject, "archived", includeArchived)
                         })
                     Next
                 End If
