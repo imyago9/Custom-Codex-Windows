@@ -19,6 +19,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _protocolText As String = String.Empty
         Private _loadingText As String = "Loading thread..."
         Private _loadingOverlayVisibility As Visibility = Visibility.Collapsed
+        Private _collapseCommandDetailsByDefault As Boolean
         Private ReadOnly _items As New ObservableCollection(Of TranscriptEntryViewModel)()
         Private ReadOnly _activeAssistantStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
         Private ReadOnly _activeAssistantStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
@@ -67,6 +68,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Get
                 Return _items
             End Get
+        End Property
+
+        Public Property CollapseCommandDetailsByDefault As Boolean
+            Get
+                Return _collapseCommandDetailsByDefault
+            End Get
+            Set(value As Boolean)
+                SetProperty(_collapseCommandDetailsByDefault, value)
+            End Set
         End Property
 
         Public Sub ClearTranscript()
@@ -703,6 +713,9 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Dim reasoningSource = If(String.IsNullOrWhiteSpace(descriptor.DetailsText), descriptor.BodyText, descriptor.DetailsText)
                 ApplyReasoningMarkdownFormatting(entry, reasoningSource)
             End If
+
+            entry.AllowDetailsCollapse = StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "command")
+            entry.IsDetailsExpanded = Not (entry.AllowDetailsCollapse AndAlso _collapseCommandDetailsByDefault)
 
             Select Case entry.Kind
                 Case "assistant"

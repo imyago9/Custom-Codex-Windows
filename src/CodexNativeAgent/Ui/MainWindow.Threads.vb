@@ -1052,6 +1052,43 @@ Namespace CodexNativeAgent.Ui
             Return Not foundEntry
         End Function
 
+        Private Function HasThreadEntry(threadId As String) As Boolean
+            If String.IsNullOrWhiteSpace(threadId) Then
+                Return False
+            End If
+
+            Dim normalizedThreadId = threadId.Trim()
+            For Each entry In _threadEntries
+                If entry IsNot Nothing AndAlso StringComparer.Ordinal.Equals(entry.Id, normalizedThreadId) Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Async Function RetrySilentThreadRefreshUntilListedAsync(threadId As String) As Task
+            If String.IsNullOrWhiteSpace(threadId) OrElse HasThreadEntry(threadId) Then
+                Return
+            End If
+
+            Const maxAttempts As Integer = 2
+            Const retryDelayMs As Integer = 550
+
+            For attempt = 1 To maxAttempts
+                Await Task.Delay(retryDelayMs).ConfigureAwait(True)
+
+                If HasThreadEntry(threadId) Then
+                    Exit For
+                End If
+
+                Await RefreshThreadsCoreAsync(silent:=True).ConfigureAwait(True)
+                If HasThreadEntry(threadId) Then
+                    Exit For
+                End If
+            Next
+        End Function
+
         Private Shared Function NormalizeThreadPreviewFromPrompt(promptText As String) As String
             If String.IsNullOrWhiteSpace(promptText) Then
                 Return String.Empty

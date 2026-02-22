@@ -395,6 +395,18 @@
                                                                    Foreground="{DynamicResource TextTertiaryBrush}"
                                                                    FontSize="11.5" />
 
+                                                        <Button Visibility="{Binding DetailsToggleVisibility}"
+                                                                Command="{Binding ToggleDetailsCommand}"
+                                                                Style="{StaticResource ButtonBaseStyle}"
+                                                                Margin="0,8,0,0"
+                                                                Padding="8,3"
+                                                                MinHeight="24"
+                                                                HorizontalAlignment="Left">
+                                                            <TextBlock Text="{Binding DetailsToggleText}"
+                                                                       FontSize="11.5"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                        </Button>
+
                                                         <Border x:Name="ActivityDetailsChrome"
                                                                 Visibility="{Binding DetailsVisibility}"
                                                                 Margin="0,8,0,0"

@@ -281,6 +281,8 @@ Namespace CodexNativeAgent.Ui
         Private Async Function StartTurnAsync() As Task
             Dim submittedInputText As String = String.Empty
             Dim shouldRefreshThreadsAfterTurnStart As Boolean = False
+            Dim startedFromDraftNewThread = _pendingNewThreadFirstPromptSelection
+            Dim threadIdToRefreshAfterTurnStart As String = String.Empty
 
             If _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(_currentThreadId) Then
                 Await EnsurePendingDraftThreadCreatedAsync()
@@ -303,8 +305,10 @@ Namespace CodexNativeAgent.Ui
                         _currentTurnId = returnedTurnId
                     End If
 
+                    threadIdToRefreshAfterTurnStart = _currentThreadId
                     MarkThreadLastActive(_currentThreadId)
-                    shouldRefreshThreadsAfterTurnStart = SyncThreadListAfterUserPrompt(_currentThreadId, submittedInputText)
+                    Dim threadMissingFromList = SyncThreadListAfterUserPrompt(_currentThreadId, submittedInputText)
+                    shouldRefreshThreadsAfterTurnStart = startedFromDraftNewThread OrElse threadMissingFromList
                     FinalizePendingNewThreadFirstPromptSelection()
                     UpdateThreadTurnLabels()
                     RefreshControlStates()
@@ -314,6 +318,9 @@ Namespace CodexNativeAgent.Ui
 
             If shouldRefreshThreadsAfterTurnStart Then
                 Await RefreshThreadsCoreAsync(silent:=True)
+                If startedFromDraftNewThread Then
+                    Await RetrySilentThreadRefreshUntilListedAsync(threadIdToRefreshAfterTurnStart)
+                End If
                 FinalizePendingNewThreadFirstPromptSelection()
             End If
         End Function

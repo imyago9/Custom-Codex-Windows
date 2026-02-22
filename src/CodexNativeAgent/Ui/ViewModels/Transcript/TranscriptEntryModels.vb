@@ -1,6 +1,7 @@
 Imports System.Windows
 Imports System.Windows.Media
 Imports CodexNativeAgent.Ui.Mvvm
+Imports System.Windows.Input
 
 Namespace CodexNativeAgent.Ui.ViewModels.Transcript
     Public NotInheritable Class TranscriptEntryDescriptor
@@ -51,13 +52,24 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _removedLinesText As String = String.Empty
         Private _addedLinesVisibility As Visibility = Visibility.Collapsed
         Private _removedLinesVisibility As Visibility = Visibility.Collapsed
+        Private _allowDetailsCollapse As Boolean
+        Private _isDetailsExpanded As Boolean = True
+        Private _detailsToggleVisibility As Visibility = Visibility.Collapsed
+        Private _detailsToggleText As String = "Show details"
+        Private ReadOnly _toggleDetailsCommand As ICommand
+
+        Public Sub New()
+            _toggleDetailsCommand = New RelayCommand(Sub() ToggleDetails())
+        End Sub
 
         Public Property Kind As String
             Get
                 Return _kind
             End Get
             Set(value As String)
-                SetProperty(_kind, If(value, String.Empty))
+                If SetProperty(_kind, If(value, String.Empty)) Then
+                    RefreshDetailsPresentationState()
+                End If
             End Set
         End Property
 
@@ -105,8 +117,9 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
                 Return _detailsText
             End Get
             Set(value As String)
-                SetProperty(_detailsText, If(value, String.Empty))
-                DetailsVisibility = If(String.IsNullOrWhiteSpace(_detailsText), Visibility.Collapsed, Visibility.Visible)
+                If SetProperty(_detailsText, If(value, String.Empty)) Then
+                    RefreshDetailsPresentationState()
+                End If
             End Set
         End Property
 
@@ -314,6 +327,52 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Set
         End Property
 
+        Public Property AllowDetailsCollapse As Boolean
+            Get
+                Return _allowDetailsCollapse
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_allowDetailsCollapse, value) Then
+                    RefreshDetailsPresentationState()
+                End If
+            End Set
+        End Property
+
+        Public Property IsDetailsExpanded As Boolean
+            Get
+                Return _isDetailsExpanded
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_isDetailsExpanded, value) Then
+                    RefreshDetailsPresentationState()
+                End If
+            End Set
+        End Property
+
+        Public Property DetailsToggleVisibility As Visibility
+            Get
+                Return _detailsToggleVisibility
+            End Get
+            Private Set(value As Visibility)
+                SetProperty(_detailsToggleVisibility, value)
+            End Set
+        End Property
+
+        Public Property DetailsToggleText As String
+            Get
+                Return _detailsToggleText
+            End Get
+            Private Set(value As String)
+                SetProperty(_detailsToggleText, If(value, String.Empty))
+            End Set
+        End Property
+
+        Public ReadOnly Property ToggleDetailsCommand As ICommand
+            Get
+                Return _toggleDetailsCommand
+            End Get
+        End Property
+
         Public Sub AppendBodyChunk(chunk As String)
             If String.IsNullOrEmpty(chunk) Then
                 Return
@@ -322,9 +381,31 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             BodyText = _bodyText & chunk
         End Sub
 
+        Private Sub ToggleDetails()
+            If Not _allowDetailsCollapse OrElse String.IsNullOrWhiteSpace(_detailsText) Then
+                Return
+            End If
+
+            IsDetailsExpanded = Not _isDetailsExpanded
+        End Sub
+
         Private Sub UpdateChangeStatsVisibility()
             Dim shouldShow = _addedLinesVisibility = Visibility.Visible OrElse _removedLinesVisibility = Visibility.Visible
             ChangeStatsVisibility = If(shouldShow, Visibility.Visible, Visibility.Collapsed)
         End Sub
+
+        Private Sub RefreshDetailsPresentationState()
+            Dim hasDetails = Not String.IsNullOrWhiteSpace(_detailsText)
+            Dim showDetails = hasDetails AndAlso (Not _allowDetailsCollapse OrElse _isDetailsExpanded)
+
+            DetailsVisibility = If(showDetails, Visibility.Visible, Visibility.Collapsed)
+            DetailsToggleVisibility = If(_allowDetailsCollapse AndAlso hasDetails, Visibility.Visible, Visibility.Collapsed)
+            DetailsToggleText = BuildDetailsToggleText()
+        End Sub
+
+        Private Function BuildDetailsToggleText() As String
+            Dim noun = If(StringComparer.OrdinalIgnoreCase.Equals(_kind, "command"), "result", "details")
+            Return If(_isDetailsExpanded, $"Hide {noun}", $"Show {noun}")
+        End Function
     End Class
 End Namespace

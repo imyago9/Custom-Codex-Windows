@@ -2829,6 +2829,7 @@ Namespace CodexNativeAgent.Ui
             _viewModel.IsSettingsBackEnabled = True
             _viewModel.IsQuickOpenVscEnabled = True
             _viewModel.IsQuickOpenTerminalEnabled = True
+            _viewModel.TranscriptPanel.CollapseCommandDetailsByDefault = hasActiveTurn
         End Sub
 
         Private Sub RefreshApprovalControlState(authenticated As Boolean)
