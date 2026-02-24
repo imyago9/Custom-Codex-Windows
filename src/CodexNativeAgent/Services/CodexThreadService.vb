@@ -248,12 +248,14 @@ Namespace CodexNativeAgent.Services
                 paramsNode("model") = effectiveOptions.Model
             End If
 
-            If Not String.IsNullOrWhiteSpace(effectiveOptions.ApprovalPolicy) Then
-                paramsNode("approvalPolicy") = effectiveOptions.ApprovalPolicy
+            Dim normalizedApprovalPolicy = NormalizeApprovalPolicy(effectiveOptions.ApprovalPolicy)
+            If Not String.IsNullOrWhiteSpace(normalizedApprovalPolicy) Then
+                paramsNode("approvalPolicy") = normalizedApprovalPolicy
             End If
 
-            If Not String.IsNullOrWhiteSpace(effectiveOptions.Sandbox) Then
-                paramsNode("sandbox") = effectiveOptions.Sandbox
+            Dim normalizedSandbox = NormalizeSandboxMode(effectiveOptions.Sandbox)
+            If Not String.IsNullOrWhiteSpace(normalizedSandbox) Then
+                paramsNode("sandbox") = normalizedSandbox
             End If
 
             If Not String.IsNullOrWhiteSpace(effectiveOptions.Cwd) Then

@@ -11,10 +11,13 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _cardVisibility As Visibility = Visibility.Collapsed
         Private _canAccept As Boolean
         Private _canAcceptSession As Boolean
+        Private _canAcceptAmended As Boolean
+        Private _acceptAmendedVisibility As Visibility = Visibility.Collapsed
         Private _canDecline As Boolean
         Private _canCancel As Boolean
         Private _pendingQueueCount As Integer
         Private _activeMethodName As String = String.Empty
+        Private _supportsExecpolicyAmendment As Boolean
         Private _lastQueuedMethodName As String = String.Empty
         Private _lastResolvedAction As String = String.Empty
         Private _lastResolvedDecision As String = String.Empty
@@ -24,6 +27,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Private _acceptCommand As ICommand
         Private _acceptSessionCommand As ICommand
+        Private _acceptAmendedCommand As ICommand
         Private _declineCommand As ICommand
         Private _cancelCommand As ICommand
 
@@ -60,6 +64,24 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 SetProperty(_canAcceptSession, value)
+            End Set
+        End Property
+
+        Public Property CanAcceptAmended As Boolean
+            Get
+                Return _canAcceptAmended
+            End Get
+            Set(value As Boolean)
+                SetProperty(_canAcceptAmended, value)
+            End Set
+        End Property
+
+        Public Property AcceptAmendedVisibility As Visibility
+            Get
+                Return _acceptAmendedVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_acceptAmendedVisibility, value)
             End Set
         End Property
 
@@ -171,6 +193,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property AcceptAmendedCommand As ICommand
+            Get
+                Return _acceptAmendedCommand
+            End Get
+            Set(value As ICommand)
+                SetProperty(_acceptAmendedCommand, value)
+            End Set
+        End Property
+
         Public Property DeclineCommand As ICommand
             Get
                 Return _declineCommand
@@ -191,10 +222,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Public Sub ConfigureCommands(acceptAsync As Func(Of Task),
                                      acceptSessionAsync As Func(Of Task),
+                                     acceptAmendedAsync As Func(Of Task),
                                      declineAsync As Func(Of Task),
                                      cancelAsync As Func(Of Task))
             AcceptCommand = New AsyncRelayCommand(acceptAsync)
             AcceptSessionCommand = New AsyncRelayCommand(acceptSessionAsync)
+            AcceptAmendedCommand = New AsyncRelayCommand(acceptAmendedAsync)
             DeclineCommand = New AsyncRelayCommand(declineAsync)
             CancelCommand = New AsyncRelayCommand(cancelAsync)
         End Sub
@@ -203,6 +236,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
                                       hasActiveApproval As Boolean)
             CanAccept = isAuthenticated AndAlso hasActiveApproval
             CanAcceptSession = isAuthenticated AndAlso hasActiveApproval
+            CanAcceptAmended = isAuthenticated AndAlso hasActiveApproval AndAlso _supportsExecpolicyAmendment
+            AcceptAmendedVisibility = If(hasActiveApproval AndAlso _supportsExecpolicyAmendment, Visibility.Visible, Visibility.Collapsed)
             CanDecline = isAuthenticated AndAlso hasActiveApproval
             CanCancel = isAuthenticated AndAlso hasActiveApproval
             CardVisibility = If(hasActiveApproval, Visibility.Visible, Visibility.Collapsed)
@@ -212,6 +247,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             SummaryText = "No pending approvals."
             PendingQueueCount = 0
             ActiveMethodName = String.Empty
+            _supportsExecpolicyAmendment = False
             LastQueuedMethodName = String.Empty
             LastResolvedAction = String.Empty
             LastResolvedDecision = String.Empty
@@ -231,9 +267,11 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Public Sub OnApprovalActivated(methodName As String,
                                        summary As String,
+                                       supportsExecpolicyAmendment As Boolean,
                                        pendingQueueCount As Integer)
             ActiveMethodName = If(methodName, String.Empty)
             SummaryText = If(summary, "No pending approvals.")
+            _supportsExecpolicyAmendment = supportsExecpolicyAmendment
             PendingQueueCount = pendingQueueCount
             LastQueueUpdatedUtc = DateTimeOffset.UtcNow
             LastErrorText = String.Empty
@@ -242,6 +280,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Public Sub OnApprovalQueueEmpty()
             ActiveMethodName = String.Empty
             SummaryText = "No pending approvals."
+            _supportsExecpolicyAmendment = False
             PendingQueueCount = 0
             LastQueueUpdatedUtc = DateTimeOffset.UtcNow
         End Sub
@@ -255,6 +294,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             PendingQueueCount = Math.Max(0, pendingQueueCount)
             LastErrorText = String.Empty
             ActiveMethodName = String.Empty
+            _supportsExecpolicyAmendment = False
         End Sub
 
         Public Sub RecordError(errorMessage As String)

@@ -35,8 +35,9 @@ Namespace CodexNativeAgent.Services
                 paramsNode("effort") = effort
             End If
 
-            If Not String.IsNullOrWhiteSpace(approvalPolicy) Then
-                paramsNode("approvalPolicy") = approvalPolicy
+            Dim normalizedApprovalPolicy = NormalizeApprovalPolicy(approvalPolicy)
+            If Not String.IsNullOrWhiteSpace(normalizedApprovalPolicy) Then
+                paramsNode("approvalPolicy") = normalizedApprovalPolicy
             End If
 
             Dim responseNode = Await CurrentClient().SendRequestAsync("turn/start",

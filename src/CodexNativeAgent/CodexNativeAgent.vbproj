@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts/**</DefaultItemExcludes>
     <RootNamespace></RootNamespace>
     <StartupObject>CodexNativeAgent.Program</StartupObject>
     <OptionStrict>On</OptionStrict>

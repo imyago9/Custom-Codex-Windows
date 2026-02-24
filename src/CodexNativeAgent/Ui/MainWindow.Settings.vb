@@ -83,6 +83,8 @@ Namespace CodexNativeAgent.Ui
             _settings.DisableWorkspaceHintOverlay = _viewModel.SettingsPanel.DisableWorkspaceHintOverlay
             _settings.DisableConnectionInitializedToast = _viewModel.SettingsPanel.DisableConnectionInitializedToast
             _settings.DisableThreadsPanelHints = _viewModel.SettingsPanel.DisableThreadsPanelHints
+            _settings.ShowEventDotsInTranscript = _viewModel.SettingsPanel.ShowEventDotsInTranscript
+            _settings.ShowSystemDotsInTranscript = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
             _settings.FilterThreadsByWorkingDir = _viewModel.ThreadsPanel.FilterByWorkingDir
             _settings.ThemeMode = _currentTheme
             _settings.DensityMode = _currentDensity
@@ -135,9 +137,12 @@ Namespace CodexNativeAgent.Ui
             _viewModel.SettingsPanel.DisableWorkspaceHintOverlay = _settings.DisableWorkspaceHintOverlay
             _viewModel.SettingsPanel.DisableConnectionInitializedToast = _settings.DisableConnectionInitializedToast
             _viewModel.SettingsPanel.DisableThreadsPanelHints = _settings.DisableThreadsPanelHints
+            _viewModel.SettingsPanel.ShowEventDotsInTranscript = _settings.ShowEventDotsInTranscript
+            _viewModel.SettingsPanel.ShowSystemDotsInTranscript = _settings.ShowSystemDotsInTranscript
             _viewModel.ThreadsPanel.FilterByWorkingDir = _settings.FilterThreadsByWorkingDir
             _turnComposerPickersCollapsed = _settings.TurnComposerPickersCollapsed
             ApplyAppearance(_settings.ThemeMode, _settings.DensityMode, persist:=False)
+            ApplyTranscriptTimelineDotVisibilitySettings()
 
             If _viewModel.SettingsPanel.RememberApiKey Then
                 Dim decryptedApiKey = ReadPersistedApiKey()
@@ -152,6 +157,16 @@ Namespace CodexNativeAgent.Ui
             SyncThreadToolbarMenus()
             SyncNewThreadTargetChip()
             ApplyTurnComposerPickersCollapsedState(animated:=False, persist:=False)
+        End Sub
+
+        Private Sub ApplyTranscriptTimelineDotVisibilitySettings()
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing OrElse _viewModel.SettingsPanel Is Nothing Then
+                Return
+            End If
+
+            _viewModel.TranscriptPanel.ShowEventDotsInTranscript = _viewModel.SettingsPanel.ShowEventDotsInTranscript
+            _viewModel.TranscriptPanel.ShowSystemDotsInTranscript = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
+            UpdateWorkspaceEmptyStateVisibility()
         End Sub
 
         Private Shared Function IsPathLike(value As String) As Boolean

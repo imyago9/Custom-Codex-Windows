@@ -29,6 +29,7 @@ coverage.*
 # Temp/work directories
 tmp/
 tmpbuild/
+tmp-build/
 artifacts/
 tests/
 ce-main/

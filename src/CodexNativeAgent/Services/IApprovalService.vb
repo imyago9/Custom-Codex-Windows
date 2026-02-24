@@ -1,3 +1,4 @@
+Imports System.Text.Json.Nodes
 Imports CodexNativeAgent.AppServer
 
 Namespace CodexNativeAgent.Services
@@ -5,7 +6,8 @@ Namespace CodexNativeAgent.Services
         Function TryCreateApproval(request As RpcServerRequest,
                                    ByRef approvalInfo As PendingApprovalInfo) As Boolean
 
-        Function ResolveDecision(approvalInfo As PendingApprovalInfo,
-                                 action As String) As String
+        Function ResolveDecisionPayload(approvalInfo As PendingApprovalInfo,
+                                        action As String,
+                                        ByRef decisionLabel As String) As JsonNode
     End Interface
 End Namespace

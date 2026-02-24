@@ -687,6 +687,13 @@
                                                 <CheckBox x:Name="ChkDisableThreadsPanelHints"
                                                           Content="Disable threads panel hint bubbles"
                                                           IsChecked="{Binding SettingsPanel.DisableThreadsPanelHints, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkShowEventDotsInTranscript"
+                                                          Margin="0,8,0,6"
+                                                          Content="Show Event dots in dialogue flow"
+                                                          IsChecked="{Binding SettingsPanel.ShowEventDotsInTranscript, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkShowSystemDotsInTranscript"
+                                                          Content="Show System dots in dialogue flow"
+                                                          IsChecked="{Binding SettingsPanel.ShowSystemDotsInTranscript, Mode=TwoWay}" />
                                             </StackPanel>
                                         </Grid>
                                     </GroupBox>
@@ -805,19 +812,19 @@
                                             <TextBlock Grid.Row="3" Grid.Column="0" />
                                             <Button x:Name="BtnLoginApiKey" Grid.Row="3" Grid.Column="1" Content="Login API key" Command="{Binding SettingsPanel.LoginApiKeyCommand}" IsEnabled="{Binding SessionState.CanLoginApiKey}" HorizontalAlignment="Left" Style="{StaticResource ButtonBaseStyle}" Margin="0,0,0,8" />
 
-                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="External token" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtExternalAccessToken"
+                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="ID token" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtExternalIdToken"
                                                      Grid.Row="4"
                                                      Grid.Column="1"
                                                      Margin="0,0,0,8"
-                                                     Text="{Binding SettingsPanel.ExternalAccessToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                     Text="{Binding SettingsPanel.ExternalIdToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Account id" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBox x:Name="TxtExternalAccountId"
+                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Access token" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBox x:Name="TxtExternalAccessToken"
                                                      Grid.Row="5"
                                                      Grid.Column="1"
                                                      Margin="0,0,0,8"
-                                                     Text="{Binding SettingsPanel.ExternalAccountId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                     Text="{Binding SettingsPanel.ExternalAccessToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
                                             <TextBlock Grid.Row="6" Grid.Column="0" Text="Plan type" VerticalAlignment="Center" Margin="0,0,8,8" Style="{StaticResource CaptionTextStyle}" />
                                             <ComboBox x:Name="CmbExternalPlanType"

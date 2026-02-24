@@ -43,6 +43,17 @@ Namespace CodexNativeAgent.Services
         Public Property RequestId As JsonNode
         Public Property MethodName As String = String.Empty
         Public Property Summary As String = String.Empty
+        Public Property ThreadId As String = String.Empty
+        Public Property TurnId As String = String.Empty
+        Public Property ItemId As String = String.Empty
+        Public Property IsCommandApproval As Boolean
+        Public Property IsFileChangeApproval As Boolean
+        Public Property IsNetworkApproval As Boolean
+        Public Property NetworkHost As String = String.Empty
+        Public Property NetworkProtocol As String = String.Empty
+        Public Property NetworkPort As Integer?
+        Public Property ProposedExecpolicyAmendment As JsonArray
+        Public Property SupportsExecpolicyAmendment As Boolean
         Public Property AcceptDecision As String = String.Empty
         Public Property AcceptSessionDecision As String = String.Empty
         Public Property DeclineDecision As String = String.Empty

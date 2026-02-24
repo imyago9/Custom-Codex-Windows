@@ -15,6 +15,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _windowsCodexHome As String = String.Empty
         Private _apiKey As String = String.Empty
         Private _externalAccessToken As String = String.Empty
+        Private _externalIdToken As String = String.Empty
         Private _externalAccountId As String = String.Empty
         Private _externalPlanType As String = String.Empty
         Private _rememberApiKey As Boolean
@@ -23,6 +24,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _disableWorkspaceHintOverlay As Boolean
         Private _disableConnectionInitializedToast As Boolean
         Private _disableThreadsPanelHints As Boolean
+        Private _showEventDotsInTranscript As Boolean
+        Private _showSystemDotsInTranscript As Boolean
         Private _areConnectionFieldsEditable As Boolean = True
 
         Private _reconnectCountdownText As String = "Reconnect: not scheduled."
@@ -124,6 +127,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property ExternalIdToken As String
+            Get
+                Return _externalIdToken
+            End Get
+            Set(value As String)
+                SetProperty(_externalIdToken, If(value, String.Empty))
+            End Set
+        End Property
+
         Public Property ExternalAccountId As String
             Get
                 Return _externalAccountId
@@ -193,6 +205,24 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 SetProperty(_disableThreadsPanelHints, value)
+            End Set
+        End Property
+
+        Public Property ShowEventDotsInTranscript As Boolean
+            Get
+                Return _showEventDotsInTranscript
+            End Get
+            Set(value As Boolean)
+                SetProperty(_showEventDotsInTranscript, value)
+            End Set
+        End Property
+
+        Public Property ShowSystemDotsInTranscript As Boolean
+            Get
+                Return _showSystemDotsInTranscript
+            End Get
+            Set(value As Boolean)
+                SetProperty(_showSystemDotsInTranscript, value)
             End Set
         End Property
 

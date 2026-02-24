@@ -8,12 +8,33 @@ Imports CodexNativeAgent.Ui.ViewModels
 
 Namespace CodexNativeAgent.Ui.Coordinators
     Public NotInheritable Class TurnWorkflowCoordinator
+        Public NotInheritable Class ApprovalQueuedEventArgs
+            Inherits EventArgs
+
+            Public Property Approval As PendingApprovalInfo
+        End Class
+
+        Public NotInheritable Class ApprovalResolvedEventArgs
+            Inherits EventArgs
+
+            Public Property RequestId As JsonNode
+            Public Property MethodName As String = String.Empty
+            Public Property Decision As String = String.Empty
+            Public Property ThreadId As String = String.Empty
+            Public Property TurnId As String = String.Empty
+            Public Property ItemId As String = String.Empty
+        End Class
+
         Private ReadOnly _viewModel As MainWindowViewModel
         Private ReadOnly _turnService As ITurnService
         Private ReadOnly _approvalService As IApprovalService
         Private ReadOnly _runUiActionAsync As Func(Of Func(Of Task), Task)
         Private ReadOnly _approvalQueue As New Queue(Of PendingApprovalInfo)()
         Private _activeApproval As PendingApprovalInfo
+
+        Public Event ApprovalQueued As EventHandler(Of ApprovalQueuedEventArgs)
+        Public Event ApprovalActivated As EventHandler(Of ApprovalQueuedEventArgs)
+        Public Event ApprovalResolved As EventHandler(Of ApprovalResolvedEventArgs)
 
         Public Sub New(viewModel As MainWindowViewModel,
                        turnService As ITurnService,
@@ -57,6 +78,9 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 End Function,
                 Function()
                     Return _runUiActionAsync(Function() resolveApprovalAsync("accept_session"))
+                End Function,
+                Function()
+                    Return _runUiActionAsync(Function() resolveApprovalAsync("accept_amended"))
                 End Function,
                 Function()
                     Return _runUiActionAsync(Function() resolveApprovalAsync("decline"))
@@ -178,7 +202,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
             End If
 
             Select Case request.MethodName
-                Case "item/tool/requestUserInput"
+                Case ToolRequestUserInputMethod
                     Await handleToolRequestUserInputAsync(request).ConfigureAwait(True)
 
                 Case "item/tool/call"
@@ -209,20 +233,31 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 Return
             End If
 
-            Dim decision = _approvalService.ResolveDecision(_activeApproval, action)
-            If String.IsNullOrWhiteSpace(decision) Then
+            Dim decisionLabel As String = Nothing
+            Dim decisionPayload = _approvalService.ResolveDecisionPayload(_activeApproval, action, decisionLabel)
+            If decisionPayload Is Nothing OrElse String.IsNullOrWhiteSpace(decisionLabel) Then
                 _viewModel.ApprovalPanel.RecordError("No decision mapping is available for this approval type.")
                 Throw New InvalidOperationException("No decision mapping is available for this approval type.")
             End If
 
             Try
                 Dim resultNode As New JsonObject()
-                resultNode("decision") = decision
+                resultNode("decision") = decisionPayload
 
                 Await sendResultAsync(_activeApproval.RequestId, resultNode).ConfigureAwait(True)
-                appendSystemMessage($"Approval sent: {decision}")
-                showStatus($"Approval sent: {decision}", False, True)
-                _viewModel.ApprovalPanel.OnApprovalResolved(action, decision, _approvalQueue.Count)
+                appendSystemMessage($"Approval sent: {decisionLabel}")
+                showStatus($"Approval sent: {decisionLabel}", False, True)
+                _viewModel.ApprovalPanel.OnApprovalResolved(action, decisionLabel, _approvalQueue.Count)
+
+                RaiseEvent ApprovalResolved(Me,
+                                            New ApprovalResolvedEventArgs() With {
+                                                .RequestId = CloneJson(_activeApproval.RequestId),
+                                                .MethodName = _activeApproval.MethodName,
+                                                .Decision = decisionLabel,
+                                                .ThreadId = _activeApproval.ThreadId,
+                                                .TurnId = _activeApproval.TurnId,
+                                                .ItemId = _activeApproval.ItemId
+                                            })
 
                 _activeApproval = Nothing
                 ShowNextApprovalIfNeeded(refreshControlStates)
@@ -242,6 +277,10 @@ Namespace CodexNativeAgent.Ui.Coordinators
 
             _approvalQueue.Enqueue(approvalInfo)
             _viewModel.ApprovalPanel.OnApprovalQueued(approvalInfo.MethodName, _approvalQueue.Count)
+            RaiseEvent ApprovalQueued(Me,
+                                      New ApprovalQueuedEventArgs() With {
+                                          .Approval = approvalInfo
+                                      })
             ShowNextApprovalIfNeeded(refreshControlStates)
             appendSystemMessage($"Approval queued: {approvalInfo.MethodName}")
             showStatus($"Approval queued: {approvalInfo.MethodName}", False, True)
@@ -265,7 +304,12 @@ Namespace CodexNativeAgent.Ui.Coordinators
             _activeApproval = _approvalQueue.Dequeue()
             _viewModel.ApprovalPanel.OnApprovalActivated(_activeApproval.MethodName,
                                                          _activeApproval.Summary,
+                                                         _activeApproval.SupportsExecpolicyAmendment,
                                                          _approvalQueue.Count)
+            RaiseEvent ApprovalActivated(Me,
+                                         New ApprovalQueuedEventArgs() With {
+                                             .Approval = _activeApproval
+                                         })
             refreshControlStates()
         End Sub
     End Class

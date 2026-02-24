@@ -1,4 +1,5 @@
 Imports System.Diagnostics
+Imports System.Collections.Generic
 Imports System.Security.Cryptography
 Imports System.Text
 Imports System.Text.Json.Nodes
@@ -27,6 +28,7 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub SyncSessionStateViewModel()
+            SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
             Dim session = _viewModel.SessionState
             session.IsConnected = IsClientRunning()
             session.IsAuthenticated = _isAuthenticated
@@ -40,6 +42,63 @@ Namespace CodexNativeAgent.Ui
             session.CurrentTurnId = _currentTurnId
             session.ProcessId = If(_client Is Nothing, 0, _client.ProcessId)
         End Sub
+
+        Private Sub SyncCurrentTurnFromRuntimeStore(Optional keepExistingWhenRuntimeIsIdle As Boolean = False)
+            If _sessionNotificationCoordinator Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedThreadId = If(_currentThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                If Not keepExistingWhenRuntimeIsIdle Then
+                    _currentTurnId = String.Empty
+                End If
+                Return
+            End If
+
+            Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
+            Dim activeTurnId = runtimeStore.GetActiveTurnId(normalizedThreadId, _currentTurnId)
+            If Not String.IsNullOrWhiteSpace(activeTurnId) Then
+                _currentTurnId = activeTurnId
+                Return
+            End If
+
+            If keepExistingWhenRuntimeIsIdle Then
+                Dim latestTurnId = runtimeStore.GetLatestTurnId(normalizedThreadId)
+                If String.IsNullOrWhiteSpace(latestTurnId) Then
+                    Return
+                End If
+            End If
+
+            _currentTurnId = String.Empty
+        End Sub
+
+        Private Function HasActiveRuntimeTurnForCurrentThread() As Boolean
+            If _sessionNotificationCoordinator Is Nothing Then
+                Return False
+            End If
+
+            Dim normalizedThreadId = If(_currentThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            Return _sessionNotificationCoordinator.RuntimeStore.HasActiveTurn(normalizedThreadId)
+        End Function
+
+        Private Function RuntimeHasTurnHistoryForCurrentThread() As Boolean
+            If _sessionNotificationCoordinator Is Nothing Then
+                Return False
+            End If
+
+            Dim normalizedThreadId = If(_currentThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            Dim latestTurnId = _sessionNotificationCoordinator.RuntimeStore.GetLatestTurnId(normalizedThreadId)
+            Return Not String.IsNullOrWhiteSpace(latestTurnId)
+        End Function
 
         Private Sub SetSessionAuthenticated(value As Boolean)
             _isAuthenticated = value
@@ -633,6 +692,7 @@ Namespace CodexNativeAgent.Ui
                                              isError As Boolean,
                                              displayToast As Boolean)
             CancelActiveThreadSelectionLoad()
+            ClearPendingUserEchoTracking()
             UpdateConnectionStateTextFromSession()
             SetSessionCurrentLoginId(String.Empty)
             SetSessionAuthenticated(False)
@@ -669,6 +729,19 @@ Namespace CodexNativeAgent.Ui
                 End Sub)
         End Sub
 
+        Private Sub OnTurnWorkflowApprovalResolved(sender As Object,
+                                                   e As TurnWorkflowCoordinator.ApprovalResolvedEventArgs)
+            If e Is Nothing Then
+                Return
+            End If
+
+            Dim dispatch = _sessionNotificationCoordinator.DispatchApprovalResolution(e.RequestId, e.Decision)
+            ApplyApprovalResolutionDispatchResult(dispatch)
+            SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
+            UpdateThreadTurnLabels()
+            RefreshControlStates()
+        End Sub
+
         Private Sub ClientOnDisconnected(reason As String)
             RunOnUi(
                 Sub()
@@ -694,39 +767,211 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub HandleNotification(methodName As String, paramsNode As JsonNode)
             MarkRpcActivity()
-            _sessionNotificationCoordinator.HandleNotification(
-                methodName,
-                paramsNode,
-                AddressOf ApplyCurrentThreadFromThreadObject,
-                Function() _currentThreadId,
-                Sub(value) _currentThreadId = If(value, String.Empty),
-                Function() _currentTurnId,
-                Sub(value) _currentTurnId = If(value, String.Empty),
-                AddressOf MarkThreadLastActive,
-                AddressOf AppendSystemMessage,
-                AddressOf AppendTranscript,
-                Sub(itemId, renderAsReasoningChainStep) _viewModel.TranscriptPanel.BeginAssistantStream(itemId, renderAsReasoningChainStep),
-                Sub(itemId, delta) _viewModel.TranscriptPanel.AppendAssistantStreamDelta(itemId, delta),
-                Sub(itemId, finalText, renderAsReasoningChainStep) _viewModel.TranscriptPanel.CompleteAssistantStream(itemId, finalText, renderAsReasoningChainStep),
-                Sub(itemId) _viewModel.TranscriptPanel.BeginReasoningStream(itemId),
-                Sub(itemId, delta) _viewModel.TranscriptPanel.AppendReasoningStreamDelta(itemId, delta),
-                Sub(itemId, finalText) _viewModel.TranscriptPanel.CompleteReasoningStream(itemId, finalText),
-                AddressOf ScrollTranscriptToBottom,
-                AddressOf AppendProtocol,
-                AddressOf RenderItem,
-                Sub(loginId)
-                    If StringComparer.Ordinal.Equals(loginId, _viewModel.SessionState.CurrentLoginId) Then
-                        SetSessionCurrentLoginId(String.Empty)
-                    End If
-                End Sub,
-                Sub()
-                    FireAndForget(RunUiActionAsync(AddressOf RefreshAuthenticationGateAsync))
-                End Sub,
-                AddressOf NotifyRateLimitsUpdatedUi)
+            Dim dispatch = _sessionNotificationCoordinator.DispatchNotification(methodName,
+                                                                                paramsNode,
+                                                                                _currentThreadId,
+                                                                                _currentTurnId)
+            ApplyNotificationDispatchResult(dispatch)
+            AppendHandledNotificationMethodEvent(dispatch)
 
+            SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
             UpdateThreadTurnLabels()
             RefreshControlStates()
         End Sub
+
+        Private Sub ApplyNotificationDispatchResult(dispatch As SessionNotificationCoordinator.NotificationDispatchResult)
+            If dispatch Is Nothing Then
+                Return
+            End If
+
+            ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
+            ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
+
+            If dispatch.ThreadObject IsNot Nothing Then
+                ApplyCurrentThreadFromThreadObject(dispatch.ThreadObject)
+            ElseIf dispatch.CurrentThreadChanged Then
+                _currentThreadId = dispatch.CurrentThreadId
+            End If
+
+            If dispatch.CurrentTurnChanged Then
+                _currentTurnId = dispatch.CurrentTurnId
+            End If
+
+            For Each threadId In dispatch.ThreadIdsToMarkLastActive
+                MarkThreadLastActive(threadId)
+            Next
+
+            For Each message In dispatch.SystemMessages
+                AppendSystemMessage(message)
+            Next
+
+            For Each item In dispatch.RuntimeItems
+                RenderItem(item)
+            Next
+
+            For Each lifecycleMessage In dispatch.TurnLifecycleMessages
+                AppendTurnLifecycleMarker(lifecycleMessage.ThreadId,
+                                          lifecycleMessage.TurnId,
+                                          lifecycleMessage.Status)
+            Next
+
+            For Each metadataMessage In dispatch.TurnMetadataMessages
+                UpsertTurnMetadata(metadataMessage.ThreadId,
+                                   metadataMessage.TurnId,
+                                   metadataMessage.Kind,
+                                   metadataMessage.SummaryText)
+            Next
+
+            For Each tokenUsageMessage In dispatch.TokenUsageMessages
+                UpdateTokenUsageWidget(tokenUsageMessage.ThreadId,
+                                       tokenUsageMessage.TurnId,
+                                       tokenUsageMessage.TokenUsage)
+            Next
+
+            For Each loginId In dispatch.LoginIdsToClear
+                If StringComparer.Ordinal.Equals(loginId, _viewModel.SessionState.CurrentLoginId) Then
+                    SetSessionCurrentLoginId(String.Empty)
+                End If
+            Next
+
+            If dispatch.ShouldRefreshAuthentication Then
+                FireAndForget(RunUiActionAsync(AddressOf RefreshAuthenticationGateAsync))
+            End If
+
+            For Each rateLimitsPayload In dispatch.RateLimitPayloads
+                NotifyRateLimitsUpdatedUi(rateLimitsPayload)
+            Next
+
+            If dispatch.ShouldScrollTranscriptToBottom OrElse dispatch.RuntimeItems.Count > 0 Then
+                ScrollTranscriptToBottom()
+            End If
+        End Sub
+
+        Private Sub ApplyServerRequestDispatchResult(dispatch As SessionNotificationCoordinator.ServerRequestDispatchResult)
+            If dispatch Is Nothing Then
+                Return
+            End If
+
+            ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
+            ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
+
+            For Each item In dispatch.RuntimeItems
+                RenderItem(item)
+            Next
+
+            If dispatch.RuntimeItems.Count > 0 Then
+                ScrollTranscriptToBottom()
+            End If
+        End Sub
+
+        Private Sub ApplyApprovalResolutionDispatchResult(dispatch As SessionNotificationCoordinator.ApprovalResolutionDispatchResult)
+            If dispatch Is Nothing Then
+                Return
+            End If
+
+            ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
+            ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
+
+            For Each item In dispatch.RuntimeItems
+                RenderItem(item)
+            Next
+
+            If dispatch.RuntimeItems.Count > 0 Then
+                ScrollTranscriptToBottom()
+            End If
+        End Sub
+
+        Private Sub ApplyProtocolDispatchMessages(messages As List(Of SessionNotificationCoordinator.ProtocolDispatchMessage))
+            If messages Is Nothing Then
+                Return
+            End If
+
+            For Each message In messages
+                If message Is Nothing Then
+                    Continue For
+                End If
+
+                AppendProtocol(message.Direction, message.Payload)
+            Next
+        End Sub
+
+        Private Sub ApplyRuntimeDiagnosticMessages(messages As List(Of String))
+            If messages Is Nothing Then
+                Return
+            End If
+
+            For Each message In messages
+                If String.IsNullOrWhiteSpace(message) Then
+                    Continue For
+                End If
+
+                AppendRuntimeDiagnosticEvent(message)
+            Next
+        End Sub
+
+        Private Sub AppendHandledNotificationMethodEvent(dispatch As SessionNotificationCoordinator.NotificationDispatchResult)
+            If dispatch Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedMethod = If(dispatch.MethodName, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedMethod) Then
+                Return
+            End If
+
+            If NotificationDispatchContainsUnhandledMethodDiagnostic(dispatch) Then
+                Return
+            End If
+
+            If NotificationDispatchContainsSkippedMethodDiagnostic(dispatch, normalizedMethod) Then
+                Return
+            End If
+
+            AppendRuntimeDiagnosticEvent($"Handled notification method: {normalizedMethod}")
+        End Sub
+
+        Private Shared Function NotificationDispatchContainsUnhandledMethodDiagnostic(dispatch As SessionNotificationCoordinator.NotificationDispatchResult) As Boolean
+            If dispatch Is Nothing OrElse dispatch.Diagnostics Is Nothing Then
+                Return False
+            End If
+
+            For Each diagnostic In dispatch.Diagnostics
+                If String.IsNullOrWhiteSpace(diagnostic) Then
+                    Continue For
+                End If
+
+                If diagnostic.StartsWith("Unhandled notification method:", StringComparison.Ordinal) Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function NotificationDispatchContainsSkippedMethodDiagnostic(dispatch As SessionNotificationCoordinator.NotificationDispatchResult,
+                                                                                    methodName As String) As Boolean
+            If dispatch Is Nothing OrElse dispatch.Diagnostics Is Nothing Then
+                Return False
+            End If
+
+            Dim normalizedMethod = If(methodName, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedMethod) Then
+                Return False
+            End If
+
+            Dim skipPrefix = normalizedMethod & ":"
+            For Each diagnostic In dispatch.Diagnostics
+                If String.IsNullOrWhiteSpace(diagnostic) Then
+                    Continue For
+                End If
+
+                If diagnostic.StartsWith(skipPrefix, StringComparison.Ordinal) Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
 
         Private Function ReadPersistedApiKey() As String
             If _settings Is Nothing OrElse String.IsNullOrWhiteSpace(_settings.EncryptedApiKey) Then
@@ -909,47 +1154,40 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Async Function LoginExternalTokensAsync() As Task
-            Dim token = _viewModel.SettingsPanel.ExternalAccessToken.Trim()
-            Dim accountId = _viewModel.SettingsPanel.ExternalAccountId.Trim()
+            Dim idToken = _viewModel.SettingsPanel.ExternalIdToken.Trim()
+            Dim accessToken = _viewModel.SettingsPanel.ExternalAccessToken.Trim()
 
-            If String.IsNullOrWhiteSpace(token) Then
+            If String.IsNullOrWhiteSpace(idToken) Then
+                Throw New InvalidOperationException("Enter an external ChatGPT ID token.")
+            End If
+
+            If String.IsNullOrWhiteSpace(accessToken) Then
                 Throw New InvalidOperationException("Enter an external ChatGPT access token.")
             End If
 
-            If String.IsNullOrWhiteSpace(accountId) Then
-                Throw New InvalidOperationException("Enter a ChatGPT account/workspace id.")
-            End If
-
-            Dim plan = _viewModel.SettingsPanel.ExternalPlanType.Trim()
-            Await _accountService.StartExternalTokenLoginAsync(token,
-                                                               accountId,
-                                                               plan,
+            Await _accountService.StartExternalTokenLoginAsync(idToken,
+                                                               accessToken,
                                                                CancellationToken.None)
             NotifyExternalTokensAppliedUi()
             Await EnsureAuthenticatedWithRetryAsync(allowAutoLogin:=False)
         End Function
 
         Private Async Function HandleChatgptTokenRefreshAsync(request As RpcServerRequest) As Task
-            Dim token = _viewModel.SettingsPanel.ExternalAccessToken.Trim()
-            Dim accountId = _viewModel.SettingsPanel.ExternalAccountId.Trim()
+            Dim idToken = _viewModel.SettingsPanel.ExternalIdToken.Trim()
+            Dim accessToken = _viewModel.SettingsPanel.ExternalAccessToken.Trim()
 
-            If String.IsNullOrWhiteSpace(token) OrElse String.IsNullOrWhiteSpace(accountId) Then
+            If String.IsNullOrWhiteSpace(idToken) OrElse String.IsNullOrWhiteSpace(accessToken) Then
                 Await CurrentClient().SendErrorAsync(request.Id,
                                                      -32001,
-                                                     "ChatGPT auth token refresh requested, but external token/account id are not configured in the UI.")
-                AppendSystemMessage("Could not refresh external ChatGPT token: missing token/account id.")
-                ShowStatus("Could not refresh external token: missing token/account id.", isError:=True)
+                                                     "ChatGPT auth token refresh requested, but external idToken/accessToken are not configured in the UI.")
+                AppendSystemMessage("Could not refresh external ChatGPT token: missing idToken/accessToken.")
+                ShowStatus("Could not refresh external token: missing idToken/accessToken.", isError:=True)
                 Return
             End If
 
             Dim response As New JsonObject()
-            response("accessToken") = token
-            response("chatgptAccountId") = accountId
-
-            Dim planType = _viewModel.SettingsPanel.ExternalPlanType.Trim()
-            If Not String.IsNullOrWhiteSpace(planType) Then
-                response("chatgptPlanType") = planType
-            End If
+            response("idToken") = idToken
+            response("accessToken") = accessToken
 
             Await CurrentClient().SendResultAsync(request.Id, response)
             AppendSystemMessage("Provided refreshed external ChatGPT token to Codex.")

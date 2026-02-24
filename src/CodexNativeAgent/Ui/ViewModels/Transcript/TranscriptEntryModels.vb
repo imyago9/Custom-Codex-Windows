@@ -19,6 +19,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Public Property IsReasoning As Boolean
         Public Property IsError As Boolean
         Public Property IsStreaming As Boolean
+        Public Property UseRawReasoningLayout As Boolean
     End Class
 
     Public NotInheritable Class TranscriptEntryViewModel
@@ -41,6 +42,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _detailsBackground As Brush = Brushes.Transparent
         Private _bodyFontFamily As FontFamily = New FontFamily("Segoe UI")
         Private _detailsFontFamily As FontFamily = New FontFamily("Cascadia Code")
+        Private _rowVisibility As Visibility = Visibility.Visible
         Private _roleVisibility As Visibility = Visibility.Visible
         Private _secondaryVisibility As Visibility = Visibility.Collapsed
         Private _detailsVisibility As Visibility = Visibility.Collapsed
@@ -219,6 +221,15 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Get
             Set(value As FontFamily)
                 SetProperty(_detailsFontFamily, If(value, New FontFamily("Cascadia Code")))
+            End Set
+        End Property
+
+        Public Property RowVisibility As Visibility
+            Get
+                Return _rowVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_rowVisibility, value)
             End Set
         End Property
 

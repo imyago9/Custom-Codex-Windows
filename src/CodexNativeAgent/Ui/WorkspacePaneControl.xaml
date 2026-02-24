@@ -54,6 +54,17 @@
                                                Margin="0,3,0,0"
                                                Style="{StaticResource CaptionTextStyle}"
                                                Visibility="Collapsed" />
+                                    <Border Margin="0,8,0,0"
+                                            Padding="7,4"
+                                            CornerRadius="8"
+                                            Background="{DynamicResource SurfaceMutedBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="1"
+                                            Visibility="{Binding TranscriptPanel.TokenUsageVisibility}">
+                                        <TextBlock Text="{Binding TranscriptPanel.TokenUsageText}"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    </Border>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
@@ -251,7 +262,9 @@
                                 </ListBox.Resources>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,0,0,10" Opacity="{Binding RowOpacity}">
+                                        <Grid Margin="0,0,0,10"
+                                              Opacity="{Binding RowOpacity}"
+                                              Visibility="{Binding RowVisibility}">
                                             <Grid x:Name="BubbleRow">
                                                 <Border x:Name="BubbleChrome"
                                                         HorizontalAlignment="Left"
@@ -428,88 +441,183 @@
                                         </Grid>
 
                                         <DataTemplate.Triggers>
-                                                <!-- Activity/timeline rows -->
-                                                <DataTrigger Binding="{Binding Kind}" Value="command">
-                                                    <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
-                                                    <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
-                                                    <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                </DataTrigger>
+                                            <!-- Activity/timeline rows -->
+                                            <DataTrigger Binding="{Binding Kind}" Value="command">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding Kind}" Value="fileChange">
-                                                    <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
-                                                    <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
-                                                    <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="fileChange">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding Kind}" Value="plan">
-                                                    <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
-                                                    <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
-                                                    <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="plan">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding Kind}" Value="reasoning">
-                                                    <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
-                                                    <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
-                                                    <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
-                                                    <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="Opacity" Value="0.9" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="reasoning">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Opacity" Value="0.9" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding Kind}" Value="system">
-                                                    <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
-                                                    <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
-                                                    <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
-                                                    <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="reasoningCard">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding Kind}" Value="event">
-                                                    <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
-                                                    <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
-                                                    <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
-                                                    <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
-                                                    <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
-                                                    <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="toolMcp">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
 
-                                                <!-- Conversation bubbles -->
-                                                <DataTrigger Binding="{Binding Kind}" Value="assistant">
-                                                    <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                    <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="toolCollab">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding RoleText}" Value="You">
-                                                    <Setter TargetName="BubbleChrome" Property="HorizontalAlignment" Value="Right" />
-                                                    <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                    <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="toolWebSearch">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding RoleText}" Value="Steer">
-                                                    <Setter TargetName="BubbleChrome" Property="HorizontalAlignment" Value="Right" />
-                                                    <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
-                                                    <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="toolImageView">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
 
-                                                <DataTrigger Binding="{Binding Kind}" Value="error">
-                                                    <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource ToastErrorBackgroundBrush}" />
-                                                    <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource ToastErrorBorderBrush}" />
-                                                </DataTrigger>
+                                            <DataTrigger Binding="{Binding Kind}" Value="system">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="event">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="systemMarker">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="turnMarker">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="turnDiff">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="turnPlan">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="unknownItem">
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                            </DataTrigger>
+
+                                            <!-- Conversation bubbles -->
+                                            <DataTrigger Binding="{Binding Kind}" Value="assistant">
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="assistantFinal">
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="assistantCommentary">
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="Opacity" Value="0.9" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding RoleText}" Value="You">
+                                                <Setter TargetName="BubbleChrome" Property="HorizontalAlignment" Value="Right" />
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding RoleText}" Value="Steer">
+                                                <Setter TargetName="BubbleChrome" Property="HorizontalAlignment" Value="Right" />
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+                                            </DataTrigger>
+
+                                            <DataTrigger Binding="{Binding Kind}" Value="error">
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource ToastErrorBackgroundBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource ToastErrorBorderBrush}" />
+                                            </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
@@ -650,6 +758,13 @@
                                                 Margin="0,0,6,6"
                                                 IsEnabled="{Binding ApprovalPanel.CanAcceptSession}"
                                                 Command="{Binding ApprovalPanel.AcceptSessionCommand}" />
+                                        <Button x:Name="BtnApprovalAcceptAmended"
+                                                Content="Accept + Amendment"
+                                                Style="{StaticResource ButtonBaseStyle}"
+                                                Margin="0,0,6,6"
+                                                Visibility="{Binding ApprovalPanel.AcceptAmendedVisibility}"
+                                                IsEnabled="{Binding ApprovalPanel.CanAcceptAmended}"
+                                                Command="{Binding ApprovalPanel.AcceptAmendedCommand}" />
                                         <Button x:Name="BtnApprovalDecline"
                                                 Content="Decline"
                                                 Style="{StaticResource ButtonBaseStyle}"

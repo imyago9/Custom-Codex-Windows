@@ -18,9 +18,9 @@
                               SelectedValuePath="Content"
                               SelectedValue="{Binding TurnComposer.SelectedApprovalPolicy, Mode=TwoWay}"
                               ToolTip="Approval policy">
-                        <ComboBoxItem Content="untrusted" />
-                        <ComboBoxItem Content="on-failure" />
                         <ComboBoxItem Content="on-request" />
+                        <ComboBoxItem Content="on-failure" />
+                        <ComboBoxItem Content="untrusted" />
                         <ComboBoxItem Content="never" />
                     </ComboBox>
 

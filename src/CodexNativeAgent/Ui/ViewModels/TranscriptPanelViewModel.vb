@@ -1,10 +1,12 @@
 Imports System.Collections.Generic
+Imports System.Globalization
 Imports System.Collections.ObjectModel
 Imports System.Text
 Imports System.Text.RegularExpressions
 Imports System.Text.Json.Nodes
 Imports System.Windows
 Imports System.Windows.Media
+Imports CodexNativeAgent.Ui.Coordinators
 Imports CodexNativeAgent.Ui.Mvvm
 Imports CodexNativeAgent.Ui.ViewModels.Transcript
 
@@ -17,10 +19,17 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Private _transcriptText As String = String.Empty
         Private _protocolText As String = String.Empty
+        Private ReadOnly _fullTranscriptBuilder As New StringBuilder()
+        Private ReadOnly _fullProtocolBuilder As New StringBuilder()
         Private _loadingText As String = "Loading thread..."
         Private _loadingOverlayVisibility As Visibility = Visibility.Collapsed
         Private _collapseCommandDetailsByDefault As Boolean
+        Private _showEventDotsInTranscript As Boolean
+        Private _showSystemDotsInTranscript As Boolean
+        Private _tokenUsageText As String = String.Empty
+        Private _tokenUsageVisibility As Visibility = Visibility.Collapsed
         Private ReadOnly _items As New ObservableCollection(Of TranscriptEntryViewModel)()
+        Private ReadOnly _runtimeEntriesByKey As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
         Private ReadOnly _activeAssistantStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
         Private ReadOnly _activeAssistantStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
         Private ReadOnly _activeAssistantRawPrefixes As New HashSet(Of String)(StringComparer.Ordinal)
@@ -44,6 +53,18 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Set(value As String)
                 SetProperty(_protocolText, If(value, String.Empty))
             End Set
+        End Property
+
+        Public ReadOnly Property FullTranscriptText As String
+            Get
+                Return _fullTranscriptBuilder.ToString()
+            End Get
+        End Property
+
+        Public ReadOnly Property FullProtocolText As String
+            Get
+                Return _fullProtocolBuilder.ToString()
+            End Get
         End Property
 
         Public Property LoadingText As String
@@ -79,23 +100,73 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property ShowEventDotsInTranscript As Boolean
+            Get
+                Return _showEventDotsInTranscript
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_showEventDotsInTranscript, value) Then
+                    RefreshTimelineDotRowVisibility()
+                End If
+            End Set
+        End Property
+
+        Public Property ShowSystemDotsInTranscript As Boolean
+            Get
+                Return _showSystemDotsInTranscript
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_showSystemDotsInTranscript, value) Then
+                    RefreshTimelineDotRowVisibility()
+                End If
+            End Set
+        End Property
+
+        Public Property TokenUsageText As String
+            Get
+                Return _tokenUsageText
+            End Get
+            Set(value As String)
+                SetProperty(_tokenUsageText, If(value, String.Empty))
+                TokenUsageVisibility = If(String.IsNullOrWhiteSpace(_tokenUsageText), Visibility.Collapsed, Visibility.Visible)
+            End Set
+        End Property
+
+        Public Property TokenUsageVisibility As Visibility
+            Get
+                Return _tokenUsageVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_tokenUsageVisibility, value)
+            End Set
+        End Property
+
         Public Sub ClearTranscript()
             TranscriptText = String.Empty
+            _fullTranscriptBuilder.Clear()
             _items.Clear()
+            _runtimeEntriesByKey.Clear()
             _activeAssistantStreams.Clear()
             _activeAssistantStreamBuffers.Clear()
             _activeAssistantRawPrefixes.Clear()
             _assistantReasoningChainStreamIds.Clear()
             _activeReasoningStreams.Clear()
             _activeReasoningStreamBuffers.Clear()
+            TokenUsageText = String.Empty
         End Sub
 
         Public Sub SetTranscriptSnapshot(value As String)
-            TranscriptText = TrimLogText(If(value, String.Empty))
+            Dim text = If(value, String.Empty)
+            TranscriptText = TrimLogText(text)
+            _fullTranscriptBuilder.Clear()
+            If text.Length > 0 Then
+                _fullTranscriptBuilder.Append(text)
+            End If
         End Sub
 
         Public Sub SetTranscriptDisplaySnapshot(entries As IEnumerable(Of TranscriptEntryDescriptor))
             _items.Clear()
+            _runtimeEntriesByKey.Clear()
             _activeAssistantStreams.Clear()
             _activeAssistantStreamBuffers.Clear()
             _activeAssistantRawPrefixes.Clear()
@@ -579,12 +650,134 @@ Namespace CodexNativeAgent.Ui.ViewModels
             AppendDescriptor(descriptor, appendToRaw:=False)
         End Sub
 
+        Public Sub UpsertRuntimeItem(itemState As TurnItemRuntimeState)
+            If itemState Is Nothing Then
+                Return
+            End If
+
+            Dim scopedKey = If(itemState.ScopedItemKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(scopedKey) Then
+                Dim threadId = If(itemState.ThreadId, String.Empty).Trim()
+                Dim turnId = If(itemState.TurnId, String.Empty).Trim()
+                Dim itemId = If(itemState.ItemId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(threadId) OrElse
+                   String.IsNullOrWhiteSpace(turnId) OrElse
+                   String.IsNullOrWhiteSpace(itemId) Then
+                    Return
+                End If
+
+                scopedKey = $"{threadId}:{turnId}:{itemId}"
+            End If
+
+            If String.IsNullOrWhiteSpace(scopedKey) Then
+                Return
+            End If
+
+            Dim descriptor = BuildRuntimeItemDescriptor(itemState)
+            If descriptor Is Nothing Then
+                Return
+            End If
+
+            UpsertRuntimeDescriptor($"item:{scopedKey}", descriptor)
+        End Sub
+
+        Public Sub UpsertTurnLifecycleMarker(threadId As String, turnId As String, status As String)
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return
+            End If
+
+            Dim normalizedStatus = If(status, String.Empty).Trim()
+            Dim descriptor = BuildTurnLifecycleDescriptorForSnapshot(normalizedTurnId,
+                                                                     normalizedStatus,
+                                                                     FormatLiveTimestamp())
+
+            Dim lifecycleSlot = If(StringComparer.OrdinalIgnoreCase.Equals(normalizedStatus, "started"),
+                                   "start",
+                                   "end")
+
+            ' Use turnId as the stable key so duplicate lifecycle notifications coalesce even
+            ' when one notification is missing thread_id and another includes it.
+            UpsertRuntimeDescriptor($"turn:lifecycle:{lifecycleSlot}:{normalizedTurnId}", descriptor)
+        End Sub
+
+        Public Sub UpsertTurnMetadataMarker(threadId As String,
+                                            turnId As String,
+                                            kind As String,
+                                            summaryText As String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            Dim normalizedKind = If(kind, String.Empty).Trim().ToLowerInvariant()
+            Dim normalizedSummary = If(summaryText, String.Empty).Trim()
+
+            If String.IsNullOrWhiteSpace(normalizedTurnId) OrElse
+               String.IsNullOrWhiteSpace(normalizedKind) OrElse
+               String.IsNullOrWhiteSpace(normalizedSummary) Then
+                Return
+            End If
+
+            Dim descriptor = BuildTurnMetadataDescriptorForSnapshot(normalizedKind,
+                                                                    normalizedSummary,
+                                                                    FormatLiveTimestamp())
+
+            UpsertRuntimeDescriptor($"turn:meta:{normalizedKind}:{normalizedThreadId}:{normalizedTurnId}", descriptor)
+        End Sub
+
+        Public Sub SetTokenUsageSummary(threadId As String, turnId As String, tokenUsage As JsonObject)
+            If tokenUsage Is Nothing Then
+                TokenUsageText = String.Empty
+                Return
+            End If
+
+            Dim inputTokens = ReadLong(tokenUsage, "inputTokens", "input_tokens")
+            Dim outputTokens = ReadLong(tokenUsage, "outputTokens", "output_tokens")
+            Dim reasoningTokens = ReadLong(tokenUsage, "reasoningTokens", "reasoning_tokens")
+            Dim cachedInputTokens = ReadLong(tokenUsage, "cachedInputTokens", "cached_input_tokens")
+            Dim totalTokens = ReadLong(tokenUsage, "totalTokens", "total_tokens", "total")
+
+            Dim parts As New List(Of String)()
+            If inputTokens.HasValue Then parts.Add($"in {inputTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+            If outputTokens.HasValue Then parts.Add($"out {outputTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+            If reasoningTokens.HasValue Then parts.Add($"reasoning {reasoningTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+            If cachedInputTokens.HasValue Then parts.Add($"cached {cachedInputTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+            If totalTokens.HasValue Then parts.Add($"total {totalTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+
+            If parts.Count = 0 Then
+                TokenUsageText = String.Empty
+                Return
+            End If
+
+            Dim prefix = If(String.IsNullOrWhiteSpace(turnId), "Tokens", $"Tokens ({turnId})")
+            TokenUsageText = $"{prefix}: {String.Join(" | ", parts)}"
+        End Sub
+
+        Public Sub AppendRuntimeDiagnosticEvent(message As String)
+            Dim text = If(message, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return
+            End If
+
+            AppendDescriptor(New TranscriptEntryDescriptor() With {
+                .Kind = "event",
+                .TimestampText = FormatLiveTimestamp(),
+                .RoleText = "Event",
+                .BodyText = text,
+                .IsMuted = True
+            }, appendToRaw:=False)
+        End Sub
+
         Public Sub ClearProtocol()
             ProtocolText = String.Empty
+            _fullProtocolBuilder.Clear()
         End Sub
 
         Public Sub SetProtocolSnapshot(value As String)
-            ProtocolText = TrimLogText(If(value, String.Empty))
+            Dim text = If(value, String.Empty)
+            ProtocolText = TrimLogText(text)
+            _fullProtocolBuilder.Clear()
+            If text.Length > 0 Then
+                _fullProtocolBuilder.Append(text)
+            End If
         End Sub
 
         Public Sub AppendProtocolChunk(value As String)
@@ -592,8 +785,429 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return
             End If
 
+            _fullProtocolBuilder.Append(value)
             ProtocolText = TrimLogText(_protocolText & value)
         End Sub
+
+        Private Sub UpsertRuntimeDescriptor(runtimeKey As String, descriptor As TranscriptEntryDescriptor)
+            Dim normalizedKey = If(runtimeKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedKey) OrElse descriptor Is Nothing Then
+                Return
+            End If
+
+            If Not ShouldDisplayDescriptor(descriptor) Then
+                Return
+            End If
+
+            Dim replacement = CreateEntryFromDescriptor(descriptor)
+
+            Dim existing As TranscriptEntryViewModel = Nothing
+            If _runtimeEntriesByKey.TryGetValue(normalizedKey, existing) AndAlso existing IsNot Nothing Then
+                Dim index = _items.IndexOf(existing)
+                If index >= 0 Then
+                    _items(index) = replacement
+                Else
+                    _items.Add(replacement)
+                End If
+
+                _runtimeEntriesByKey(normalizedKey) = replacement
+                TrimEntriesIfNeeded()
+                Return
+            End If
+
+            _runtimeEntriesByKey(normalizedKey) = replacement
+            _items.Add(replacement)
+            TrimEntriesIfNeeded()
+        End Sub
+
+        Private Function BuildRuntimeItemDescriptor(itemState As TurnItemRuntimeState) As TranscriptEntryDescriptor
+            Return BuildRuntimeItemDescriptorForSnapshot(itemState, FormatLiveTimestamp())
+        End Function
+
+        Friend Shared Function BuildRuntimeItemDescriptorForSnapshot(itemState As TurnItemRuntimeState,
+                                                                     Optional timestampText As String = "") As TranscriptEntryDescriptor
+            If itemState Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim itemType = If(itemState.ItemType, String.Empty).Trim().ToLowerInvariant()
+            Dim descriptor As New TranscriptEntryDescriptor() With {
+                .TimestampText = If(timestampText, String.Empty)
+            }
+
+            Select Case itemType
+                Case "usermessage"
+                    descriptor.Kind = "user"
+                    descriptor.RoleText = "You"
+                    descriptor.BodyText = If(itemState.GenericText, String.Empty).Trim()
+
+                Case "agentmessage"
+                    Dim phase = If(itemState.AgentMessagePhase, String.Empty).Trim().ToLowerInvariant()
+                    If StringComparer.Ordinal.Equals(phase, "commentary") Then
+                        descriptor.Kind = "assistantCommentary"
+                        descriptor.RoleText = "Commentary"
+                        descriptor.IsMuted = True
+                    ElseIf StringComparer.Ordinal.Equals(phase, "final_answer") Then
+                        descriptor.Kind = "assistantFinal"
+                        descriptor.RoleText = "Codex"
+                    Else
+                        descriptor.Kind = "assistant"
+                        descriptor.RoleText = "Assistant"
+                    End If
+                    descriptor.BodyText = If(itemState.AgentMessageText, String.Empty)
+
+                Case "plan"
+                    descriptor.Kind = "plan"
+                    descriptor.RoleText = "Plan"
+                    descriptor.BodyText = If(itemState.IsCompleted AndAlso
+                                             Not String.IsNullOrWhiteSpace(itemState.PlanFinalText),
+                                             itemState.PlanFinalText,
+                                             itemState.PlanStreamText)
+
+                Case "reasoning"
+                    descriptor.Kind = "reasoningCard"
+                    descriptor.RoleText = "Reasoning"
+                    descriptor.IsMuted = True
+                    descriptor.IsReasoning = True
+                    descriptor.UseRawReasoningLayout = True
+                    descriptor.BodyText = If(String.IsNullOrWhiteSpace(itemState.ReasoningSummaryText),
+                                             "Summary pending...",
+                                             itemState.ReasoningSummaryText)
+                    descriptor.SecondaryText = If(itemState.ReasoningSummaryParts.Count > 0,
+                                                  $"{itemState.ReasoningSummaryParts.Count.ToString(CultureInfo.InvariantCulture)} summary part(s)",
+                                                  String.Empty)
+                    descriptor.DetailsText = If(itemState.ReasoningContentText, String.Empty)
+
+                Case "commandexecution"
+                    descriptor.Kind = "command"
+                    descriptor.RoleText = "Command"
+                    descriptor.IsCommandLike = True
+                    descriptor.BodyText = If(String.IsNullOrWhiteSpace(itemState.CommandText),
+                                             "(command)",
+                                             itemState.CommandText)
+                    descriptor.SecondaryText = BuildCommandSecondaryText(itemState)
+                    descriptor.DetailsText = If(itemState.CommandOutputText, String.Empty).Trim()
+
+                Case "filechange"
+                    descriptor.Kind = "fileChange"
+                    descriptor.RoleText = "Files"
+                    descriptor.BodyText = BuildFileChangeBody(itemState)
+                    descriptor.SecondaryText = BuildFileChangeSecondaryText(itemState)
+                    descriptor.DetailsText = BuildFileChangeDetails(itemState)
+
+                Case "mcptoolcall"
+                    descriptor.Kind = "toolMcp"
+                    descriptor.RoleText = "MCP"
+                    descriptor.BodyText = BuildToolBody(itemState)
+                    descriptor.SecondaryText = BuildToolSecondary(itemState)
+                    descriptor.DetailsText = BuildToolDetails(itemState)
+
+                Case "collabtoolcall"
+                    descriptor.Kind = "toolCollab"
+                    descriptor.RoleText = "Collaboration"
+                    descriptor.BodyText = BuildToolBody(itemState)
+                    descriptor.SecondaryText = BuildToolSecondary(itemState)
+                    descriptor.DetailsText = BuildToolDetails(itemState)
+
+                Case "websearch"
+                    descriptor.Kind = "toolWebSearch"
+                    descriptor.RoleText = "Web Search"
+                    descriptor.BodyText = BuildToolBody(itemState)
+                    descriptor.SecondaryText = BuildToolSecondary(itemState)
+                    descriptor.DetailsText = BuildToolDetails(itemState)
+
+                Case "imageview"
+                    descriptor.Kind = "toolImageView"
+                    descriptor.RoleText = "Image View"
+                    descriptor.BodyText = BuildToolBody(itemState)
+                    descriptor.SecondaryText = BuildToolSecondary(itemState)
+                    descriptor.DetailsText = BuildToolDetails(itemState)
+
+                Case "enteredreviewmode"
+                    descriptor.Kind = "systemMarker"
+                    descriptor.RoleText = "System"
+                    descriptor.BodyText = "Entered review mode."
+                    descriptor.IsMuted = True
+
+                Case "exitedreviewmode"
+                    descriptor.Kind = "systemMarker"
+                    descriptor.RoleText = "System"
+                    descriptor.BodyText = "Exited review mode."
+                    descriptor.IsMuted = True
+
+                Case "contextcompaction"
+                    descriptor.Kind = "systemMarker"
+                    descriptor.RoleText = "System"
+                    descriptor.BodyText = "Context compaction completed."
+                    descriptor.IsMuted = True
+
+                Case Else
+                    descriptor.Kind = "unknownItem"
+                    descriptor.RoleText = "Item"
+                    descriptor.IsMuted = True
+                    descriptor.BodyText = $"{If(itemState.ItemType, "unknown")} ({itemState.ItemId})"
+                    If itemState.RawItemPayload IsNot Nothing Then
+                        descriptor.DetailsText = itemState.RawItemPayload.ToJsonString()
+                    End If
+            End Select
+
+            descriptor.IsStreaming = Not itemState.IsCompleted AndAlso IsStreamingRuntimeKind(descriptor.Kind)
+            If descriptor.IsStreaming AndAlso String.IsNullOrWhiteSpace(descriptor.BodyText) AndAlso
+               String.IsNullOrWhiteSpace(descriptor.DetailsText) Then
+                descriptor.BodyText = "..."
+            End If
+
+            If itemState.PendingApprovalCount > 0 Then
+                If String.IsNullOrWhiteSpace(descriptor.SecondaryText) Then
+                    descriptor.SecondaryText = itemState.PendingApprovalSummary
+                Else
+                    descriptor.SecondaryText &= $" | {itemState.PendingApprovalSummary}"
+                End If
+            End If
+
+            Return descriptor
+        End Function
+
+        Friend Shared Function BuildTurnLifecycleDescriptorForSnapshot(turnId As String,
+                                                                       status As String,
+                                                                       Optional timestampText As String = "") As TranscriptEntryDescriptor
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return Nothing
+            End If
+
+            Dim normalizedStatus = If(status, String.Empty).Trim()
+            Dim compactStatus = normalizedStatus.Replace("-", String.Empty, StringComparison.Ordinal).
+                                                 Replace("_", String.Empty, StringComparison.Ordinal).
+                                                 Replace(" ", String.Empty, StringComparison.Ordinal).
+                                                 ToLowerInvariant()
+            Dim body As String
+
+            Select Case compactStatus
+                Case "", "completed"
+                    body = $"Turn {normalizedTurnId} completed."
+                Case "started"
+                    body = $"Turn {normalizedTurnId} started."
+                Case "interrupted"
+                    body = $"Turn {normalizedTurnId} interrupted."
+                Case "failed"
+                    body = $"Turn {normalizedTurnId} failed."
+                Case "cancelled", "canceled"
+                    body = $"Turn {normalizedTurnId} canceled."
+                Case "aborted"
+                    body = $"Turn {normalizedTurnId} aborted."
+                Case Else
+                    body = $"Turn {normalizedTurnId} ended ({If(String.IsNullOrWhiteSpace(normalizedStatus), "completed", normalizedStatus)})."
+            End Select
+
+            Return New TranscriptEntryDescriptor() With {
+                .Kind = "turnMarker",
+                .TimestampText = If(timestampText, String.Empty),
+                .RoleText = "Turn",
+                .BodyText = body,
+                .IsMuted = True
+            }
+        End Function
+
+        Friend Shared Function BuildTurnMetadataDescriptorForSnapshot(kind As String,
+                                                                      summaryText As String,
+                                                                      Optional timestampText As String = "") As TranscriptEntryDescriptor
+            Dim normalizedKind = If(kind, String.Empty).Trim().ToLowerInvariant()
+            Dim normalizedSummary = If(summaryText, String.Empty).Trim()
+
+            If String.IsNullOrWhiteSpace(normalizedKind) OrElse String.IsNullOrWhiteSpace(normalizedSummary) Then
+                Return Nothing
+            End If
+
+            Return New TranscriptEntryDescriptor() With {
+                .Kind = If(StringComparer.Ordinal.Equals(normalizedKind, "diff"), "turnDiff", "turnPlan"),
+                .TimestampText = If(timestampText, String.Empty),
+                .RoleText = If(StringComparer.Ordinal.Equals(normalizedKind, "diff"), "Turn diff", "Turn plan"),
+                .BodyText = normalizedSummary,
+                .IsMuted = True
+            }
+        End Function
+
+        Private Shared Function IsStreamingRuntimeKind(kind As String) As Boolean
+            Select Case If(kind, String.Empty).Trim().ToLowerInvariant()
+                Case "assistant", "assistantcommentary", "assistantfinal",
+                     "plan", "reasoningcard", "command", "filechange",
+                     "toolmcp", "toolcollab", "toolwebsearch", "toolimageview"
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
+
+        Private Shared Function BuildCommandSecondaryText(itemState As TurnItemRuntimeState) As String
+            Dim parts As New List(Of String)()
+            If Not String.IsNullOrWhiteSpace(itemState.CommandCwd) Then
+                parts.Add($"cwd: {itemState.CommandCwd}")
+            End If
+
+            If Not String.IsNullOrWhiteSpace(itemState.Status) Then
+                parts.Add($"status: {itemState.Status}")
+            End If
+
+            If itemState.CommandExitCode.HasValue Then
+                parts.Add($"exit: {itemState.CommandExitCode.Value.ToString(CultureInfo.InvariantCulture)}")
+            End If
+
+            If itemState.CommandDurationMs.HasValue Then
+                parts.Add($"duration: {itemState.CommandDurationMs.Value.ToString(CultureInfo.InvariantCulture)} ms")
+            End If
+
+            Return String.Join(" | ", parts)
+        End Function
+
+        Private Shared Function BuildFileChangeBody(itemState As TurnItemRuntimeState) As String
+            Dim changeCount = If(itemState.FileChangeChanges Is Nothing, 0, itemState.FileChangeChanges.Count)
+            Dim summary = $"{changeCount.ToString(CultureInfo.InvariantCulture)} change(s)"
+            If Not String.IsNullOrWhiteSpace(itemState.FileChangeStatus) Then
+                summary &= $" ({itemState.FileChangeStatus})"
+            End If
+
+            Return summary
+        End Function
+
+        Private Shared Function BuildFileChangeSecondaryText(itemState As TurnItemRuntimeState) As String
+            If String.IsNullOrWhiteSpace(itemState.Status) Then
+                Return String.Empty
+            End If
+
+            Return $"status: {itemState.Status}"
+        End Function
+
+        Private Shared Function BuildFileChangeDetails(itemState As TurnItemRuntimeState) As String
+            Dim lines As New List(Of String)()
+            Dim changes = itemState.FileChangeChanges
+            If changes IsNot Nothing Then
+                Dim shown = 0
+                For Each changeNode In changes
+                    If shown >= 24 Then
+                        Exit For
+                    End If
+
+                    Dim changeObject = TryCast(changeNode, JsonObject)
+                    If changeObject Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim path = ReadString(changeObject, "path", "file")
+                    If String.IsNullOrWhiteSpace(path) Then
+                        Continue For
+                    End If
+
+                    Dim kind = ReadString(changeObject, "status", "kind", "type")
+                    If String.IsNullOrWhiteSpace(kind) Then
+                        lines.Add(path)
+                    Else
+                        lines.Add($"{kind}: {path}")
+                    End If
+
+                    shown += 1
+                Next
+
+                If changes.Count > shown Then
+                    lines.Add($"... +{(changes.Count - shown).ToString(CultureInfo.InvariantCulture)} more")
+                End If
+            End If
+
+            Dim output = If(itemState.FileChangeOutputText, String.Empty).Trim()
+            If Not String.IsNullOrWhiteSpace(output) Then
+                If lines.Count > 0 Then
+                    lines.Add(String.Empty)
+                End If
+                lines.Add(output)
+            End If
+
+            Return String.Join(Environment.NewLine, lines)
+        End Function
+
+        Private Shared Function BuildToolBody(itemState As TurnItemRuntimeState) As String
+            If Not String.IsNullOrWhiteSpace(itemState.GenericText) Then
+                Return itemState.GenericText.Trim()
+            End If
+
+            If itemState.RawItemPayload Is Nothing Then
+                Return If(itemState.ItemType, "tool")
+            End If
+
+            Dim body = ReadString(itemState.RawItemPayload, "text", "title", "query", "prompt", "name")
+            If Not String.IsNullOrWhiteSpace(body) Then
+                Return body
+            End If
+
+            Return If(itemState.ItemType, "tool")
+        End Function
+
+        Private Shared Function BuildToolSecondary(itemState As TurnItemRuntimeState) As String
+            If String.IsNullOrWhiteSpace(itemState.Status) Then
+                Return String.Empty
+            End If
+
+            Return $"status: {itemState.Status}"
+        End Function
+
+        Private Shared Function BuildToolDetails(itemState As TurnItemRuntimeState) As String
+            If itemState.RawItemPayload Is Nothing Then
+                Return String.Empty
+            End If
+
+            Return itemState.RawItemPayload.ToJsonString()
+        End Function
+
+        Private Shared Function ReadLong(obj As JsonObject, ParamArray keys() As String) As Long?
+            If obj Is Nothing OrElse keys Is Nothing Then
+                Return Nothing
+            End If
+
+            For Each key In keys
+                If String.IsNullOrWhiteSpace(key) Then
+                    Continue For
+                End If
+
+                Dim value = ReadString(obj, key)
+                If String.IsNullOrWhiteSpace(value) Then
+                    Continue For
+                End If
+
+                Dim parsed As Long
+                If Long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, parsed) Then
+                    Return parsed
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Shared Function ReadString(obj As JsonObject, ParamArray keys() As String) As String
+            If obj Is Nothing OrElse keys Is Nothing Then
+                Return String.Empty
+            End If
+
+            For Each key In keys
+                Dim node As JsonNode = Nothing
+                If obj.TryGetPropertyValue(key, node) AndAlso node IsNot Nothing Then
+                    Dim jsonValue = TryCast(node, JsonValue)
+                    If jsonValue IsNot Nothing Then
+                        Dim stringValue As String = Nothing
+                        If jsonValue.TryGetValue(Of String)(stringValue) Then
+                            If Not String.IsNullOrWhiteSpace(stringValue) Then
+                                Return stringValue.Trim()
+                            End If
+                        End If
+
+                        Dim longValue As Long
+                        If jsonValue.TryGetValue(Of Long)(longValue) Then
+                            Return longValue.ToString(CultureInfo.InvariantCulture)
+                        End If
+                    End If
+                End If
+            Next
+
+            Return String.Empty
+        End Function
 
         Private Sub AppendDescriptor(descriptor As TranscriptEntryDescriptor,
                                      appendToRaw As Boolean,
@@ -692,6 +1306,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .SecondaryText = If(descriptor.SecondaryText, String.Empty),
                 .DetailsText = If(descriptor.DetailsText, String.Empty)
             }
+            ApplyTimelineDotRowVisibility(entry)
 
             If descriptor.AddedLineCount.HasValue AndAlso descriptor.AddedLineCount.Value > 0 Then
                 entry.AddedLinesText = $"+{descriptor.AddedLineCount.Value}"
@@ -707,20 +1322,32 @@ Namespace CodexNativeAgent.Ui.ViewModels
                                       New FontFamily("Segoe UI"))
             entry.DetailsFontFamily = New FontFamily("Cascadia Code")
 
-            If StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "assistant") Then
+            If StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "assistant") OrElse
+               StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "assistantFinal") OrElse
+               StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "assistantCommentary") Then
                 ApplyAssistantMarkdownFormatting(entry, entry.BodyText)
-            ElseIf StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "reasoning") Then
+            ElseIf StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "reasoning") AndAlso
+                   Not descriptor.UseRawReasoningLayout Then
                 Dim reasoningSource = If(String.IsNullOrWhiteSpace(descriptor.DetailsText), descriptor.BodyText, descriptor.DetailsText)
                 ApplyReasoningMarkdownFormatting(entry, reasoningSource)
             End If
 
-            entry.AllowDetailsCollapse = StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "command")
-            entry.IsDetailsExpanded = Not (entry.AllowDetailsCollapse AndAlso _collapseCommandDetailsByDefault)
+            entry.AllowDetailsCollapse = ShouldAllowDetailsCollapse(entry.Kind)
+            entry.IsDetailsExpanded = Not (entry.AllowDetailsCollapse AndAlso ShouldCollapseDetailsByDefault(entry.Kind))
+            entry.StreamingIndicatorVisibility = If(descriptor.IsStreaming, Visibility.Visible, Visibility.Collapsed)
+            entry.StreamingIndicatorText = ResolveStreamingIndicatorText(entry.Kind)
 
             Select Case entry.Kind
                 Case "assistant"
                     entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(222, 232, 238))
                     entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(48, 66, 74))
+                Case "assistantCommentary"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(236, 236, 236))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(92, 92, 92))
+                    entry.RowOpacity = 0.86R
+                Case "assistantFinal"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(217, 230, 243))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(30, 60, 92))
                 Case "user"
                     entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(226, 238, 228))
                     entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(42, 78, 52))
@@ -736,6 +1363,30 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Case "reasoning"
                     entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(237, 237, 237))
                     entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(92, 92, 92))
+                Case "reasoningCard"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(237, 237, 237))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(92, 92, 92))
+                    entry.RowOpacity = 0.82R
+                Case "turnMarker", "turnDiff", "turnPlan", "systemMarker"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(238, 238, 238))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(88, 88, 88))
+                    entry.RowOpacity = 0.78R
+                Case "toolMcp"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(230, 237, 246))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(45, 75, 112))
+                Case "toolCollab"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(232, 243, 238))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(45, 86, 67))
+                Case "toolWebSearch"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(246, 237, 228))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(107, 76, 44))
+                Case "toolImageView"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(236, 232, 246))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(78, 62, 112))
+                Case "unknownItem"
+                    entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(238, 238, 238))
+                    entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(88, 88, 88))
+                    entry.RowOpacity = 0.84R
                 Case "error"
                     entry.RoleBadgeBackground = New SolidColorBrush(Color.FromRgb(250, 229, 225))
                     entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(128, 43, 26))
@@ -745,6 +1396,62 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Select
 
             Return entry
+        End Function
+
+        Private Sub RefreshTimelineDotRowVisibility()
+            For Each entry In _items
+                ApplyTimelineDotRowVisibility(entry)
+            Next
+        End Sub
+
+        Private Sub ApplyTimelineDotRowVisibility(entry As TranscriptEntryViewModel)
+            If entry Is Nothing Then
+                Return
+            End If
+
+            entry.RowVisibility = If(ShouldShowTimelineRowForKind(entry.Kind),
+                                     Visibility.Visible,
+                                     Visibility.Collapsed)
+        End Sub
+
+        Private Function ShouldShowTimelineRowForKind(kind As String) As Boolean
+            Select Case If(kind, String.Empty).Trim().ToLowerInvariant()
+                Case "event"
+                    Return _showEventDotsInTranscript
+                Case "system", "systemmarker"
+                    Return _showSystemDotsInTranscript
+                Case Else
+                    Return True
+            End Select
+        End Function
+
+        Private Function ShouldCollapseDetailsByDefault(kind As String) As Boolean
+            If StringComparer.OrdinalIgnoreCase.Equals(kind, "reasoningCard") Then
+                Return True
+            End If
+
+            Return _collapseCommandDetailsByDefault
+        End Function
+
+        Private Shared Function ShouldAllowDetailsCollapse(kind As String) As Boolean
+            Select Case If(kind, String.Empty).Trim().ToLowerInvariant()
+                Case "command", "filechange", "reasoningcard",
+                     "toolmcp", "toolcollab", "toolwebsearch", "toolimageview"
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
+
+        Private Shared Function ResolveStreamingIndicatorText(kind As String) As String
+            Select Case If(kind, String.Empty).Trim().ToLowerInvariant()
+                Case "reasoning", "reasoningcard"
+                    Return "thinking"
+                Case "assistantcommentary"
+                    Return "updating"
+                Case Else
+                    Return "streaming"
+            End Select
         End Function
 
         Private Shared Sub ApplyAssistantMarkdownFormatting(entry As TranscriptEntryViewModel, markdownText As String)
@@ -1042,7 +1749,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return True
             End If
 
-            Return True
+            Return False
         End Function
 
         Private Shared Function BuildReasoningPreview(text As String) As String
@@ -1095,13 +1802,34 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return
             End If
 
+            _fullTranscriptBuilder.Append(value)
             TranscriptText = TrimLogText(_transcriptText & value)
         End Sub
 
         Private Sub TrimEntriesIfNeeded()
             While _items.Count > MaxTranscriptEntries
+                Dim removed = _items(0)
                 _items.RemoveAt(0)
+                RemoveRuntimeEntryKeyForEntry(removed)
             End While
+        End Sub
+
+        Private Sub RemoveRuntimeEntryKeyForEntry(entry As TranscriptEntryViewModel)
+            If entry Is Nothing OrElse _runtimeEntriesByKey.Count = 0 Then
+                Return
+            End If
+
+            Dim keyToRemove As String = Nothing
+            For Each pair In _runtimeEntriesByKey
+                If ReferenceEquals(pair.Value, entry) Then
+                    keyToRemove = pair.Key
+                    Exit For
+                End If
+            Next
+
+            If Not String.IsNullOrWhiteSpace(keyToRemove) Then
+                _runtimeEntriesByKey.Remove(keyToRemove)
+            End If
         End Sub
 
         Private Shared Function TrimLogText(value As String) As String

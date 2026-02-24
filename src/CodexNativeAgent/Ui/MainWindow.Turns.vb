@@ -1,5 +1,4 @@
 Imports System.Collections.Generic
-Imports System.Text
 Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports System.Threading.Tasks
@@ -8,6 +7,7 @@ Imports System.Windows.Controls
 Imports System.Windows.Media.Animation
 Imports CodexNativeAgent.AppServer
 Imports CodexNativeAgent.Services
+Imports CodexNativeAgent.Ui.Coordinators
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
@@ -305,6 +305,7 @@ Namespace CodexNativeAgent.Ui
                         _currentTurnId = returnedTurnId
                     End If
 
+                    SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
                     threadIdToRefreshAfterTurnStart = _currentThreadId
                     MarkThreadLastActive(_currentThreadId)
                     Dim threadMissingFromList = SyncThreadListAfterUserPrompt(_currentThreadId, submittedInputText)
@@ -340,6 +341,7 @@ Namespace CodexNativeAgent.Ui
                         _currentTurnId = returnedTurnId
                     End If
 
+                    SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
                     MarkThreadLastActive(_currentThreadId)
                     UpdateThreadTurnLabels()
                     RefreshControlStates()
@@ -385,60 +387,67 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub RenderItem(itemObject As JsonObject)
+            If itemObject Is Nothing Then
+                Return
+            End If
+
+            Dim itemId = GetPropertyString(itemObject, "id")
             Dim itemType = GetPropertyString(itemObject, "type")
+            If String.IsNullOrWhiteSpace(itemId) OrElse String.IsNullOrWhiteSpace(itemType) Then
+                Return
+            End If
 
-            Select Case itemType
-                Case "userMessage"
-                    Dim content = GetPropertyArray(itemObject, "content")
-                    Dim userText = FlattenUserInput(content)
-                    If Not ShouldSuppressUserEcho(userText) Then
-                        AppendTranscript("user", userText)
+            Dim runtimeItem As New TurnItemRuntimeState() With {
+                .ThreadId = _currentThreadId,
+                .TurnId = _currentTurnId,
+                .ItemId = itemId,
+                .ItemType = itemType,
+                .Status = "completed",
+                .IsCompleted = True,
+                .RawItemPayload = itemObject
+            }
+
+            RenderItem(runtimeItem)
+        End Sub
+
+        Private Sub RenderItem(itemState As TurnItemRuntimeState)
+            If itemState Is Nothing Then
+                Return
+            End If
+
+            If StringComparer.OrdinalIgnoreCase.Equals(itemState.ItemType, "userMessage") Then
+                Dim suppressedUserItemKey = BuildSuppressedUserEchoItemKey(itemState)
+                If Not String.IsNullOrWhiteSpace(suppressedUserItemKey) AndAlso
+                   _suppressedServerUserEchoItemKeys.Contains(suppressedUserItemKey) Then
+                    Return
+                End If
+
+                If ShouldSuppressUserEcho(itemState.GenericText) Then
+                    If Not String.IsNullOrWhiteSpace(suppressedUserItemKey) Then
+                        _suppressedServerUserEchoItemKeys.Add(suppressedUserItemKey)
                     End If
+                    Return
+                End If
+            End If
 
-                Case "agentMessage"
-                    Dim agentText = GetPropertyString(itemObject, "text")
-                    If IsCommentaryAgentMessage(itemObject) Then
-                        _viewModel.TranscriptPanel.AppendAssistantCommentaryReasoningStep(agentText)
-                        ScrollTranscriptToBottom()
-                    Else
-                        AppendTranscript("assistant", agentText)
-                    End If
+            CacheAssistantPhaseHintFromRuntimeItem(itemState)
+            _viewModel.TranscriptPanel.UpsertRuntimeItem(itemState)
+        End Sub
 
-                Case "plan"
-                    _viewModel.TranscriptPanel.AppendPlan(GetPropertyString(itemObject, "text"))
-                    ScrollTranscriptToBottom()
+        Private Sub AppendTurnLifecycleMarker(threadId As String, turnId As String, status As String)
+            _viewModel.TranscriptPanel.UpsertTurnLifecycleMarker(threadId, turnId, status)
+        End Sub
 
-                Case "reasoning"
-                    Dim reasoningText = ExtractReasoningText(itemObject)
-                    If Not String.IsNullOrWhiteSpace(reasoningText) Then
-                        _viewModel.TranscriptPanel.AppendReasoning(reasoningText)
-                        ScrollTranscriptToBottom()
-                    End If
+        Private Sub UpsertTurnMetadata(threadId As String, turnId As String, kind As String, summaryText As String)
+            _viewModel.TranscriptPanel.UpsertTurnMetadataMarker(threadId, turnId, kind, summaryText)
+        End Sub
 
-                Case "commandExecution"
-                    Dim command = GetPropertyString(itemObject, "command")
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim output = GetPropertyString(itemObject, "aggregatedOutput")
-                    _viewModel.TranscriptPanel.AppendCommandExecution(command, status, output)
-                    ScrollTranscriptToBottom()
+        Private Sub UpdateTokenUsageWidget(threadId As String, turnId As String, tokenUsage As JsonObject)
+            _viewModel.TranscriptPanel.SetTokenUsageSummary(threadId, turnId, tokenUsage)
+        End Sub
 
-                Case "fileChange"
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim changes = GetPropertyArray(itemObject, "changes")
-                    Dim count = If(changes Is Nothing, 0, changes.Count)
-                    Dim lineStats = BuildFileChangeLineStats(changes)
-                    _viewModel.TranscriptPanel.AppendFileChangeSummary(status,
-                                                                       count,
-                                                                       BuildFileChangeDetails(changes),
-                                                                       lineStats.AddedLineCount,
-                                                                       lineStats.RemovedLineCount)
-                    ScrollTranscriptToBottom()
-
-                Case Else
-                    Dim itemId = GetPropertyString(itemObject, "id")
-                    _viewModel.TranscriptPanel.AppendUnknownItem(itemType, itemId)
-                    ScrollTranscriptToBottom()
-            End Select
+        Private Sub AppendRuntimeDiagnosticEvent(message As String)
+            _viewModel.TranscriptPanel.AppendRuntimeDiagnosticEvent(message)
         End Sub
 
         Private Sub UpdateThreadTurnLabels()
@@ -452,40 +461,6 @@ Namespace CodexNativeAgent.Ui
                                             $"Turn: {_currentTurnId}")
             SyncSessionStateViewModel()
         End Sub
-
-        Private Shared Function FlattenUserInput(content As JsonArray) As String
-            If content Is Nothing OrElse content.Count = 0 Then
-                Return String.Empty
-            End If
-
-            Dim parts As New List(Of String)()
-
-            For Each entryNode In content
-                Dim entryObject = AsObject(entryNode)
-                If entryObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim kind = GetPropertyString(entryObject, "type")
-                Select Case kind
-                    Case "text"
-                        Dim value = GetPropertyString(entryObject, "text")
-                        If Not String.IsNullOrWhiteSpace(value) Then
-                            parts.Add(value)
-                        End If
-                    Case "image"
-                        parts.Add($"[image] {GetPropertyString(entryObject, "url")}")
-                    Case "localImage"
-                        parts.Add($"[localImage] {GetPropertyString(entryObject, "path")}")
-                    Case "mention"
-                        parts.Add($"[mention] {GetPropertyString(entryObject, "name")}")
-                    Case "skill"
-                        parts.Add($"[skill] {GetPropertyString(entryObject, "name")}")
-                End Select
-            Next
-
-            Return String.Join(Environment.NewLine, parts)
-        End Function
 
         Private Sub TrackPendingUserEcho(text As String)
             Dim normalized = NormalizeUserEchoText(text)
@@ -548,286 +523,113 @@ Namespace CodexNativeAgent.Ui
             End While
         End Sub
 
+        Private Sub ClearPendingUserEchoTracking()
+            _pendingLocalUserEchoes.Clear()
+            _suppressedServerUserEchoItemKeys.Clear()
+        End Sub
+
+        Private Shared Function BuildSuppressedUserEchoItemKey(itemState As TurnItemRuntimeState) As String
+            If itemState Is Nothing Then
+                Return String.Empty
+            End If
+
+            Dim scoped = If(itemState.ScopedItemKey, String.Empty).Trim()
+            If Not String.IsNullOrWhiteSpace(scoped) Then
+                Return scoped
+            End If
+
+            Dim itemId = If(itemState.ItemId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(itemId) Then
+                Return String.Empty
+            End If
+
+            Dim threadId = If(itemState.ThreadId, String.Empty).Trim()
+            Dim turnId = If(itemState.TurnId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(threadId) OrElse String.IsNullOrWhiteSpace(turnId) Then
+                Return itemId
+            End If
+
+            Return $"{threadId}:{turnId}:{itemId}"
+        End Function
+
         Private Shared Function NormalizeUserEchoText(text As String) As String
             If text Is Nothing Then
                 Return String.Empty
             End If
 
-            Return text.Trim()
-        End Function
-
-        Private Shared Function BuildFileChangeDetails(changes As JsonArray) As String
-            If changes Is Nothing OrElse changes.Count = 0 Then
-                Return String.Empty
-            End If
-
-            Dim builder As New StringBuilder()
-            Dim shown = 0
-            For Each changeNode In changes
-                If shown >= 12 Then
-                    Exit For
-                End If
-
-                Dim changeObject = AsObject(changeNode)
-                If changeObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim path = GetPropertyString(changeObject, "path")
-                If String.IsNullOrWhiteSpace(path) Then
-                    path = GetPropertyString(changeObject, "file")
-                End If
-                If String.IsNullOrWhiteSpace(path) Then
-                    Continue For
-                End If
-
-                Dim status = GetPropertyString(changeObject, "status")
-                If String.IsNullOrWhiteSpace(status) Then
-                    builder.AppendLine(path)
-                Else
-                    builder.AppendLine($"{status}: {path}")
-                End If
-
-                shown += 1
-            Next
-
-            If builder.Length = 0 Then
-                Return String.Empty
-            End If
-
-            If changes.Count > shown Then
-                builder.Append("... +")
-                builder.Append(changes.Count - shown)
-                builder.Append(" more")
-            End If
-
-            Return builder.ToString().TrimEnd()
-        End Function
-
-        Private Structure FileChangeLineStats
-            Public Property AddedLineCount As Integer?
-            Public Property RemovedLineCount As Integer?
-        End Structure
-
-        Private Shared Function BuildFileChangeLineStats(changes As JsonArray) As FileChangeLineStats
-            Dim totalAdded As Integer = 0
-            Dim totalRemoved As Integer = 0
-            Dim hasAnyStats = False
-
-            If changes Is Nothing OrElse changes.Count = 0 Then
-                Return New FileChangeLineStats()
-            End If
-
-            For Each changeNode In changes
-                Dim changeObject = AsObject(changeNode)
-                If changeObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim addedValue As Integer
-                Dim removedValue As Integer
-                Dim hasAdded = TryGetFileChangeLineCount(changeObject, addedValue, isAdded:=True)
-                Dim hasRemoved = TryGetFileChangeLineCount(changeObject, removedValue, isAdded:=False)
-
-                If Not hasAdded AndAlso Not hasRemoved Then
-                    Dim diffStats = CountFileChangeDiffLines(changeObject)
-                    If diffStats.AddedLineCount.HasValue Then
-                        addedValue = diffStats.AddedLineCount.Value
-                        hasAdded = True
-                    End If
-                    If diffStats.RemovedLineCount.HasValue Then
-                        removedValue = diffStats.RemovedLineCount.Value
-                        hasRemoved = True
-                    End If
-                End If
-
-                If hasAdded AndAlso addedValue > 0 Then
-                    totalAdded += addedValue
-                    hasAnyStats = True
-                End If
-
-                If hasRemoved AndAlso removedValue > 0 Then
-                    totalRemoved += removedValue
-                    hasAnyStats = True
-                End If
-            Next
-
-            If Not hasAnyStats Then
-                Return New FileChangeLineStats()
-            End If
-
-            Return New FileChangeLineStats() With {
-                .AddedLineCount = If(totalAdded > 0, CType(totalAdded, Integer?), Nothing),
-                .RemovedLineCount = If(totalRemoved > 0, CType(totalRemoved, Integer?), Nothing)
-            }
-        End Function
-
-        Private Shared Function TryGetFileChangeLineCount(changeObject As JsonObject,
-                                                          ByRef value As Integer,
-                                                          isAdded As Boolean) As Boolean
-            value = 0
-            If changeObject Is Nothing Then
-                Return False
-            End If
-
-            Dim keys = If(isAdded,
-                          New String() {"addedLines", "linesAdded", "additions", "added_count", "added"},
-                          New String() {"removedLines", "linesRemoved", "deletions", "removed_count", "removed"})
-
-            For Each key In keys
-                If TryGetNonNegativeIntegerProperty(changeObject, key, value) Then
-                    Return True
-                End If
-            Next
-
-            Dim nestedKeys = {"stats", "summary", "lineStats", "counts"}
-            For Each nestedKey In nestedKeys
-                Dim nestedObject = GetPropertyObject(changeObject, nestedKey)
-                If nestedObject Is Nothing Then
-                    Continue For
-                End If
-
-                For Each key In keys
-                    If TryGetNonNegativeIntegerProperty(nestedObject, key, value) Then
-                        Return True
-                    End If
-                Next
-            Next
-
-            Return False
-        End Function
-
-        Private Shared Function TryGetNonNegativeIntegerProperty(obj As JsonObject,
-                                                                 propertyName As String,
-                                                                 ByRef value As Integer) As Boolean
-            value = 0
-            If obj Is Nothing OrElse String.IsNullOrWhiteSpace(propertyName) Then
-                Return False
-            End If
-
-            Dim raw = GetPropertyString(obj, propertyName)
-            If String.IsNullOrWhiteSpace(raw) Then
-                Return False
-            End If
-
-            Dim parsed As Integer
-            If Integer.TryParse(raw.Trim(), parsed) Then
-                value = Math.Max(0, parsed)
-                Return True
-            End If
-
-            Return False
-        End Function
-
-        Private Shared Function CountFileChangeDiffLines(changeObject As JsonObject) As FileChangeLineStats
-            If changeObject Is Nothing Then
-                Return New FileChangeLineStats()
-            End If
-
-            Dim diffCandidates = {
-                GetPropertyString(changeObject, "patch"),
-                GetPropertyString(changeObject, "diff"),
-                GetPropertyString(changeObject, "unifiedDiff"),
-                GetPropertyString(changeObject, "aggregatedOutput"),
-                GetPropertyString(changeObject, "output")
-            }
-
-            For Each candidate In diffCandidates
-                Dim stats = CountUnifiedDiffLines(candidate)
-                If stats.AddedLineCount.HasValue OrElse stats.RemovedLineCount.HasValue Then
-                    Return stats
-                End If
-            Next
-
-            Return New FileChangeLineStats()
-        End Function
-
-        Private Shared Function CountUnifiedDiffLines(diffText As String) As FileChangeLineStats
-            If String.IsNullOrWhiteSpace(diffText) Then
-                Return New FileChangeLineStats()
-            End If
-
-            Dim added = 0
-            Dim removed = 0
-            Dim normalized = diffText.Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim normalized = text.Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
             Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+            Dim keptLines As New List(Of String)()
 
             For Each rawLine In lines
-                Dim line = If(rawLine, String.Empty)
-                If line.Length = 0 Then
+                Dim trimmedLine = If(rawLine, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(trimmedLine) Then
+                    If keptLines.Count > 0 AndAlso keptLines(keptLines.Count - 1).Length > 0 Then
+                        keptLines.Add(String.Empty)
+                    End If
                     Continue For
                 End If
 
-                If line.StartsWith("+++", StringComparison.Ordinal) OrElse
-                   line.StartsWith("---", StringComparison.Ordinal) OrElse
-                   line.StartsWith("@@", StringComparison.Ordinal) OrElse
-                   line.StartsWith("diff ", StringComparison.OrdinalIgnoreCase) OrElse
-                   line.StartsWith("index ", StringComparison.OrdinalIgnoreCase) OrElse
-                   line.StartsWith("\ No newline", StringComparison.Ordinal) Then
+                If IsSyntheticUserEchoMetadataLine(trimmedLine) Then
                     Continue For
                 End If
 
-                If line(0) = "+"c Then
-                    added += 1
-                ElseIf line(0) = "-"c Then
-                    removed += 1
-                End If
+                keptLines.Add(CollapseWhitespaceForUserEcho(trimmedLine))
             Next
 
-            If added <= 0 AndAlso removed <= 0 Then
-                Return New FileChangeLineStats()
-            End If
+            While keptLines.Count > 0 AndAlso keptLines(0).Length = 0
+                keptLines.RemoveAt(0)
+            End While
 
-            Return New FileChangeLineStats() With {
-                .AddedLineCount = If(added > 0, CType(added, Integer?), Nothing),
-                .RemovedLineCount = If(removed > 0, CType(removed, Integer?), Nothing)
-            }
+            While keptLines.Count > 0 AndAlso keptLines(keptLines.Count - 1).Length = 0
+                keptLines.RemoveAt(keptLines.Count - 1)
+            End While
+
+            Return String.Join(vbLf, keptLines).Trim()
         End Function
 
-        Private Shared Function ExtractReasoningText(itemObject As JsonObject) As String
-            If itemObject Is Nothing Then
+        Private Shared Function IsSyntheticUserEchoMetadataLine(line As String) As Boolean
+            Dim normalized = If(line, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return False
+            End If
+
+            Dim lower = normalized.ToLowerInvariant()
+            Return lower.StartsWith("[mention] ", StringComparison.Ordinal) OrElse
+                   lower.StartsWith("[skill] ", StringComparison.Ordinal) OrElse
+                   lower.StartsWith("[image] ", StringComparison.Ordinal) OrElse
+                   lower.StartsWith("[localimage] ", StringComparison.Ordinal)
+        End Function
+
+        Private Shared Function CollapseWhitespaceForUserEcho(value As String) As String
+            Dim source = If(value, String.Empty)
+            If String.IsNullOrWhiteSpace(source) Then
                 Return String.Empty
             End If
 
-            Dim text = GetPropertyString(itemObject, "text")
-            If Not String.IsNullOrWhiteSpace(text) Then
-                Return text
-            End If
+            Dim builder As New System.Text.StringBuilder(source.Length)
+            Dim previousWasWhitespace = False
 
-            text = GetPropertyString(itemObject, "summary")
-            If Not String.IsNullOrWhiteSpace(text) Then
-                Return text
-            End If
-
-            Dim content = GetPropertyArray(itemObject, "content")
-            If content IsNot Nothing Then
-                Dim builder As New StringBuilder()
-                For Each entryNode In content
-                    Dim entryObject = AsObject(entryNode)
-                    If entryObject Is Nothing Then
-                        Continue For
+            For Each ch In source
+                If Char.IsWhiteSpace(ch) Then
+                    If Not previousWasWhitespace Then
+                        builder.Append(" "c)
+                        previousWasWhitespace = True
                     End If
-
-                    Dim part = GetPropertyString(entryObject, "text")
-                    If String.IsNullOrWhiteSpace(part) Then
-                        Continue For
-                    End If
-
-                    If builder.Length > 0 Then
-                        builder.AppendLine()
-                    End If
-                    builder.Append(part.Trim())
-                Next
-
-                If builder.Length > 0 Then
-                    Return builder.ToString()
+                Else
+                    builder.Append(ch)
+                    previousWasWhitespace = False
                 End If
-            End If
+            Next
 
-            Return String.Empty
+            Return builder.ToString().Trim()
         End Function
 
         Private Async Function HandleServerRequestAsync(request As RpcServerRequest) As Task
+            Dim dispatch = _sessionNotificationCoordinator.DispatchServerRequest(request)
+            ApplyServerRequestDispatchResult(dispatch)
+            SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
+
             Await _turnWorkflowCoordinator.HandleServerRequestAsync(
                 request,
                 AddressOf HandleToolRequestUserInputAsync,
@@ -860,7 +662,7 @@ Namespace CodexNativeAgent.Ui
             Dim paramsObject = AsObject(request.ParamsNode)
             Dim questions = GetPropertyArray(paramsObject, "questions")
             If questions Is Nothing OrElse questions.Count = 0 Then
-                Await CurrentClient().SendErrorAsync(request.Id, -32602, "No questions were provided in item/tool/requestUserInput.")
+                Await CurrentClient().SendErrorAsync(request.Id, -32602, $"No questions were provided in {ToolRequestUserInputMethod}.")
                 Return
             End If
 

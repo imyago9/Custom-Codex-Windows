@@ -11,6 +11,7 @@ Imports System.Threading
 Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Controls
+Imports System.Windows.Data
 Imports System.Windows.Input
 Imports System.Windows.Interop
 Imports System.Windows.Media
@@ -353,6 +354,8 @@ Namespace CodexNativeAgent.Ui
             Public Property DisableWorkspaceHintOverlay As Boolean
             Public Property DisableConnectionInitializedToast As Boolean
             Public Property DisableThreadsPanelHints As Boolean
+            Public Property ShowEventDotsInTranscript As Boolean
+            Public Property ShowSystemDotsInTranscript As Boolean
             Public Property FilterThreadsByWorkingDir As Boolean
             Public Property EncryptedApiKey As String = String.Empty
             Public Property ThemeMode As String = AppAppearanceManager.LightTheme
@@ -376,6 +379,9 @@ Namespace CodexNativeAgent.Ui
         Private ReadOnly _threadEntries As New List(Of ThreadListEntry)()
         Private ReadOnly _expandedThreadProjectGroups As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Private ReadOnly _pendingLocalUserEchoes As New Queue(Of PendingUserEcho)()
+        Private ReadOnly _suppressedServerUserEchoItemKeys As New HashSet(Of String)(StringComparer.Ordinal)
+        Private ReadOnly _snapshotAssistantPhaseHintsByItemKey As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private ReadOnly _snapshotAssistantPhaseHintsLock As New Object()
         Private Shared ReadOnly PendingUserEchoMaxAge As TimeSpan = TimeSpan.FromSeconds(30)
 
         Private _client As CodexAppServerClient
@@ -426,6 +432,7 @@ Namespace CodexNativeAgent.Ui
         Private _gitPanelDockWidth As Double = 560.0R
         Private _currentGitPanelSnapshot As GitPanelSnapshot
         Private _gitPanelSelectedDiffFilePath As String = String.Empty
+        Private _protocolDialogWindow As Window
         Private _settings As New AppSettings()
         Private ReadOnly _viewModel As New MainWindowViewModel()
         Private ReadOnly _sessionCoordinator As SessionCoordinator
@@ -463,6 +470,8 @@ Namespace CodexNativeAgent.Ui
                 _turnService,
                 _approvalService,
                 Function(operation) RunUiActionAsync(operation))
+            AddHandler _turnWorkflowCoordinator.ApprovalResolved,
+                AddressOf OnTurnWorkflowApprovalResolved
             _shellCommandCoordinator = New ShellCommandCoordinator(
                 _viewModel,
                 Function(operation) RunUiActionAsync(operation),
@@ -554,7 +563,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If StatusBarPaneHost.CmbApprovalPolicy.SelectedIndex < 0 Then
-                StatusBarPaneHost.CmbApprovalPolicy.SelectedIndex = 2
+                StatusBarPaneHost.CmbApprovalPolicy.SelectedIndex = 0
             End If
 
             If StatusBarPaneHost.CmbSandbox.SelectedIndex < 0 Then
@@ -637,6 +646,26 @@ Namespace CodexNativeAgent.Ui
                     SaveSettings()
                     _threadsPanelHintBubbleDismissedForCurrentHint = False
                     UpdateThreadsPanelStateHintBubbleVisibility()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowEventDotsInTranscript.Checked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowEventDotsInTranscript.Unchecked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowSystemDotsInTranscript.Checked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowSystemDotsInTranscript.Unchecked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
                 End Sub
 
             AddHandler SidebarPaneHost.ChkRememberApiKey.Checked, Sub(sender, e) SaveSettings()
@@ -734,9 +763,13 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub ShowProtocolDialog()
-            Dim protocolText = If(_viewModel.TranscriptPanel.ProtocolText, String.Empty)
-            If String.IsNullOrWhiteSpace(protocolText) Then
-                protocolText = "No protocol entries yet."
+            If _protocolDialogWindow IsNot Nothing AndAlso _protocolDialogWindow.IsVisible Then
+                If _protocolDialogWindow.WindowState = WindowState.Minimized Then
+                    _protocolDialogWindow.WindowState = WindowState.Normal
+                End If
+
+                _protocolDialogWindow.Activate()
+                Return
             End If
 
             Dim closeButton As New Button() With {
@@ -747,7 +780,6 @@ Namespace CodexNativeAgent.Ui
             }
 
             Dim protocolViewer As New TextBox() With {
-                .Text = protocolText,
                 .IsReadOnly = True,
                 .AcceptsReturn = True,
                 .TextWrapping = TextWrapping.Wrap,
@@ -757,6 +789,27 @@ Namespace CodexNativeAgent.Ui
                 .BorderThickness = New Thickness(0),
                 .FontFamily = New FontFamily("Cascadia Code")
             }
+            protocolViewer.SetBinding(TextBox.TextProperty, New Binding("TranscriptPanel.ProtocolText") With {
+                .Source = _viewModel,
+                .Mode = BindingMode.OneWay,
+                .UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+                .FallbackValue = String.Empty,
+                .TargetNullValue = String.Empty
+            })
+
+            Dim keepScrolledToBottom As TextChangedEventHandler =
+                Sub(sender, args)
+                    protocolViewer.CaretIndex = protocolViewer.Text.Length
+                    protocolViewer.ScrollToEnd()
+                End Sub
+            AddHandler protocolViewer.TextChanged, keepScrolledToBottom
+
+            Dim scrollOnLoad As RoutedEventHandler =
+                Sub(sender, args)
+                    protocolViewer.CaretIndex = protocolViewer.Text.Length
+                    protocolViewer.ScrollToEnd()
+                End Sub
+            AddHandler protocolViewer.Loaded, scrollOnLoad
 
             Dim viewerChrome As New Border() With {
                 .Background = ResolveBrush("SurfaceBrush", Brushes.White),
@@ -774,7 +827,7 @@ Namespace CodexNativeAgent.Ui
             }
 
             Dim headerCaption As New TextBlock() With {
-                .Text = "Request/response log snapshot",
+                .Text = "Live request/response log",
                 .Margin = New Thickness(0, 2, 0, 0)
             }
             headerCaption.Style = TryCast(TryFindResource("CaptionTextStyle"), Style)
@@ -815,7 +868,17 @@ Namespace CodexNativeAgent.Ui
 
             AddHandler closeButton.Click, Sub(sender, e) dialog.Close()
 
-            dialog.ShowDialog()
+            AddHandler dialog.Closed,
+                Sub(sender, e)
+                    RemoveHandler protocolViewer.TextChanged, keepScrolledToBottom
+                    RemoveHandler protocolViewer.Loaded, scrollOnLoad
+                    BindingOperations.ClearBinding(protocolViewer, TextBox.TextProperty)
+                    _protocolDialogWindow = Nothing
+                End Sub
+
+            _protocolDialogWindow = dialog
+            dialog.Show()
+            dialog.Activate()
         End Sub
 
         Private Sub OnThreadSortMenuButtonClick(sender As Object, e As RoutedEventArgs)
@@ -2581,12 +2644,31 @@ Namespace CodexNativeAgent.Ui
             CancelActiveThreadSelectionLoad()
             SaveSettings()
 
-            If _client IsNot Nothing Then
-                Try
-                    DisconnectAsync().GetAwaiter().GetResult()
-                Catch
-                End Try
+            ShutdownClientForAppClose()
+        End Sub
+
+        Private Sub ShutdownClientForAppClose()
+            BeginUserDisconnectSessionTransition()
+
+            Dim client = DetachCurrentClient()
+            If client Is Nothing Then
+                Return
             End If
+
+            _disconnecting = True
+            Try
+                ' Avoid deadlocking the UI thread during window close by not synchronously blocking
+                ' on DisconnectAsync(), which captures the WPF synchronization context.
+                RemoveHandler client.RawMessage, AddressOf ClientOnRawMessage
+                RemoveHandler client.NotificationReceived, AddressOf ClientOnNotification
+                RemoveHandler client.ServerRequestReceived, AddressOf ClientOnServerRequest
+                RemoveHandler client.Disconnected, AddressOf ClientOnDisconnected
+
+                client.StopAsync("Application closing.").ConfigureAwait(False).GetAwaiter().GetResult()
+            Catch
+            Finally
+                _disconnecting = False
+            End Try
         End Sub
 
         Private Sub MainWindow_PreviewKeyDown(sender As Object, e As KeyEventArgs) Handles Me.PreviewKeyDown
@@ -2806,7 +2888,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            Dim hasActiveTurn = session.HasCurrentTurn
+            Dim hasActiveTurn = HasActiveRuntimeTurnForCurrentThread()
+            If Not hasActiveTurn AndAlso session.HasCurrentTurn AndAlso Not RuntimeHasTurnHistoryForCurrentThread() Then
+                hasActiveTurn = True
+            End If
             Dim canStartDraftTurn = _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(_currentThreadId)
             Dim canUseExistingThreadTurnControls = authenticated AndAlso Not _threadContentLoading AndAlso session.HasCurrentThread
             Dim canStartTurn = authenticated AndAlso Not _threadContentLoading AndAlso (session.HasCurrentThread OrElse canStartDraftTurn)
@@ -2866,12 +2951,8 @@ Namespace CodexNativeAgent.Ui
                 Return "Authentication required: sign in from Settings to unlock threads and turns."
             End If
 
-            If _pendingNewThreadFirstPromptSelection Then
-                Return "Ready. Send with Ctrl+Enter."
-            End If
-
             If String.IsNullOrWhiteSpace(_currentThreadId) Then
-                Return "Start a new thread or select one from the left panel, then send your first instruction."
+                Return "Select a thread from the left panel, or send your first instruction to start a new one."
             End If
 
             If String.IsNullOrWhiteSpace(_currentTurnId) Then
@@ -2909,8 +2990,6 @@ Namespace CodexNativeAgent.Ui
             Dim newThreadTag As String
             If showSettings Then
                 newThreadTag = String.Empty
-            ElseIf _pendingNewThreadFirstPromptSelection Then
-                newThreadTag = "ThreadSelectedLike"
             Else
                 newThreadTag = "Active"
             End If
@@ -2932,8 +3011,8 @@ Namespace CodexNativeAgent.Ui
             Dim outputFolder = Path.Combine(diagnosticsRoot, $"diag-{stamp}")
             Directory.CreateDirectory(outputFolder)
 
-            File.WriteAllText(Path.Combine(outputFolder, "transcript.log"), _viewModel.TranscriptPanel.TranscriptText)
-            File.WriteAllText(Path.Combine(outputFolder, "protocol.log"), _viewModel.TranscriptPanel.ProtocolText)
+            File.WriteAllText(Path.Combine(outputFolder, "transcript.log"), _viewModel.TranscriptPanel.FullTranscriptText)
+            File.WriteAllText(Path.Combine(outputFolder, "protocol.log"), _viewModel.TranscriptPanel.FullProtocolText)
             File.WriteAllText(Path.Combine(outputFolder, "approval.txt"), _viewModel.ApprovalPanel.SummaryText)
             File.WriteAllText(Path.Combine(outputFolder, "rate-limits.txt"), _viewModel.SettingsPanel.RateLimitsText)
 
@@ -2954,11 +3033,13 @@ Namespace CodexNativeAgent.Ui
             settingsObject("disableWorkspaceHintOverlay") = _viewModel.SettingsPanel.DisableWorkspaceHintOverlay
             settingsObject("disableConnectionInitializedToast") = _viewModel.SettingsPanel.DisableConnectionInitializedToast
             settingsObject("disableThreadsPanelHints") = _viewModel.SettingsPanel.DisableThreadsPanelHints
+            settingsObject("showEventDotsInTranscript") = _viewModel.SettingsPanel.ShowEventDotsInTranscript
+            settingsObject("showSystemDotsInTranscript") = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
             settingsObject("theme") = _currentTheme
             settingsObject("density") = _currentDensity
             settingsObject("apiKeyMasked") = MaskSecret(_viewModel.SettingsPanel.ApiKey.Trim(), 4)
+            settingsObject("externalIdTokenMasked") = MaskSecret(_viewModel.SettingsPanel.ExternalIdToken.Trim(), 6)
             settingsObject("externalAccessTokenMasked") = MaskSecret(_viewModel.SettingsPanel.ExternalAccessToken.Trim(), 6)
-            settingsObject("externalAccountIdMasked") = MaskSecret(_viewModel.SettingsPanel.ExternalAccountId.Trim(), 4)
 
             Dim connectionObject As New JsonObject()
             connectionObject("isConnected") = _viewModel.SessionState.IsConnected
@@ -3286,9 +3367,20 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim transcriptPanel = If(_viewModel, Nothing)?.TranscriptPanel
-            Dim hasVisibleTranscriptEntries = transcriptPanel IsNot Nothing AndAlso
-                                            transcriptPanel.Items IsNot Nothing AndAlso
-                                            transcriptPanel.Items.Count > 0
+            Dim hasVisibleTranscriptEntries = False
+            If transcriptPanel IsNot Nothing AndAlso transcriptPanel.Items IsNot Nothing Then
+                For Each entry In transcriptPanel.Items
+                    Dim transcriptEntry = TryCast(entry, ViewModels.Transcript.TranscriptEntryViewModel)
+                    If transcriptEntry Is Nothing Then
+                        Continue For
+                    End If
+
+                    If transcriptEntry.RowVisibility = Visibility.Visible Then
+                        hasVisibleTranscriptEntries = True
+                        Exit For
+                    End If
+                Next
+            End If
             Dim transcriptLoading = transcriptPanel IsNot Nothing AndAlso
                                     transcriptPanel.LoadingOverlayVisibility = Visibility.Visible
             Dim noThreadSelected = String.IsNullOrWhiteSpace(_currentThreadId)

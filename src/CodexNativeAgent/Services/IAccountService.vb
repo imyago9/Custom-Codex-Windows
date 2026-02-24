@@ -19,9 +19,8 @@ Namespace CodexNativeAgent.Services
 
         Function LogoutAsync(cancellationToken As CancellationToken) As Task
 
-        Function StartExternalTokenLoginAsync(accessToken As String,
-                                              accountId As String,
-                                              planType As String,
+        Function StartExternalTokenLoginAsync(idToken As String,
+                                              accessToken As String,
                                               cancellationToken As CancellationToken) As Task
     End Interface
 End Namespace

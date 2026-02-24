@@ -1,6 +1,5 @@
 Imports System.Collections.Generic
 Imports System.IO
-Imports System.Text
 Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports System.Threading.Tasks
@@ -10,7 +9,6 @@ Imports System.Windows.Input
 Imports System.Windows.Media
 Imports CodexNativeAgent.Services
 Imports CodexNativeAgent.Ui.Coordinators
-Imports CodexNativeAgent.Ui.ViewModels.Transcript
 Imports CodexNativeAgent.Ui.ViewModels.Threads
 
 Namespace CodexNativeAgent.Ui
@@ -34,17 +32,13 @@ Namespace CodexNativeAgent.Ui
         Private NotInheritable Class ThreadSelectionLoadPayload
             Public Property ThreadObject As JsonObject
             Public Property HasTurns As Boolean
-            Public Property TranscriptSnapshot As ThreadTranscriptSnapshotData
-        End Class
-
-        Private NotInheritable Class ThreadTranscriptSnapshotData
-            Public Property RawText As String = String.Empty
-            Public ReadOnly Property DisplayEntries As New List(Of TranscriptEntryDescriptor)()
+            Public Property TranscriptSnapshot As ThreadTranscriptSnapshot
         End Class
 
         Private Function StartThreadAsync() As Task
             CancelActiveThreadSelectionLoad()
             ResetThreadSelectionLoadUiState(hideTranscriptLoader:=True)
+            ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
             _currentThreadId = String.Empty
             _currentTurnId = String.Empty
@@ -192,21 +186,56 @@ Namespace CodexNativeAgent.Ui
             Return request
         End Function
 
+        Private Async Function ResumeThreadForSelectionAsync(threadId As String,
+                                                             cancellationToken As CancellationToken) As Task(Of JsonObject)
+            Return Await _threadService.ResumeThreadAsync(threadId,
+                                                          New ThreadRequestOptions(),
+                                                          cancellationToken).ConfigureAwait(False)
+        End Function
+
+        Private Async Function ReadThreadForSelectionAsync(threadId As String,
+                                                           cancellationToken As CancellationToken) As Task(Of JsonObject)
+            Return Await _threadService.ReadThreadAsync(threadId,
+                                                        includeTurns:=True,
+                                                        cancellationToken:=cancellationToken).ConfigureAwait(False)
+        End Function
+
+        Private Async Function LoadThreadObjectForSelectionAsync(threadId As String,
+                                                                 cancellationToken As CancellationToken) As Task(Of JsonObject)
+            Dim resumedThread = Await ResumeThreadForSelectionAsync(threadId, cancellationToken).ConfigureAwait(False)
+            If ThreadObjectHasTurns(resumedThread) Then
+                Return resumedThread
+            End If
+
+            Return Await ReadThreadForSelectionAsync(threadId, cancellationToken).ConfigureAwait(False)
+        End Function
+
         Private Async Function LoadThreadSelectionPayloadAsync(threadId As String,
                                                                cancellationToken As CancellationToken) As Task(Of ThreadSelectionLoadPayload)
-            Dim threadObject = Await _threadService.ResumeThreadAsync(threadId,
-                                                                      New ThreadRequestOptions(),
-                                                                      cancellationToken).ConfigureAwait(False)
-            If Not ThreadObjectHasTurns(threadObject) Then
-                threadObject = Await _threadService.ReadThreadAsync(threadId,
-                                                                    includeTurns:=True,
-                                                                    cancellationToken:=cancellationToken).ConfigureAwait(False)
-            End If
+            ' Build the historical snapshot from thread/read before resume loads the thread and may lock the rollout JSONL.
+            Dim snapshotSourceThread = Await ReadThreadForSelectionAsync(threadId, cancellationToken).ConfigureAwait(False)
             cancellationToken.ThrowIfCancellationRequested()
 
-            Dim hasTurns = ThreadObjectHasTurns(threadObject)
-            Dim transcriptSnapshot = Await Task.Run(Function() BuildThreadTranscriptSnapshot(threadObject), cancellationToken).ConfigureAwait(False)
+            Dim hasTurns = ThreadObjectHasTurns(snapshotSourceThread)
+            Dim transcriptSnapshot As ThreadTranscriptSnapshot = Nothing
+            If hasTurns Then
+                transcriptSnapshot = Await Task.Run(Function() BuildThreadTranscriptSnapshot(snapshotSourceThread), cancellationToken).ConfigureAwait(False)
+                cancellationToken.ThrowIfCancellationRequested()
+            Else
+                transcriptSnapshot = New ThreadTranscriptSnapshot()
+            End If
+
+            Dim threadObject = Await ResumeThreadForSelectionAsync(threadId, cancellationToken).ConfigureAwait(False)
             cancellationToken.ThrowIfCancellationRequested()
+
+            If threadObject Is Nothing Then
+                threadObject = snapshotSourceThread
+            End If
+
+            If Not ThreadObjectHasTurns(threadObject) AndAlso hasTurns Then
+                ' Keep the snapshot source thread object as a fallback if resume omits turns.
+                threadObject = snapshotSourceThread
+            End If
 
             Return New ThreadSelectionLoadPayload() With {
                 .ThreadObject = threadObject,
@@ -1121,44 +1150,30 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub RenderThreadObject(threadObject As JsonObject)
-            _viewModel.TranscriptPanel.ClearTranscript()
-
-            Dim turns = GetPropertyArray(threadObject, "turns")
-            If turns Is Nothing OrElse turns.Count = 0 Then
-                AppendSystemMessage("No historical turns loaded for this thread.")
-                Return
-            End If
-
-            For Each turnNode In turns
-                Dim turnObject = AsObject(turnNode)
-                If turnObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim items = GetPropertyArray(turnObject, "items")
-                If items Is Nothing Then
-                    Continue For
-                End If
-
-                For Each itemNode In items
-                    Dim itemObject = AsObject(itemNode)
-                    If itemObject IsNot Nothing Then
-                        RenderItem(itemObject)
-                    End If
-                Next
-            Next
-
-            ScrollTranscriptToBottom()
+            Dim hasTurns = ThreadObjectHasTurns(threadObject)
+            Dim snapshot = BuildThreadTranscriptSnapshot(threadObject)
+            ApplyThreadTranscriptSnapshot(snapshot, hasTurns)
         End Sub
 
-        Private Sub ApplyThreadTranscriptSnapshot(transcriptSnapshot As ThreadTranscriptSnapshotData, hasTurns As Boolean)
+        Private Sub ApplyThreadTranscriptSnapshot(transcriptSnapshot As ThreadTranscriptSnapshot, hasTurns As Boolean)
+            ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
             If Not hasTurns Then
                 AppendSystemMessage("No historical turns loaded for this thread.")
                 Return
             End If
 
-            Dim snapshot = If(transcriptSnapshot, New ThreadTranscriptSnapshotData())
+            Dim snapshot = If(transcriptSnapshot, New ThreadTranscriptSnapshot())
+            MergeSnapshotAssistantPhaseHints(snapshot.AssistantPhaseHintsByItemKey)
+            If snapshot.DebugMessages.Count > 0 Then
+                For Each message In snapshot.DebugMessages
+                    If String.IsNullOrWhiteSpace(message) Then
+                        Continue For
+                    End If
+
+                    AppendProtocol("debug", message)
+                Next
+            End If
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
             _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(snapshot.DisplayEntries)
             ScrollTranscriptToBottom()
@@ -1169,216 +1184,62 @@ Namespace CodexNativeAgent.Ui
             Return turns IsNot Nothing AndAlso turns.Count > 0
         End Function
 
-        Private Shared Function BuildThreadTranscriptSnapshot(threadObject As JsonObject) As ThreadTranscriptSnapshotData
-            Dim snapshot As New ThreadTranscriptSnapshotData()
-            Dim turns = GetPropertyArray(threadObject, "turns")
-            If turns Is Nothing OrElse turns.Count = 0 Then
-                Return snapshot
+        Private Function BuildThreadTranscriptSnapshot(threadObject As JsonObject) As ThreadTranscriptSnapshot
+            Dim assistantPhaseHintLookup = CreateSnapshotAssistantPhaseHintLookupCopy()
+            Return ThreadTranscriptSnapshotBuilder.BuildFromThread(threadObject, assistantPhaseHintLookup)
+        End Function
+
+        Private Function CreateSnapshotAssistantPhaseHintLookupCopy() As Dictionary(Of String, String)
+            SyncLock _snapshotAssistantPhaseHintsLock
+                Return New Dictionary(Of String, String)(_snapshotAssistantPhaseHintsByItemKey, StringComparer.Ordinal)
+            End SyncLock
+        End Function
+
+        Private Sub MergeSnapshotAssistantPhaseHints(hints As IReadOnlyDictionary(Of String, String))
+            If hints Is Nothing OrElse hints.Count = 0 Then
+                Return
             End If
 
-            Dim builder As New StringBuilder()
-            For Each turnNode In turns
-                Dim turnObject = AsObject(turnNode)
-                If turnObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim items = GetPropertyArray(turnObject, "items")
-                If items Is Nothing Then
-                    Continue For
-                End If
-
-                For Each itemNode In items
-                    Dim itemObject = AsObject(itemNode)
-                    If itemObject IsNot Nothing Then
-                        AppendSnapshotItem(builder, snapshot.DisplayEntries, itemObject)
+            SyncLock _snapshotAssistantPhaseHintsLock
+                For Each pair In hints
+                    Dim key = If(pair.Key, String.Empty).Trim()
+                    Dim phase = If(pair.Value, String.Empty).Trim()
+                    If String.IsNullOrWhiteSpace(key) OrElse String.IsNullOrWhiteSpace(phase) Then
+                        Continue For
                     End If
+
+                    _snapshotAssistantPhaseHintsByItemKey(key) = phase
                 Next
-            Next
-
-            snapshot.RawText = builder.ToString().TrimEnd()
-            Return snapshot
-        End Function
-
-        Private Shared Sub AppendSnapshotItem(builder As StringBuilder,
-                                              entries As IList(Of TranscriptEntryDescriptor),
-                                              itemObject As JsonObject)
-            Dim itemType = GetPropertyString(itemObject, "type")
-
-            Select Case itemType
-                Case "userMessage"
-                    Dim content = GetPropertyArray(itemObject, "content")
-                    Dim text = FlattenUserInput(content)
-                    AppendSnapshotLine(builder, "user", text)
-                    AddSnapshotDescriptor(entries, "user", "You", text)
-
-                Case "agentMessage"
-                    Dim text = GetPropertyString(itemObject, "text")
-                    AppendSnapshotLine(builder, "assistant", text)
-                    If IsCommentaryAgentMessage(itemObject) Then
-                        If entries IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(text) Then
-                            entries.Add(New TranscriptEntryDescriptor() With {
-                                .Kind = "reasoning",
-                                .RoleText = "Reasoning",
-                                .BodyText = text,
-                                .DetailsText = String.Empty,
-                                .IsMuted = True,
-                                .IsReasoning = True
-                            })
-                        End If
-                    Else
-                        AddSnapshotDescriptor(entries, "assistant", "Codex", text)
-                    End If
-
-                Case "plan"
-                    Dim text = GetPropertyString(itemObject, "text")
-                    AppendSnapshotLine(builder, "plan", text)
-                    AddSnapshotDescriptor(entries, "plan", "Plan", text)
-
-                Case "reasoning"
-                    Dim text = ExtractReasoningText(itemObject)
-                    If Not String.IsNullOrWhiteSpace(text) Then
-                        AppendSnapshotLine(builder, "reasoning", text)
-                        If entries IsNot Nothing Then
-                            entries.Add(New TranscriptEntryDescriptor() With {
-                                .Kind = "reasoning",
-                                .RoleText = "Reasoning",
-                                .BodyText = text,
-                                .DetailsText = text,
-                                .IsMuted = True,
-                                .IsReasoning = True
-                            })
-                        End If
-                    End If
-
-                Case "commandExecution"
-                    Dim command = GetPropertyString(itemObject, "command")
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim output = GetPropertyString(itemObject, "aggregatedOutput")
-                    Dim summary As New StringBuilder()
-                    summary.AppendLine($"Command ({status}): {command}")
-                    If Not String.IsNullOrWhiteSpace(output) Then
-                        summary.AppendLine(output)
-                    End If
-                    AppendSnapshotLine(builder, "command", summary.ToString().TrimEnd())
-                    If entries IsNot Nothing Then
-                        entries.Add(New TranscriptEntryDescriptor() With {
-                            .Kind = "command",
-                            .RoleText = "Command",
-                            .BodyText = If(String.IsNullOrWhiteSpace(command), "(command)", command),
-                            .SecondaryText = If(String.IsNullOrWhiteSpace(status), String.Empty, $"status: {status}"),
-                            .DetailsText = If(output, String.Empty).Trim(),
-                            .IsCommandLike = True
-                        })
-                    End If
-
-                Case "fileChange"
-                    Dim status = GetPropertyString(itemObject, "status")
-                    Dim changes = GetPropertyArray(itemObject, "changes")
-                    Dim count = If(changes Is Nothing, 0, changes.Count)
-                    Dim lineStats = BuildFileChangeLineStats(changes)
-                    AppendSnapshotLine(builder, "fileChange", $"{count} change(s), status={status}")
-                    If entries IsNot Nothing Then
-                        entries.Add(New TranscriptEntryDescriptor() With {
-                            .Kind = "fileChange",
-                            .RoleText = "Files",
-                            .BodyText = $"{count} change(s){If(String.IsNullOrWhiteSpace(status), String.Empty, $" ({status})")}",
-                            .DetailsText = BuildSnapshotFileChangeDetails(changes),
-                            .AddedLineCount = lineStats.AddedLineCount,
-                            .RemovedLineCount = lineStats.RemovedLineCount
-                        })
-                    End If
-
-                Case Else
-                    Dim itemId = GetPropertyString(itemObject, "id")
-                    AppendSnapshotLine(builder, "item", $"{itemType} ({itemId})")
-                    If entries IsNot Nothing Then
-                        entries.Add(New TranscriptEntryDescriptor() With {
-                            .Kind = "event",
-                            .RoleText = "Item",
-                            .BodyText = $"{itemType} ({itemId})",
-                            .IsMuted = True
-                        })
-                    End If
-            End Select
+            End SyncLock
         End Sub
 
-        Private Shared Sub AddSnapshotDescriptor(entries As IList(Of TranscriptEntryDescriptor),
-                                                 kind As String,
-                                                 roleText As String,
-                                                 bodyText As String)
-            If entries Is Nothing OrElse String.IsNullOrWhiteSpace(bodyText) Then
+        Private Sub CacheAssistantPhaseHintFromRuntimeItem(itemState As TurnItemRuntimeState)
+            If itemState Is Nothing Then
                 Return
             End If
 
-            entries.Add(New TranscriptEntryDescriptor() With {
-                .Kind = If(kind, String.Empty),
-                .RoleText = If(roleText, String.Empty),
-                .BodyText = bodyText
-            })
-        End Sub
-
-        Private Shared Function BuildSnapshotFileChangeDetails(changes As JsonArray) As String
-            If changes Is Nothing OrElse changes.Count = 0 Then
-                Return String.Empty
-            End If
-
-            Dim builder As New StringBuilder()
-            Dim shown = 0
-            For Each changeNode In changes
-                If shown >= 12 Then
-                    Exit For
-                End If
-
-                Dim changeObject = AsObject(changeNode)
-                If changeObject Is Nothing Then
-                    Continue For
-                End If
-
-                Dim path = GetPropertyString(changeObject, "path")
-                If String.IsNullOrWhiteSpace(path) Then
-                    path = GetPropertyString(changeObject, "file")
-                End If
-                If String.IsNullOrWhiteSpace(path) Then
-                    Continue For
-                End If
-
-                Dim status = GetPropertyString(changeObject, "status")
-                If String.IsNullOrWhiteSpace(status) Then
-                    builder.AppendLine(path)
-                Else
-                    builder.AppendLine($"{status}: {path}")
-                End If
-
-                shown += 1
-            Next
-
-            If builder.Length = 0 Then
-                Return String.Empty
-            End If
-
-            If changes.Count > shown Then
-                builder.Append("... +")
-                builder.Append(changes.Count - shown)
-                builder.Append(" more")
-            End If
-
-            Return builder.ToString().TrimEnd()
-        End Function
-
-        Private Shared Sub AppendSnapshotLine(builder As StringBuilder, role As String, text As String)
-            If String.IsNullOrWhiteSpace(text) Then
+            If Not StringComparer.OrdinalIgnoreCase.Equals(itemState.ItemType, "agentMessage") Then
                 Return
             End If
 
-            builder.Append("["c)
-            builder.Append(Date.Now.ToString("HH:mm:ss"))
-            builder.Append("] ")
-            builder.Append(role)
-            builder.Append(": ")
-            builder.Append(text)
-            builder.AppendLine()
-            builder.AppendLine()
+            Dim phase = If(itemState.AgentMessagePhase, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(phase) Then
+                Return
+            End If
+
+            Dim threadId = If(itemState.ThreadId, String.Empty).Trim()
+            Dim turnId = If(itemState.TurnId, String.Empty).Trim()
+            Dim itemId = If(itemState.ItemId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(threadId) OrElse
+               String.IsNullOrWhiteSpace(turnId) OrElse
+               String.IsNullOrWhiteSpace(itemId) Then
+                Return
+            End If
+
+            Dim key = $"{threadId}:{turnId}:{itemId}"
+            SyncLock _snapshotAssistantPhaseHintsLock
+                _snapshotAssistantPhaseHintsByItemKey(key) = phase
+            End SyncLock
         End Sub
 
         Private Sub ApplyCurrentThreadFromThreadObject(threadObject As JsonObject,
@@ -1401,6 +1262,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _currentTurnId = String.Empty
+            SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=False)
             UpdateThreadTurnLabels()
             RefreshControlStates()
         End Sub

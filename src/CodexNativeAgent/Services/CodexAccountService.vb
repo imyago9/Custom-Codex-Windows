@@ -85,18 +85,13 @@ Namespace CodexNativeAgent.Services
                                                    cancellationToken:=cancellationToken)
         End Function
 
-        Public Async Function StartExternalTokenLoginAsync(accessToken As String,
-                                                           accountId As String,
-                                                           planType As String,
+        Public Async Function StartExternalTokenLoginAsync(idToken As String,
+                                                           accessToken As String,
                                                            cancellationToken As CancellationToken) As Task Implements IAccountService.StartExternalTokenLoginAsync
             Dim paramsNode As New JsonObject()
             paramsNode("type") = "chatgptAuthTokens"
+            paramsNode("idToken") = idToken
             paramsNode("accessToken") = accessToken
-            paramsNode("chatgptAccountId") = accountId
-
-            If Not String.IsNullOrWhiteSpace(planType) Then
-                paramsNode("chatgptPlanType") = planType
-            End If
 
             Await CurrentClient().SendRequestAsync("account/login/start",
                                                    paramsNode,

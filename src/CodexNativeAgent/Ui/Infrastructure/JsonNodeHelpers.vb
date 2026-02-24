@@ -83,43 +83,6 @@ Namespace CodexNativeAgent.Ui
             Return fallback
         End Function
 
-        Friend Function GetAgentMessageChannel(itemObject As JsonObject) As String
-            If itemObject Is Nothing Then
-                Return String.Empty
-            End If
-
-            Dim directChannel = GetPropertyString(itemObject, "channel")
-            If Not String.IsNullOrWhiteSpace(directChannel) Then
-                Return directChannel.Trim()
-            End If
-
-            Dim nestedChannelNode = GetNestedProperty(itemObject, "metadata", "channel")
-            If nestedChannelNode Is Nothing Then
-                nestedChannelNode = GetNestedProperty(itemObject, "meta", "channel")
-            End If
-
-            If nestedChannelNode Is Nothing Then
-                Return String.Empty
-            End If
-
-            Dim nestedChannel As String = Nothing
-            If TryGetStringValue(nestedChannelNode, nestedChannel) Then
-                Return If(nestedChannel, String.Empty).Trim()
-            End If
-
-            Return String.Empty
-        End Function
-
-        Friend Function IsCommentaryAgentMessage(itemObject As JsonObject) As Boolean
-            Dim channel = GetAgentMessageChannel(itemObject)
-            If String.IsNullOrWhiteSpace(channel) Then
-                Return False
-            End If
-
-            Return StringComparer.OrdinalIgnoreCase.Equals(channel, "commentary") OrElse
-                   StringComparer.OrdinalIgnoreCase.Equals(channel, "comment")
-        End Function
-
         Friend Function GetNestedProperty(obj As JsonObject, ParamArray path() As String) As JsonNode
             If obj Is Nothing OrElse path Is Nothing OrElse path.Length = 0 Then
                 Return Nothing
