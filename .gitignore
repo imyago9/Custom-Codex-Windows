@@ -31,6 +31,9 @@ tmp/
 tmpbuild/
 artifacts/
 tests/
+ce-main/
+cm-main/
+.testout/
 *.tmp
 *.temp
 *.cache
