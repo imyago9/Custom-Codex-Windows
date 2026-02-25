@@ -28,6 +28,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
         Public Property ScopedItemKey As String = String.Empty
         Public Property ThreadId As String = String.Empty
         Public Property TurnId As String = String.Empty
+        Public Property TurnItemOrderIndex As Integer?
         Public Property ItemId As String = String.Empty
         Public Property ItemType As String = String.Empty
         Public Property Status As String = String.Empty

@@ -903,6 +903,28 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return -1
             End If
 
+            If descriptor.TurnItemOrderIndex.HasValue Then
+                Dim targetOrderIndex = descriptor.TurnItemOrderIndex.Value
+                For i = 0 To _items.Count - 1
+                    Dim candidate = _items(i)
+                    If candidate Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                        Continue For
+                    End If
+
+                    If Not candidate.TurnItemOrderIndex.HasValue Then
+                        Continue For
+                    End If
+
+                    If candidate.TurnItemOrderIndex.Value > targetOrderIndex Then
+                        Return i
+                    End If
+                Next
+            End If
+
             For i = _items.Count - 1 To 0 Step -1
                 Dim candidate = _items(i)
                 If candidate Is Nothing Then
@@ -1113,6 +1135,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Dim descriptor As New TranscriptEntryDescriptor() With {
                 .ThreadId = If(itemState.ThreadId, String.Empty).Trim(),
                 .TurnId = If(itemState.TurnId, String.Empty).Trim(),
+                .TurnItemOrderIndex = itemState.TurnItemOrderIndex,
                 .TimestampText = If(timestampText, String.Empty)
             }
 
@@ -2702,6 +2725,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .RuntimeKey = If(descriptor.RuntimeKey, String.Empty),
                 .ThreadId = If(descriptor.ThreadId, String.Empty),
                 .TurnId = If(descriptor.TurnId, String.Empty),
+                .TurnItemOrderIndex = descriptor.TurnItemOrderIndex,
                 .TimestampText = If(descriptor.TimestampText, String.Empty),
                 .RoleText = If(descriptor.RoleText, String.Empty),
                 .BodyText = If(descriptor.BodyText, String.Empty),

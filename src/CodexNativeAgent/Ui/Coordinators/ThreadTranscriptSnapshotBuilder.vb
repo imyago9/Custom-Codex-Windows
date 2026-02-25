@@ -196,6 +196,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 Dim turnHasFileChange = TurnContainsFileChangeItem(runtimeStore, itemOrder)
                 Dim lastFileChangeRuntimeKey As String = String.Empty
                 Dim insertedTurnStartSection = False
+                Dim turnItemOrderIndex = 0
                 If itemOrder IsNot Nothing Then
                     For Each itemId In itemOrder
                         If String.IsNullOrWhiteSpace(itemId) Then
@@ -207,6 +208,12 @@ Namespace CodexNativeAgent.Ui.Coordinators
                         End If
 
                         Dim itemState = runtimeStore.ItemsById(itemId)
+                        If itemState Is Nothing Then
+                            Continue For
+                        End If
+
+                        itemState.TurnItemOrderIndex = turnItemOrderIndex
+                        turnItemOrderIndex += 1
                         Dim descriptor = TranscriptPanelViewModel.BuildRuntimeItemDescriptorForSnapshot(itemState)
                         If descriptor Is Nothing Then
                             Continue For

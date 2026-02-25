@@ -1324,6 +1324,7 @@ Namespace CodexNativeAgent.Ui
 
                 Dim replayCompletedTurnRuntimeOnly = turn.IsCompleted
                 Dim orderedTurnItems As IReadOnlyList(Of TurnItemRuntimeState) = runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
+                AssignTurnItemOrderIndexes(orderedTurnItems)
                 If replayCompletedTurnRuntimeOnly Then
                     orderedTurnItems = OrderCompletedTurnRuntimeOnlyReplayItems(orderedTurnItems)
                 End If
@@ -1448,6 +1449,21 @@ Namespace CodexNativeAgent.Ui
                     Return False
             End Select
         End Function
+
+        Private Shared Sub AssignTurnItemOrderIndexes(items As IReadOnlyList(Of TurnItemRuntimeState))
+            If items Is Nothing Then
+                Return
+            End If
+
+            For i = 0 To items.Count - 1
+                Dim item = items(i)
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                item.TurnItemOrderIndex = i
+            Next
+        End Sub
 
         Private Shared Function OrderCompletedTurnRuntimeOnlyReplayItems(items As IReadOnlyList(Of TurnItemRuntimeState)) As IReadOnlyList(Of TurnItemRuntimeState)
             If items Is Nothing OrElse items.Count <= 1 Then
