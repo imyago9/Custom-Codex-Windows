@@ -259,6 +259,32 @@
                                         <Setter Property="FontFamily" Value="{Binding BodyFontFamily}" />
                                         <Setter Property="LineHeight" Value="20" />
                                     </Style>
+                                    <Style x:Key="TranscriptSelectableTextBoxStyle" TargetType="TextBox">
+                                        <Setter Property="IsReadOnly" Value="True" />
+                                        <Setter Property="IsReadOnlyCaretVisible" Value="False" />
+                                        <Setter Property="IsTabStop" Value="False" />
+                                        <Setter Property="AcceptsReturn" Value="True" />
+                                        <Setter Property="TextWrapping" Value="Wrap" />
+                                        <Setter Property="SpellCheck.IsEnabled" Value="False" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0" />
+                                        <Setter Property="MinWidth" Value="0" />
+                                        <Setter Property="MinHeight" Value="0" />
+                                        <Setter Property="VerticalContentAlignment" Value="Top" />
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                        <Setter Property="Cursor" Value="IBeam" />
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
+                                        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+                                    </Style>
+                                    <Style x:Key="TranscriptSelectableBodyTextBoxStyle"
+                                           TargetType="TextBox"
+                                           BasedOn="{StaticResource TranscriptSelectableTextBoxStyle}">
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                        <Setter Property="FontFamily" Value="{Binding BodyFontFamily}" />
+                                    </Style>
                                 </ListBox.Resources>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
@@ -276,33 +302,43 @@
                                                         BorderThickness="1">
                                                     <StackPanel>
                                                         <DockPanel LastChildFill="False" Margin="0,0,0,5">
-                                                            <TextBlock Text="{Binding TimestampText}"
-                                                                       DockPanel.Dock="Right"
-                                                                       Visibility="{Binding TimestampVisibility}"
-                                                                       Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                       FontSize="11" />
+                                                            <TextBox Text="{Binding TimestampText}"
+                                                                     Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                     DockPanel.Dock="Right"
+                                                                     Visibility="{Binding TimestampVisibility}"
+                                                                     Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                     FontSize="11"
+                                                                     AcceptsReturn="False"
+                                                                     TextWrapping="NoWrap" />
                                                             <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="{Binding RoleText}"
-                                                                           Visibility="{Binding RoleVisibility}"
-                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                           FontSize="11"
-                                                                           FontWeight="SemiBold"
-                                                                           Margin="0,0,6,0" />
-                                                                <TextBlock Text="{Binding StreamingIndicatorText}"
-                                                                           Visibility="{Binding StreamingIndicatorVisibility}"
-                                                                           Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                           FontSize="11" />
+                                                                <TextBox Text="{Binding RoleText}"
+                                                                         Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                         Visibility="{Binding RoleVisibility}"
+                                                                         Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                         FontSize="11"
+                                                                         FontWeight="SemiBold"
+                                                                         Margin="0,0,6,0"
+                                                                         AcceptsReturn="False"
+                                                                         TextWrapping="NoWrap" />
+                                                                <TextBox Text="{Binding StreamingIndicatorText}"
+                                                                         Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                         Visibility="{Binding StreamingIndicatorVisibility}"
+                                                                         Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                         FontSize="11"
+                                                                         AcceptsReturn="False"
+                                                                         TextWrapping="NoWrap" />
                                                             </StackPanel>
                                                         </DockPanel>
 
-                                                        <TextBlock Text="{Binding BodyText}"
-                                                                   Style="{StaticResource TranscriptBodyTextStyle}" />
+                                                        <TextBox Text="{Binding BodyText}"
+                                                                 Style="{StaticResource TranscriptSelectableBodyTextBoxStyle}" />
 
-                                                        <TextBlock Text="{Binding SecondaryText}"
-                                                                   Visibility="{Binding SecondaryVisibility}"
-                                                                   Margin="0,5,0,0"
-                                                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                   FontSize="11.5" />
+                                                        <TextBox Text="{Binding SecondaryText}"
+                                                                 Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                 Visibility="{Binding SecondaryVisibility}"
+                                                                 Margin="0,5,0,0"
+                                                                 Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                 FontSize="11.5" />
 
                                                         <Border x:Name="BubbleDetailsChrome"
                                                                 Visibility="{Binding DetailsVisibility}"
@@ -312,11 +348,10 @@
                                                                 BorderBrush="{DynamicResource BorderBrush}"
                                                                 BorderThickness="1"
                                                                 CornerRadius="10">
-                                                            <TextBlock Text="{Binding DetailsText}"
-                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                       FontFamily="{Binding DetailsFontFamily}"
-                                                                       TextWrapping="Wrap"
-                                                                       LineHeight="18" />
+                                                            <TextBox Text="{Binding DetailsText}"
+                                                                     Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                     FontFamily="{Binding DetailsFontFamily}" />
                                                         </Border>
                                                     </StackPanel>
                                                 </Border>
@@ -355,40 +390,74 @@
                                                         MaxWidth="860"
                                                         HorizontalAlignment="Left">
                                                     <StackPanel>
-                                                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
-                                                            <TextBlock Text="{Binding TimestampText}"
-                                                                       DockPanel.Dock="Right"
-                                                                       Visibility="{Binding TimestampVisibility}"
-                                                                       Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                       FontSize="11" />
+                                                        <DockPanel LastChildFill="True" Margin="0,0,0,4">
+                                                            <TextBox Text="{Binding TimestampText}"
+                                                                     Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                     DockPanel.Dock="Right"
+                                                                     Visibility="{Binding TimestampVisibility}"
+                                                                     Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                     FontSize="11"
+                                                                     AcceptsReturn="False"
+                                                                     TextWrapping="NoWrap" />
                                                             <StackPanel Orientation="Horizontal"
                                                                         DockPanel.Dock="Right"
                                                                         Margin="0,0,8,0"
                                                                         Visibility="{Binding ChangeStatsVisibility}">
-                                                                <TextBlock Text="{Binding AddedLinesText}"
-                                                                           Visibility="{Binding AddedLinesVisibility}"
-                                                                           Foreground="{DynamicResource SuccessBrush}"
-                                                                           FontSize="11"
-                                                                           FontWeight="SemiBold"
-                                                                           Margin="0,0,8,0" />
-                                                                <TextBlock Text="{Binding RemovedLinesText}"
-                                                                           Visibility="{Binding RemovedLinesVisibility}"
-                                                                           Foreground="{DynamicResource DangerBrush}"
-                                                                           FontSize="11"
-                                                                           FontWeight="SemiBold" />
+                                                                <TextBox Text="{Binding AddedLinesText}"
+                                                                         Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                         Visibility="{Binding AddedLinesVisibility}"
+                                                                         Foreground="{DynamicResource SuccessBrush}"
+                                                                         FontSize="11"
+                                                                         FontWeight="SemiBold"
+                                                                         Margin="0,0,8,0"
+                                                                         AcceptsReturn="False"
+                                                                         TextWrapping="NoWrap" />
+                                                                <TextBox Text="{Binding RemovedLinesText}"
+                                                                         Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                         Visibility="{Binding RemovedLinesVisibility}"
+                                                                         Foreground="{DynamicResource DangerBrush}"
+                                                                         FontSize="11"
+                                                                         FontWeight="SemiBold"
+                                                                         AcceptsReturn="False"
+                                                                         TextWrapping="NoWrap" />
                                                             </StackPanel>
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="{Binding RoleText}"
-                                                                           Visibility="{Binding RoleVisibility}"
-                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                           FontSize="11"
-                                                                           FontWeight="SemiBold"
-                                                                           Margin="0,0,6,0" />
-                                                                <TextBlock Text="{Binding StreamingIndicatorText}"
-                                                                           Visibility="{Binding StreamingIndicatorVisibility}"
-                                                                           Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                           FontSize="11" />
-                                                            </StackPanel>
+                                                            <Grid x:Name="ActivityHeaderTextRow">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <TextBox x:Name="ActivityRoleText"
+                                                                         Grid.Column="0"
+                                                                         Text="{Binding RoleText}"
+                                                                         Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                         Visibility="{Binding RoleVisibility}"
+                                                                         Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                         FontSize="11"
+                                                                         FontWeight="SemiBold"
+                                                                         Margin="0,0,6,0"
+                                                                         AcceptsReturn="False"
+                                                                         TextWrapping="NoWrap" />
+
+                                                                <TextBox x:Name="ActivityInlineBodyText"
+                                                                         Grid.Column="1"
+                                                                         Text="{Binding BodyText}"
+                                                                         Style="{StaticResource TranscriptSelectableBodyTextBoxStyle}"
+                                                                         Visibility="Collapsed"
+                                                                         Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                         Margin="0,0,6,0" />
+
+                                                                <TextBox x:Name="ActivityStreamingText"
+                                                                         Grid.Column="2"
+                                                                         Text="{Binding StreamingIndicatorText}"
+                                                                         Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                         Visibility="{Binding StreamingIndicatorVisibility}"
+                                                                         Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                         FontSize="11"
+                                                                         AcceptsReturn="False"
+                                                                         TextWrapping="NoWrap" />
+                                                            </Grid>
                                                         </DockPanel>
 
                                                         <Border x:Name="ActivityBodyChip"
@@ -397,16 +466,17 @@
                                                                 Background="{DynamicResource SurfaceMutedBrush}"
                                                                 BorderBrush="{DynamicResource BorderBrush}"
                                                                 BorderThickness="1">
-                                                            <TextBlock Text="{Binding BodyText}"
-                                                                       Style="{StaticResource TranscriptBodyTextStyle}"
-                                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                            <TextBox Text="{Binding BodyText}"
+                                                                     Style="{StaticResource TranscriptSelectableBodyTextBoxStyle}"
+                                                                     Foreground="{DynamicResource TextSecondaryBrush}" />
                                                         </Border>
 
-                                                        <TextBlock Text="{Binding SecondaryText}"
-                                                                   Visibility="{Binding SecondaryVisibility}"
-                                                                   Margin="0,5,0,0"
-                                                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                   FontSize="11.5" />
+                                                        <TextBox Text="{Binding SecondaryText}"
+                                                                 Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                 Visibility="{Binding SecondaryVisibility}"
+                                                                 Margin="0,5,0,0"
+                                                                 Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                 FontSize="11.5" />
 
                                                         <Button Visibility="{Binding DetailsToggleVisibility}"
                                                                 Command="{Binding ToggleDetailsCommand}"
@@ -428,11 +498,10 @@
                                                                 BorderBrush="{DynamicResource BorderBrush}"
                                                                 BorderThickness="1"
                                                                 CornerRadius="10">
-                                                            <TextBlock Text="{Binding DetailsText}"
-                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                       FontFamily="{Binding DetailsFontFamily}"
-                                                                       TextWrapping="Wrap"
-                                                                       LineHeight="18" />
+                                                            <TextBox Text="{Binding DetailsText}"
+                                                                     Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                                     Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                     FontFamily="{Binding DetailsFontFamily}" />
                                                         </Border>
                                                     </StackPanel>
                                                 </Border>
@@ -486,9 +555,11 @@
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
                                                 <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="toolMcp">
@@ -597,9 +668,18 @@
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="assistantCommentary">
-                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-                                                <Setter TargetName="BubbleChrome" Property="Opacity" Value="0.9" />
+                                                <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityRoleText" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityInlineBodyText" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding RoleText}" Value="You">

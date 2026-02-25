@@ -865,18 +865,19 @@ Namespace CodexNativeAgent.Ui.ViewModels
                                              itemState.PlanStreamText)
 
                 Case "reasoning"
+                    Dim reasoningSummaryText = SanitizeReasoningCardDisplayText(itemState.ReasoningSummaryText)
+                    Dim reasoningContentText = SanitizeReasoningCardDisplayText(itemState.ReasoningContentText)
+
                     descriptor.Kind = "reasoningCard"
                     descriptor.RoleText = "Reasoning"
                     descriptor.IsMuted = True
                     descriptor.IsReasoning = True
                     descriptor.UseRawReasoningLayout = True
-                    descriptor.BodyText = If(String.IsNullOrWhiteSpace(itemState.ReasoningSummaryText),
+                    descriptor.BodyText = If(String.IsNullOrWhiteSpace(reasoningSummaryText),
                                              "Summary pending...",
-                                             itemState.ReasoningSummaryText)
-                    descriptor.SecondaryText = If(itemState.ReasoningSummaryParts.Count > 0,
-                                                  $"{itemState.ReasoningSummaryParts.Count.ToString(CultureInfo.InvariantCulture)} summary part(s)",
-                                                  String.Empty)
-                    descriptor.DetailsText = If(itemState.ReasoningContentText, String.Empty)
+                                             reasoningSummaryText)
+                    descriptor.SecondaryText = String.Empty
+                    descriptor.DetailsText = reasoningContentText
 
                 Case "commandexecution"
                     descriptor.Kind = "command"
@@ -1505,6 +1506,49 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             Return source
+        End Function
+
+        Private Shared Function SanitizeReasoningCardDisplayText(value As String) As String
+            Dim source = If(value, String.Empty)
+            If String.IsNullOrWhiteSpace(source) Then
+                Return String.Empty
+            End If
+
+            Dim normalized = source.Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.None)
+            For i = 0 To lines.Length - 1
+                lines(i) = SanitizeReasoningCardDisplayLine(lines(i))
+            Next
+
+            Return String.Join(vbLf, lines).Trim()
+        End Function
+
+        Private Shared Function SanitizeReasoningCardDisplayLine(value As String) As String
+            Dim working = If(value, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(working) Then
+                Return String.Empty
+            End If
+
+            ' Summary parts can arrive as "**...**" wrappers per line.
+            ' Remove markdown bold markers anywhere in the line, then trim bracket wrappers.
+            working = working.Replace("**", String.Empty, StringComparison.Ordinal)
+
+            Dim changed = True
+            Do While changed AndAlso working.Length > 0
+                changed = False
+
+                If working.StartsWith("[", StringComparison.Ordinal) Then
+                    working = working.Substring(1).TrimStart()
+                    changed = True
+                End If
+
+                If working.EndsWith("]", StringComparison.Ordinal) AndAlso working.Length >= 1 Then
+                    working = working.Substring(0, working.Length - 1).TrimEnd()
+                    changed = True
+                End If
+            Loop
+
+            Return working
         End Function
 
         Private Shared Function TryFlattenReasoningJsonPayload(value As String) As String
