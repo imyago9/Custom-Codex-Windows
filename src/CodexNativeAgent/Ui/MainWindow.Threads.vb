@@ -1250,6 +1250,110 @@ Namespace CodexNativeAgent.Ui
                                                       _currentTurnId)
         End Sub
 
+        Private Sub RebuildVisibleTranscriptForThread(threadId As String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim projection = _threadLiveSessionRegistry.GetProjectionSnapshot(normalizedThreadId)
+
+            ClearPendingUserEchoTracking()
+            _viewModel.TranscriptPanel.ClearTranscript()
+            _viewModel.TranscriptPanel.SetTranscriptSnapshot(projection.RawText)
+            _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(projection.DisplayEntries)
+
+            ApplyLiveRuntimeOverlayForThread(normalizedThreadId, _sessionNotificationCoordinator.RuntimeStore)
+
+            _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
+            _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
+            ScrollTranscriptToBottom()
+        End Sub
+
+        Private Sub ApplyLiveRuntimeOverlayForThread(threadId As String, runtimeStore As TurnFlowRuntimeStore)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse runtimeStore Is Nothing Then
+                Return
+            End If
+
+            Dim renderedScopedItemKeys As New HashSet(Of String)(StringComparer.Ordinal)
+
+            For Each turn In runtimeStore.GetOrderedTurnStatesForThread(normalizedThreadId)
+                If turn Is Nothing Then
+                    Continue For
+                End If
+
+                Dim turnThreadId = If(turn.ThreadId, normalizedThreadId).Trim()
+                Dim turnId = If(turn.TurnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(turnThreadId) OrElse String.IsNullOrWhiteSpace(turnId) Then
+                    Continue For
+                End If
+
+                ' Reconstruct explicit lifecycle ordering during rebuild.
+                AppendTurnLifecycleMarker(turnThreadId, turnId, "started")
+
+                If Not String.IsNullOrWhiteSpace(turn.PlanSummary) Then
+                    UpsertTurnMetadata(turnThreadId, turnId, "plan", turn.PlanSummary)
+                End If
+
+                If Not String.IsNullOrWhiteSpace(turn.DiffSummary) Then
+                    UpsertTurnMetadata(turnThreadId, turnId, "diff", turn.DiffSummary)
+                End If
+
+                For Each item In runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
+                    If item Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
+                    If String.IsNullOrWhiteSpace(scopedKey) OrElse Not renderedScopedItemKeys.Add(scopedKey) Then
+                        Continue For
+                    End If
+
+                    RenderItem(item)
+                Next
+
+                If turn.IsCompleted Then
+                    Dim finalStatus = If(String.IsNullOrWhiteSpace(turn.TurnStatus), "completed", turn.TurnStatus)
+                    AppendTurnLifecycleMarker(turnThreadId, turnId, finalStatus)
+                End If
+            Next
+
+            ' Fallback for items that may exist without a materialized turn state yet.
+            For Each item In EnumerateRuntimeItemsForThread(normalizedThreadId)
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(scopedKey) OrElse Not renderedScopedItemKeys.Add(scopedKey) Then
+                    Continue For
+                End If
+
+                RenderItem(item)
+            Next
+
+            Dim threadState = runtimeStore.GetThreadState(normalizedThreadId)
+            If threadState Is Nothing OrElse threadState.TokenUsage Is Nothing Then
+                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                Return
+            End If
+
+            Dim tokenTurnId = If(String.IsNullOrWhiteSpace(threadState.LatestTurnId),
+                                 runtimeStore.GetLatestTurnId(normalizedThreadId),
+                                 threadState.LatestTurnId)
+            UpdateTokenUsageWidget(normalizedThreadId, tokenTurnId, threadState.TokenUsage)
+        End Sub
+
+        Private Function EnumerateRuntimeItemsForThread(threadId As String) As IReadOnlyList(Of TurnItemRuntimeState)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return New List(Of TurnItemRuntimeState)()
+            End If
+
+            Return _sessionNotificationCoordinator.RuntimeStore.GetOrderedRuntimeItemsForThread(normalizedThreadId)
+        End Function
+
         Private Shared Function ThreadObjectHasTurns(threadObject As JsonObject) As Boolean
             Dim turns = GetPropertyArray(threadObject, "turns")
             Return turns IsNot Nothing AndAlso turns.Count > 0
