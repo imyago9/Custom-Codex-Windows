@@ -1248,6 +1248,19 @@ Namespace CodexNativeAgent.Ui
 
             Dim snapshot = If(transcriptSnapshot, New ThreadTranscriptSnapshot())
             MergeSnapshotAssistantPhaseHints(snapshot.AssistantPhaseHintsByItemKey)
+
+            Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
+            If runtimeStore IsNot Nothing AndAlso runtimeStore.HasActiveTurn(normalizedThreadId) Then
+                Dim existingState As ThreadLiveSessionState = Nothing
+                If _threadLiveSessionRegistry.TryGet(normalizedThreadId, existingState) AndAlso
+                   existingState IsNot Nothing AndAlso
+                   existingState.HasLoadedHistoricalSnapshot Then
+                    ' Preserve the last stable historical snapshot while the active turn is in-flight.
+                    ' Rebuild will layer the live runtime overlay on top of this baseline.
+                    Return
+                End If
+            End If
+
             _threadLiveSessionRegistry.UpsertSnapshot(normalizedThreadId,
                                                       snapshot.RawText,
                                                       snapshot.DisplayEntries,
