@@ -238,6 +238,192 @@ Namespace CodexNativeAgent.Ui.Coordinators
             Return Nothing
         End Function
 
+        Public Function GetThreadState(threadId As String) As ThreadRuntimeState
+            Dim normalizedThreadId = NormalizeIdentifier(threadId)
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return Nothing
+            End If
+
+            Dim thread As ThreadRuntimeState = Nothing
+            If _threadsById.TryGetValue(normalizedThreadId, thread) Then
+                Return thread
+            End If
+
+            Return Nothing
+        End Function
+
+        Public Function GetOrderedTurnStatesForThread(threadId As String) As IReadOnlyList(Of TurnRuntimeState)
+            Dim normalizedThreadId = NormalizeIdentifier(threadId)
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return New List(Of TurnRuntimeState)()
+            End If
+
+            Dim turnIds As New List(Of String)()
+            Dim seenTurnIds As New HashSet(Of String)(StringComparer.Ordinal)
+
+            For Each pair In _turnsById
+                Dim turn = pair.Value
+                If turn Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(turn.ThreadId, normalizedThreadId) Then
+                    Continue For
+                End If
+
+                Dim normalizedTurnId = NormalizeIdentifier(turn.TurnId)
+                If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                    Continue For
+                End If
+
+                If seenTurnIds.Add(normalizedTurnId) Then
+                    turnIds.Add(normalizedTurnId)
+                End If
+            Next
+
+            turnIds.Sort(StringComparer.Ordinal)
+
+            Dim results As New List(Of TurnRuntimeState)(turnIds.Count)
+            For Each turnId In turnIds
+                Dim turn = GetTurnState(normalizedThreadId, turnId)
+                If turn IsNot Nothing Then
+                    results.Add(turn)
+                End If
+            Next
+
+            Return results
+        End Function
+
+        Public Function GetOrderedRuntimeItemsForTurn(threadId As String, turnId As String) As IReadOnlyList(Of TurnItemRuntimeState)
+            Dim normalizedThreadId = NormalizeIdentifier(threadId)
+            Dim normalizedTurnId = NormalizeIdentifier(turnId)
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return New List(Of TurnItemRuntimeState)()
+            End If
+
+            Dim turnKey = BuildTurnKey(normalizedThreadId, normalizedTurnId)
+            If String.IsNullOrWhiteSpace(turnKey) Then
+                Return New List(Of TurnItemRuntimeState)()
+            End If
+
+            Dim results As New List(Of TurnItemRuntimeState)()
+            Dim seenScopedKeys As New HashSet(Of String)(StringComparer.Ordinal)
+
+            Dim orderedKeys As List(Of String) = Nothing
+            If _turnItemOrder.TryGetValue(turnKey, orderedKeys) AndAlso orderedKeys IsNot Nothing Then
+                For Each scopedKey In orderedKeys
+                    Dim normalizedScopedKey = NormalizeIdentifier(scopedKey)
+                    If String.IsNullOrWhiteSpace(normalizedScopedKey) Then
+                        Continue For
+                    End If
+
+                    Dim item As TurnItemRuntimeState = Nothing
+                    If Not _itemsById.TryGetValue(normalizedScopedKey, item) OrElse item Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.Ordinal.Equals(item.ThreadId, normalizedThreadId) OrElse
+                       Not StringComparer.Ordinal.Equals(item.TurnId, normalizedTurnId) Then
+                        Continue For
+                    End If
+
+                    If seenScopedKeys.Add(item.ScopedItemKey) Then
+                        results.Add(item)
+                    End If
+                Next
+            End If
+
+            ' Fallback for any items that exist without a tracked order entry.
+            Dim unorderedKeys As New List(Of String)()
+            For Each pair In _itemsById
+                Dim item = pair.Value
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(item.ThreadId, normalizedThreadId) OrElse
+                   Not StringComparer.Ordinal.Equals(item.TurnId, normalizedTurnId) Then
+                    Continue For
+                End If
+
+                Dim normalizedScopedKey = NormalizeIdentifier(item.ScopedItemKey)
+                If String.IsNullOrWhiteSpace(normalizedScopedKey) OrElse seenScopedKeys.Contains(normalizedScopedKey) Then
+                    Continue For
+                End If
+
+                unorderedKeys.Add(normalizedScopedKey)
+            Next
+
+            unorderedKeys.Sort(StringComparer.Ordinal)
+            For Each scopedKey In unorderedKeys
+                Dim item As TurnItemRuntimeState = Nothing
+                If _itemsById.TryGetValue(scopedKey, item) AndAlso item IsNot Nothing AndAlso seenScopedKeys.Add(scopedKey) Then
+                    results.Add(item)
+                End If
+            Next
+
+            Return results
+        End Function
+
+        Public Function GetOrderedRuntimeItemsForThread(threadId As String) As IReadOnlyList(Of TurnItemRuntimeState)
+            Dim normalizedThreadId = NormalizeIdentifier(threadId)
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return New List(Of TurnItemRuntimeState)()
+            End If
+
+            Dim results As New List(Of TurnItemRuntimeState)()
+            Dim seenScopedKeys As New HashSet(Of String)(StringComparer.Ordinal)
+
+            For Each turn In GetOrderedTurnStatesForThread(normalizedThreadId)
+                If turn Is Nothing OrElse String.IsNullOrWhiteSpace(turn.TurnId) Then
+                    Continue For
+                End If
+
+                For Each item In GetOrderedRuntimeItemsForTurn(normalizedThreadId, turn.TurnId)
+                    If item Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim normalizedScopedKey = NormalizeIdentifier(item.ScopedItemKey)
+                    If String.IsNullOrWhiteSpace(normalizedScopedKey) OrElse Not seenScopedKeys.Add(normalizedScopedKey) Then
+                        Continue For
+                    End If
+
+                    results.Add(item)
+                Next
+            Next
+
+            ' Include any items for the thread whose turn state is not currently materialized.
+            Dim remainingKeys As New List(Of String)()
+            For Each pair In _itemsById
+                Dim item = pair.Value
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(item.ThreadId, normalizedThreadId) Then
+                    Continue For
+                End If
+
+                Dim normalizedScopedKey = NormalizeIdentifier(item.ScopedItemKey)
+                If String.IsNullOrWhiteSpace(normalizedScopedKey) OrElse seenScopedKeys.Contains(normalizedScopedKey) Then
+                    Continue For
+                End If
+
+                remainingKeys.Add(normalizedScopedKey)
+            Next
+
+            remainingKeys.Sort(StringComparer.Ordinal)
+            For Each scopedKey In remainingKeys
+                Dim item As TurnItemRuntimeState = Nothing
+                If _itemsById.TryGetValue(scopedKey, item) AndAlso item IsNot Nothing AndAlso seenScopedKeys.Add(scopedKey) Then
+                    results.Add(item)
+                End If
+            Next
+
+            Return results
+        End Function
+
         Public Sub Reset()
             _threadsById.Clear()
             _turnsById.Clear()
