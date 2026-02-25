@@ -445,6 +445,7 @@ Namespace CodexNativeAgent.Ui
         Private ReadOnly _viewModel As New MainWindowViewModel()
         Private ReadOnly _sessionCoordinator As SessionCoordinator
         Private ReadOnly _sessionNotificationCoordinator As SessionNotificationCoordinator
+        Private ReadOnly _threadLiveSessionRegistry As New ThreadLiveSessionRegistry()
         Private ReadOnly _threadWorkflowCoordinator As ThreadWorkflowCoordinator
         Private ReadOnly _turnWorkflowCoordinator As TurnWorkflowCoordinator
         Private ReadOnly _shellCommandCoordinator As ShellCommandCoordinator
