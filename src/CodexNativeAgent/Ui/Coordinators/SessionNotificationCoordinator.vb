@@ -305,10 +305,6 @@ Namespace CodexNativeAgent.Ui.Coordinators
                     setCurrentThreadId(threadStarted.ThreadId)
                 End If
 
-                If Not String.IsNullOrWhiteSpace(getCurrentThreadId()) Then
-                    markThreadLastActive(getCurrentThreadId())
-                End If
-
                 appendSystemMessage($"Thread started: {If(String.IsNullOrWhiteSpace(getCurrentThreadId()), threadStarted.ThreadId, getCurrentThreadId())}")
                 Return
             End If
@@ -327,10 +323,6 @@ Namespace CodexNativeAgent.Ui.Coordinators
 
             If TypeOf parsedEvent Is ThreadStatusChangedNotificationEvent Then
                 Dim statusChanged = DirectCast(parsedEvent, ThreadStatusChangedNotificationEvent)
-                If Not String.IsNullOrWhiteSpace(statusChanged.ThreadId) Then
-                    markThreadLastActive(statusChanged.ThreadId)
-                End If
-
                 If appendDiagnosticEvent IsNot Nothing Then
                     appendDiagnosticEvent($"thread/status/changed thread={statusChanged.ThreadId} status={statusChanged.StatusSummary}")
                 End If
