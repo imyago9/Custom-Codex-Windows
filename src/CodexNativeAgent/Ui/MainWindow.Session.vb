@@ -350,6 +350,7 @@ Namespace CodexNativeAgent.Ui
             _workspaceBootstrapInProgress = False
             _threadEntries.Clear()
             _expandedThreadProjectGroups.Clear()
+            _threadLiveSessionRegistry.Clear()
             _sessionNotificationCoordinator.ResetStreamingAgentItems()
             _pendingLocalUserEchoes.Clear()
             _turnWorkflowCoordinator.ResetApprovalState()
