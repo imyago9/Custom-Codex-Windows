@@ -903,6 +903,37 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return -1
             End If
 
+            If descriptor.TurnItemSortTimestampUtc.HasValue Then
+                Dim targetTimestamp = descriptor.TurnItemSortTimestampUtc.Value
+                Dim targetOrderIndex = descriptor.TurnItemOrderIndex
+                For i = 0 To _items.Count - 1
+                    Dim candidate = _items(i)
+                    If candidate Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                        Continue For
+                    End If
+
+                    If Not candidate.TurnItemSortTimestampUtc.HasValue Then
+                        Continue For
+                    End If
+
+                    Dim candidateTimestamp = candidate.TurnItemSortTimestampUtc.Value
+                    If candidateTimestamp > targetTimestamp Then
+                        Return i
+                    End If
+
+                    If candidateTimestamp = targetTimestamp AndAlso
+                       targetOrderIndex.HasValue AndAlso
+                       candidate.TurnItemOrderIndex.HasValue AndAlso
+                       candidate.TurnItemOrderIndex.Value > targetOrderIndex.Value Then
+                        Return i
+                    End If
+                Next
+            End If
+
             If descriptor.TurnItemOrderIndex.HasValue Then
                 Dim targetOrderIndex = descriptor.TurnItemOrderIndex.Value
                 For i = 0 To _items.Count - 1
@@ -1136,6 +1167,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .ThreadId = If(itemState.ThreadId, String.Empty).Trim(),
                 .TurnId = If(itemState.TurnId, String.Empty).Trim(),
                 .TurnItemOrderIndex = itemState.TurnItemOrderIndex,
+                .TurnItemSortTimestampUtc = If(itemState.StartedAt, itemState.CompletedAt),
                 .TimestampText = If(timestampText, String.Empty)
             }
 
@@ -2726,6 +2758,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .ThreadId = If(descriptor.ThreadId, String.Empty),
                 .TurnId = If(descriptor.TurnId, String.Empty),
                 .TurnItemOrderIndex = descriptor.TurnItemOrderIndex,
+                .TurnItemSortTimestampUtc = descriptor.TurnItemSortTimestampUtc,
                 .TimestampText = If(descriptor.TimestampText, String.Empty),
                 .RoleText = If(descriptor.RoleText, String.Empty),
                 .BodyText = If(descriptor.BodyText, String.Empty),

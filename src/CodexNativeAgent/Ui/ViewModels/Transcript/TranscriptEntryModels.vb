@@ -16,6 +16,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Public Property ThreadId As String = String.Empty
         Public Property TurnId As String = String.Empty
         Public Property TurnItemOrderIndex As Integer?
+        Public Property TurnItemSortTimestampUtc As DateTimeOffset?
         Public Property TimestampText As String = String.Empty
         Public Property RoleText As String = String.Empty
         Public Property BodyText As String = String.Empty
@@ -298,6 +299,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _threadId As String = String.Empty
         Private _turnId As String = String.Empty
         Private _turnItemOrderIndex As Integer?
+        Private _turnItemSortTimestampUtc As DateTimeOffset?
         Private _timestampText As String = String.Empty
         Private _roleText As String = String.Empty
         Private _bodyText As String = String.Empty
@@ -384,6 +386,15 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Get
             Set(value As Integer?)
                 SetProperty(_turnItemOrderIndex, value)
+            End Set
+        End Property
+
+        Public Property TurnItemSortTimestampUtc As DateTimeOffset?
+            Get
+                Return _turnItemSortTimestampUtc
+            End Get
+            Set(value As DateTimeOffset?)
+                SetProperty(_turnItemSortTimestampUtc, value)
             End Set
         End Property
 
