@@ -339,6 +339,8 @@ Namespace CodexNativeAgent.Ui
         Private Sub ResetWorkspaceTransientStateCore(clearModelPicker As Boolean)
             _currentThreadId = String.Empty
             _currentTurnId = String.Empty
+            _notificationRuntimeThreadId = String.Empty
+            _notificationRuntimeTurnId = String.Empty
             _currentThreadCwd = String.Empty
             _newThreadTargetOverrideCwd = String.Empty
             _threadsLoading = False
@@ -770,8 +772,8 @@ Namespace CodexNativeAgent.Ui
             MarkRpcActivity()
             Dim dispatch = _sessionNotificationCoordinator.DispatchNotification(methodName,
                                                                                 paramsNode,
-                                                                                _currentThreadId,
-                                                                                _currentTurnId)
+                                                                                _notificationRuntimeThreadId,
+                                                                                _notificationRuntimeTurnId)
             ApplyNotificationDispatchResult(dispatch)
             AppendHandledNotificationMethodEvent(dispatch)
 
@@ -785,19 +787,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            UpdateNotificationRuntimeContextFromDispatch(dispatch)
             Dim visibleThreadIdBeforeDispatch = If(_currentThreadId, String.Empty).Trim()
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
             ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
-
-            If dispatch.ThreadObject IsNot Nothing Then
-                ApplyCurrentThreadFromThreadObject(dispatch.ThreadObject)
-            ElseIf dispatch.CurrentThreadChanged Then
-                _currentThreadId = dispatch.CurrentThreadId
-            End If
-
-            If dispatch.CurrentTurnChanged Then
-                _currentTurnId = dispatch.CurrentTurnId
-            End If
 
             For Each threadId In dispatch.ThreadIdsToMarkLastActive
                 MarkThreadLastActive(threadId)
@@ -902,6 +895,44 @@ Namespace CodexNativeAgent.Ui
                visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
             End If
+        End Sub
+
+        Private Sub UpdateNotificationRuntimeContextFromDispatch(dispatch As SessionNotificationCoordinator.NotificationDispatchResult)
+            If dispatch Is Nothing Then
+                Return
+            End If
+
+            Dim runtimeThreadId = If(_notificationRuntimeThreadId, String.Empty).Trim()
+            Dim runtimeTurnId = If(_notificationRuntimeTurnId, String.Empty).Trim()
+
+            If dispatch.ThreadObject IsNot Nothing Then
+                Dim threadIdFromObject = GetPropertyString(dispatch.ThreadObject, "id")
+                If Not String.IsNullOrWhiteSpace(threadIdFromObject) Then
+                    runtimeThreadId = threadIdFromObject.Trim()
+                End If
+            End If
+
+            If dispatch.CurrentThreadChanged Then
+                runtimeThreadId = If(dispatch.CurrentThreadId, String.Empty).Trim()
+            ElseIf String.IsNullOrWhiteSpace(runtimeThreadId) AndAlso
+                   Not String.IsNullOrWhiteSpace(dispatch.CurrentThreadId) Then
+                runtimeThreadId = dispatch.CurrentThreadId.Trim()
+            End If
+
+            If dispatch.CurrentTurnChanged Then
+                runtimeTurnId = If(dispatch.CurrentTurnId, String.Empty).Trim()
+            ElseIf String.IsNullOrWhiteSpace(runtimeTurnId) AndAlso
+                   Not String.IsNullOrWhiteSpace(dispatch.CurrentTurnId) Then
+                runtimeTurnId = dispatch.CurrentTurnId.Trim()
+            End If
+
+            ' If a thread context changed and no explicit turn is active, clear the stale turn fallback.
+            If dispatch.CurrentThreadChanged AndAlso String.IsNullOrWhiteSpace(If(dispatch.CurrentTurnId, String.Empty).Trim()) Then
+                runtimeTurnId = String.Empty
+            End If
+
+            _notificationRuntimeThreadId = runtimeThreadId
+            _notificationRuntimeTurnId = runtimeTurnId
         End Sub
 
         Private Sub ApplyServerRequestDispatchResult(dispatch As SessionNotificationCoordinator.ServerRequestDispatchResult)

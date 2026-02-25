@@ -392,6 +392,8 @@ Namespace CodexNativeAgent.Ui
         Private _client As CodexAppServerClient
         Private _currentThreadId As String = String.Empty
         Private _currentTurnId As String = String.Empty
+        Private _notificationRuntimeThreadId As String = String.Empty
+        Private _notificationRuntimeTurnId As String = String.Empty
         Private _currentLoginId As String = String.Empty
         Private _disconnecting As Boolean
         Private _threadsLoading As Boolean
