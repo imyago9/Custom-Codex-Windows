@@ -785,6 +785,7 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            Dim visibleThreadIdBeforeDispatch = If(_currentThreadId, String.Empty).Trim()
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
             ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
 
@@ -806,24 +807,78 @@ Namespace CodexNativeAgent.Ui
                 AppendSystemMessage(message)
             Next
 
+            Dim visibleThreadIdForRuntimeRouting = If(String.IsNullOrWhiteSpace(visibleThreadIdBeforeDispatch),
+                                                      If(_currentThreadId, String.Empty).Trim(),
+                                                      visibleThreadIdBeforeDispatch)
+            Dim visibleRuntimeItemsRendered = 0
+            Dim didMutateVisibleTranscript = False
+
             For Each item In dispatch.RuntimeItems
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(item.ThreadId,
+                                                             item.TurnId,
+                                                             visibleThreadIdForRuntimeRouting,
+                                                             dispatch.MethodName) Then
+                    Continue For
+                End If
+
                 RenderItem(item)
+                visibleRuntimeItemsRendered += 1
+                didMutateVisibleTranscript = True
             Next
 
             For Each lifecycleMessage In dispatch.TurnLifecycleMessages
+                If lifecycleMessage Is Nothing Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(lifecycleMessage.ThreadId,
+                                                             lifecycleMessage.TurnId,
+                                                             visibleThreadIdForRuntimeRouting,
+                                                             dispatch.MethodName) Then
+                    Continue For
+                End If
+
                 AppendTurnLifecycleMarker(lifecycleMessage.ThreadId,
                                           lifecycleMessage.TurnId,
                                           lifecycleMessage.Status)
+                didMutateVisibleTranscript = True
             Next
 
             For Each metadataMessage In dispatch.TurnMetadataMessages
+                If metadataMessage Is Nothing Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(metadataMessage.ThreadId,
+                                                             metadataMessage.TurnId,
+                                                             visibleThreadIdForRuntimeRouting,
+                                                             dispatch.MethodName) Then
+                    Continue For
+                End If
+
                 UpsertTurnMetadata(metadataMessage.ThreadId,
                                    metadataMessage.TurnId,
                                    metadataMessage.Kind,
                                    metadataMessage.SummaryText)
+                didMutateVisibleTranscript = True
             Next
 
             For Each tokenUsageMessage In dispatch.TokenUsageMessages
+                If tokenUsageMessage Is Nothing Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(tokenUsageMessage.ThreadId,
+                                                             tokenUsageMessage.TurnId,
+                                                             visibleThreadIdForRuntimeRouting,
+                                                             dispatch.MethodName) Then
+                    Continue For
+                End If
+
                 UpdateTokenUsageWidget(tokenUsageMessage.ThreadId,
                                        tokenUsageMessage.TurnId,
                                        tokenUsageMessage.TokenUsage)
@@ -843,7 +898,8 @@ Namespace CodexNativeAgent.Ui
                 NotifyRateLimitsUpdatedUi(rateLimitsPayload)
             Next
 
-            If dispatch.ShouldScrollTranscriptToBottom OrElse dispatch.RuntimeItems.Count > 0 Then
+            If (dispatch.ShouldScrollTranscriptToBottom AndAlso didMutateVisibleTranscript) OrElse
+               visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
             End If
         End Sub
@@ -856,11 +912,25 @@ Namespace CodexNativeAgent.Ui
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
             ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
 
+            Dim visibleThreadIdForRuntimeRouting = If(_currentThreadId, String.Empty).Trim()
+            Dim visibleRuntimeItemsRendered = 0
             For Each item In dispatch.RuntimeItems
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(item.ThreadId,
+                                                             item.TurnId,
+                                                             visibleThreadIdForRuntimeRouting,
+                                                             dispatch.MethodName) Then
+                    Continue For
+                End If
+
                 RenderItem(item)
+                visibleRuntimeItemsRendered += 1
             Next
 
-            If dispatch.RuntimeItems.Count > 0 Then
+            If visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
             End If
         End Sub
@@ -873,14 +943,103 @@ Namespace CodexNativeAgent.Ui
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
             ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
 
+            Dim visibleThreadIdForRuntimeRouting = If(_currentThreadId, String.Empty).Trim()
+            Dim visibleRuntimeItemsRendered = 0
             For Each item In dispatch.RuntimeItems
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(item.ThreadId,
+                                                             item.TurnId,
+                                                             visibleThreadIdForRuntimeRouting,
+                                                             "approval_resolution") Then
+                    Continue For
+                End If
+
                 RenderItem(item)
+                visibleRuntimeItemsRendered += 1
             Next
 
-            If dispatch.RuntimeItems.Count > 0 Then
+            If visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
             End If
         End Sub
+
+        Private Function HandleRuntimeEventForThreadVisibility(threadId As String,
+                                                               turnId As String,
+                                                               visibleThreadId As String,
+                                                               methodName As String) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return True
+            End If
+
+            Dim isVisible = IsVisibleThread(normalizedThreadId, visibleThreadId)
+            If isVisible Then
+                UpdateThreadLiveSessionRuntimeActivity(normalizedThreadId, normalizedTurnId)
+                _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
+                _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
+                Return True
+            End If
+
+            MarkThreadLiveSessionDirty(normalizedThreadId, normalizedTurnId, methodName)
+            Return False
+        End Function
+
+        Private Sub MarkThreadLiveSessionDirty(threadId As String, turnId As String, methodName As String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            UpdateThreadLiveSessionRuntimeActivity(normalizedThreadId, turnId)
+            _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, True)
+        End Sub
+
+        Private Sub UpdateThreadLiveSessionRuntimeActivity(threadId As String, turnId As String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
+
+            Dim hasActiveTurn = runtimeStore.HasActiveTurn(normalizedThreadId)
+            Dim activeTurnId = runtimeStore.GetActiveTurnId(normalizedThreadId, normalizedTurnId)
+            Dim relevantTurnId = activeTurnId
+            If String.IsNullOrWhiteSpace(relevantTurnId) Then
+                relevantTurnId = normalizedTurnId
+            End If
+            If String.IsNullOrWhiteSpace(relevantTurnId) Then
+                relevantTurnId = runtimeStore.GetLatestTurnId(normalizedThreadId)
+            End If
+
+            _threadLiveSessionRegistry.MarkRuntimeActivity(normalizedThreadId,
+                                                           relevantTurnId,
+                                                           hasActiveTurn)
+        End Sub
+
+        Private Function IsVisibleThread(threadId As String, Optional visibleThreadId As String = Nothing) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            Dim baselineVisibleThreadId = If(visibleThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(baselineVisibleThreadId) Then
+                baselineVisibleThreadId = If(_currentThreadId, String.Empty).Trim()
+            End If
+
+            If String.IsNullOrWhiteSpace(baselineVisibleThreadId) Then
+                Return False
+            End If
+
+            Return StringComparer.Ordinal.Equals(normalizedThreadId, baselineVisibleThreadId)
+        End Function
 
         Private Sub ApplyProtocolDispatchMessages(messages As List(Of SessionNotificationCoordinator.ProtocolDispatchMessage))
             If messages Is Nothing Then
