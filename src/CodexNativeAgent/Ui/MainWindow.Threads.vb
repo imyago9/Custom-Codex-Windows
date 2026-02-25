@@ -264,6 +264,7 @@ Namespace CodexNativeAgent.Ui
                     End If
 
                     ApplyCurrentThreadFromThreadObject(payload.ThreadObject)
+                    PersistThreadSelectionSnapshotToLiveRegistry(request.ThreadId, payload.TranscriptSnapshot)
                     ApplyThreadTranscriptSnapshot(payload.TranscriptSnapshot, payload.HasTurns)
                     AppendSystemMessage($"Loaded thread {_currentThreadId} from history.")
                     ShowStatus($"Loaded thread {_currentThreadId}.")
@@ -1234,6 +1235,19 @@ Namespace CodexNativeAgent.Ui
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
             _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(snapshot.DisplayEntries)
             ScrollTranscriptToBottom()
+        End Sub
+
+        Private Sub PersistThreadSelectionSnapshotToLiveRegistry(threadId As String, transcriptSnapshot As ThreadTranscriptSnapshot)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim snapshot = If(transcriptSnapshot, New ThreadTranscriptSnapshot())
+            _threadLiveSessionRegistry.UpsertSnapshot(normalizedThreadId,
+                                                      snapshot.RawText,
+                                                      snapshot.DisplayEntries,
+                                                      _currentTurnId)
         End Sub
 
         Private Shared Function ThreadObjectHasTurns(threadObject As JsonObject) As Boolean
