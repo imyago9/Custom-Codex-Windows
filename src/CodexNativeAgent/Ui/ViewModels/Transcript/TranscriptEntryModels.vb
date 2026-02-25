@@ -12,6 +12,8 @@ Imports CodexNativeAgent.Ui.Mvvm
 Namespace CodexNativeAgent.Ui.ViewModels.Transcript
     Public NotInheritable Class TranscriptEntryDescriptor
         Public Property Kind As String = String.Empty
+        Public Property ThreadId As String = String.Empty
+        Public Property TurnId As String = String.Empty
         Public Property TimestampText As String = String.Empty
         Public Property RoleText As String = String.Empty
         Public Property BodyText As String = String.Empty
@@ -290,6 +292,8 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Inherits ViewModelBase
 
         Private _kind As String = String.Empty
+        Private _threadId As String = String.Empty
+        Private _turnId As String = String.Empty
         Private _timestampText As String = String.Empty
         Private _roleText As String = String.Empty
         Private _bodyText As String = String.Empty
@@ -340,6 +344,24 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
                 If SetProperty(_kind, If(value, String.Empty)) Then
                     RefreshDetailsPresentationState()
                 End If
+            End Set
+        End Property
+
+        Public Property ThreadId As String
+            Get
+                Return _threadId
+            End Get
+            Set(value As String)
+                SetProperty(_threadId, If(value, String.Empty))
+            End Set
+        End Property
+
+        Public Property TurnId As String
+            Get
+                Return _turnId
+            End Get
+            Set(value As String)
+                SetProperty(_turnId, If(value, String.Empty))
             End Set
         End Property
 

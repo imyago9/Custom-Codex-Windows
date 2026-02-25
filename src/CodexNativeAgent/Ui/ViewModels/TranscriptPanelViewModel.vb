@@ -722,6 +722,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Dim descriptor = BuildTurnLifecycleDescriptorForSnapshot(normalizedTurnId,
                                                                      normalizedStatus,
                                                                      FormatLiveTimestamp())
+            descriptor.ThreadId = If(threadId, String.Empty).Trim()
 
             Dim lifecycleSlot = If(StringComparer.OrdinalIgnoreCase.Equals(normalizedStatus, "started"),
                                    "start",
@@ -868,9 +869,66 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             _runtimeEntriesByKey(normalizedKey) = replacement
-            _items.Add(replacement)
+            Dim runtimeInsertIndex = ResolveRuntimeInsertIndex(normalizedKey, descriptor)
+            If runtimeInsertIndex >= 0 AndAlso runtimeInsertIndex <= _items.Count Then
+                _items.Insert(runtimeInsertIndex, replacement)
+            Else
+                _items.Add(replacement)
+            End If
             TrimEntriesIfNeeded()
         End Sub
+
+        Private Function ResolveRuntimeInsertIndex(runtimeKey As String, descriptor As TranscriptEntryDescriptor) As Integer
+            Dim normalizedRuntimeKey = If(runtimeKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedRuntimeKey) OrElse descriptor Is Nothing Then
+                Return -1
+            End If
+
+            If Not normalizedRuntimeKey.StartsWith("item:", StringComparison.Ordinal) Then
+                Return -1
+            End If
+
+            Dim normalizedTurnId = NormalizeTurnId(descriptor.TurnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return -1
+            End If
+
+            For i = _items.Count - 1 To 0 Step -1
+                Dim candidate = _items(i)
+                If candidate Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.OrdinalIgnoreCase.Equals(candidate.Kind, "turnMarker") Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                    Continue For
+                End If
+
+                If Not IsTurnCompletionMarkerBody(candidate.BodyText) Then
+                    Continue For
+                End If
+
+                Return i
+            Next
+
+            Return -1
+        End Function
+
+        Private Shared Function IsTurnCompletionMarkerBody(bodyText As String) As Boolean
+            Dim normalized = If(bodyText, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return False
+            End If
+
+            If StringComparer.Ordinal.Equals(normalized, "Turn started.") Then
+                Return False
+            End If
+
+            Return normalized.StartsWith("Turn ", StringComparison.Ordinal)
+        End Function
 
         Private Sub RegisterRuntimeItemAssociations(itemState As TurnItemRuntimeState, runtimeKey As String)
             Dim normalizedRuntimeKey = If(runtimeKey, String.Empty).Trim()
@@ -1043,6 +1101,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             Dim itemType = If(itemState.ItemType, String.Empty).Trim().ToLowerInvariant()
             Dim descriptor As New TranscriptEntryDescriptor() With {
+                .ThreadId = If(itemState.ThreadId, String.Empty).Trim(),
+                .TurnId = If(itemState.TurnId, String.Empty).Trim(),
                 .TimestampText = If(timestampText, String.Empty)
             }
 
@@ -1224,6 +1284,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             Return New TranscriptEntryDescriptor() With {
                 .Kind = "turnMarker",
+                .TurnId = normalizedTurnId,
                 .TimestampText = If(timestampText, String.Empty),
                 .RoleText = "Turn",
                 .BodyText = body,
@@ -2626,6 +2687,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private Function CreateEntryFromDescriptor(descriptor As TranscriptEntryDescriptor) As TranscriptEntryViewModel
             Dim entry As New TranscriptEntryViewModel() With {
                 .Kind = If(descriptor.Kind, String.Empty),
+                .ThreadId = If(descriptor.ThreadId, String.Empty),
+                .TurnId = If(descriptor.TurnId, String.Empty),
                 .TimestampText = If(descriptor.TimestampText, String.Empty),
                 .RoleText = If(descriptor.RoleText, String.Empty),
                 .BodyText = If(descriptor.BodyText, String.Empty),
