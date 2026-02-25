@@ -1280,6 +1280,13 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim overlayTurnIds = ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore)
+            If overlayTurnIds.Count = 0 Then
+                ' No tracked live overlay for this thread; avoid replaying stale/inferred runtime rows
+                ' that can overwrite historical snapshot bubbles during thread re-open.
+                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                Return
+            End If
+
             Dim renderedScopedItemKeys As New HashSet(Of String)(StringComparer.Ordinal)
 
             For Each turn In runtimeStore.GetOrderedTurnStatesForThread(normalizedThreadId)
