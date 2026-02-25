@@ -1305,7 +1305,26 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                ' Reconstruct explicit lifecycle ordering during rebuild.
+                Dim orderedTurnItems = runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
+
+                ' Rebuild ordering should match live rendering: user prompt first, then turn started.
+                For Each item In orderedTurnItems
+                    If item Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "userMessage") Then
+                        Continue For
+                    End If
+
+                    Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
+                    If String.IsNullOrWhiteSpace(scopedKey) OrElse Not renderedScopedItemKeys.Add(scopedKey) Then
+                        Continue For
+                    End If
+
+                    RenderItem(item)
+                Next
+
                 AppendTurnLifecycleMarker(turnThreadId, turnId, "started")
 
                 If Not String.IsNullOrWhiteSpace(turn.PlanSummary) Then
@@ -1316,8 +1335,12 @@ Namespace CodexNativeAgent.Ui
                     UpsertTurnMetadata(turnThreadId, turnId, "diff", turn.DiffSummary)
                 End If
 
-                For Each item In runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
+                For Each item In orderedTurnItems
                     If item Is Nothing Then
+                        Continue For
+                    End If
+
+                    If StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "userMessage") Then
                         Continue For
                     End If
 
