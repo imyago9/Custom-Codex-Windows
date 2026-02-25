@@ -867,7 +867,17 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Dim existing As TranscriptEntryViewModel = Nothing
             If _runtimeEntriesByKey.TryGetValue(normalizedKey, existing) AndAlso existing IsNot Nothing Then
                 Dim index = _items.IndexOf(existing)
-                If index >= 0 Then
+                Dim shouldReposition = normalizedKey.StartsWith("item:", StringComparison.Ordinal) AndAlso
+                                       (descriptor.TurnItemSortTimestampUtc.HasValue OrElse descriptor.TurnItemOrderIndex.HasValue)
+                If index >= 0 AndAlso shouldReposition Then
+                    _items.RemoveAt(index)
+                    Dim repositionInsertIndex = ResolveRuntimeInsertIndex(normalizedKey, descriptor)
+                    If repositionInsertIndex >= 0 AndAlso repositionInsertIndex <= _items.Count Then
+                        _items.Insert(repositionInsertIndex, replacement)
+                    Else
+                        _items.Add(replacement)
+                    End If
+                ElseIf index >= 0 Then
                     _items(index) = replacement
                 Else
                     _items.Add(replacement)

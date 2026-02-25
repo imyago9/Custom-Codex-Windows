@@ -1278,6 +1278,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim projection = _threadLiveSessionRegistry.GetProjectionSnapshot(normalizedThreadId)
+            ApplyOverlayRuntimeOrderMetadataToProjection(normalizedThreadId, projection, _sessionNotificationCoordinator.RuntimeStore)
 
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
@@ -1289,6 +1290,73 @@ Namespace CodexNativeAgent.Ui
             _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
             ScrollTranscriptToBottom()
+        End Sub
+
+        Private Sub ApplyOverlayRuntimeOrderMetadataToProjection(threadId As String,
+                                                                 projection As ThreadTranscriptProjectionSnapshot,
+                                                                 runtimeStore As TurnFlowRuntimeStore)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse projection Is Nothing OrElse runtimeStore Is Nothing Then
+                Return
+            End If
+
+            Dim overlayTurnIds = ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore)
+            If overlayTurnIds.Count = 0 Then
+                Return
+            End If
+
+            Dim runtimeItemsByKey As New Dictionary(Of String, TurnItemRuntimeState)(StringComparer.Ordinal)
+            For Each turnId In overlayTurnIds
+                Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                    Continue For
+                End If
+
+                Dim orderedTurnItems = runtimeStore.GetOrderedRuntimeItemsForTurn(normalizedThreadId, normalizedTurnId)
+                AssignTurnItemOrderIndexes(orderedTurnItems)
+
+                For Each item In orderedTurnItems
+                    If item Is Nothing OrElse item.IsScopeInferred Then
+                        Continue For
+                    End If
+
+                    Dim scopedItemKey = If(item.ScopedItemKey, String.Empty).Trim()
+                    If String.IsNullOrWhiteSpace(scopedItemKey) Then
+                        Continue For
+                    End If
+
+                    runtimeItemsByKey($"item:{scopedItemKey}") = item
+                Next
+            Next
+
+            If runtimeItemsByKey.Count = 0 OrElse projection.DisplayEntries.Count = 0 Then
+                Return
+            End If
+
+            For Each descriptor In projection.DisplayEntries
+                If descriptor Is Nothing Then
+                    Continue For
+                End If
+
+                Dim runtimeKey = If(descriptor.RuntimeKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(runtimeKey) Then
+                    Continue For
+                End If
+
+                Dim runtimeItem As TurnItemRuntimeState = Nothing
+                If Not runtimeItemsByKey.TryGetValue(runtimeKey, runtimeItem) OrElse runtimeItem Is Nothing Then
+                    Continue For
+                End If
+
+                descriptor.ThreadId = If(String.IsNullOrWhiteSpace(descriptor.ThreadId),
+                                         If(runtimeItem.ThreadId, String.Empty).Trim(),
+                                         descriptor.ThreadId)
+                descriptor.TurnId = If(String.IsNullOrWhiteSpace(descriptor.TurnId),
+                                       If(runtimeItem.TurnId, String.Empty).Trim(),
+                                       descriptor.TurnId)
+                descriptor.TurnItemOrderIndex = runtimeItem.TurnItemOrderIndex
+                descriptor.TurnItemSortTimestampUtc = If(runtimeItem.StartedAt, runtimeItem.CompletedAt)
+            Next
         End Sub
 
         Private Sub ApplyLiveRuntimeOverlayForThread(threadId As String, runtimeStore As TurnFlowRuntimeStore)
