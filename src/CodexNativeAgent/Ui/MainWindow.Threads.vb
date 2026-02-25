@@ -1247,6 +1247,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim snapshot = If(transcriptSnapshot, New ThreadTranscriptSnapshot())
+            MergeSnapshotAssistantPhaseHints(snapshot.AssistantPhaseHintsByItemKey)
             _threadLiveSessionRegistry.UpsertSnapshot(normalizedThreadId,
                                                       snapshot.RawText,
                                                       snapshot.DisplayEntries,
