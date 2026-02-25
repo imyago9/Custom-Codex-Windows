@@ -1011,6 +1011,9 @@ Namespace CodexNativeAgent.Ui
             Dim isVisible = IsVisibleThread(normalizedThreadId, visibleThreadId)
             If isVisible Then
                 UpdateThreadLiveSessionRuntimeActivity(normalizedThreadId, normalizedTurnId)
+                If _sessionNotificationCoordinator.RuntimeStore.HasActiveTurn(normalizedThreadId) Then
+                    TryMarkThreadOverlayTurn(normalizedThreadId, normalizedTurnId, allowCompletedTurnFallback:=False)
+                End If
                 _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
                 _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
                 Return True
@@ -1027,6 +1030,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             UpdateThreadLiveSessionRuntimeActivity(normalizedThreadId, turnId)
+            TryMarkThreadOverlayTurn(normalizedThreadId, turnId, allowCompletedTurnFallback:=True)
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, True)
         End Sub
 
@@ -1053,6 +1057,51 @@ Namespace CodexNativeAgent.Ui
                                                            relevantTurnId,
                                                            hasActiveTurn)
         End Sub
+
+        Private Sub TryMarkThreadOverlayTurn(threadId As String,
+                                             turnId As String,
+                                             allowCompletedTurnFallback As Boolean)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim resolvedTurnId = ResolveOverlayTurnIdForRuntimeEvent(normalizedThreadId,
+                                                                     turnId,
+                                                                     allowCompletedTurnFallback)
+            If String.IsNullOrWhiteSpace(resolvedTurnId) Then
+                Return
+            End If
+
+            _threadLiveSessionRegistry.MarkOverlayTurn(normalizedThreadId, resolvedTurnId)
+        End Sub
+
+        Private Function ResolveOverlayTurnIdForRuntimeEvent(threadId As String,
+                                                             turnId As String,
+                                                             allowCompletedTurnFallback As Boolean) As String
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return String.Empty
+            End If
+
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
+
+            Dim activeTurnId = runtimeStore.GetActiveTurnId(normalizedThreadId, normalizedTurnId)
+            If Not String.IsNullOrWhiteSpace(activeTurnId) Then
+                Return activeTurnId
+            End If
+
+            If allowCompletedTurnFallback Then
+                If Not String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                    Return normalizedTurnId
+                End If
+
+                Return runtimeStore.GetLatestTurnId(normalizedThreadId)
+            End If
+
+            Return String.Empty
+        End Function
 
         Private Function IsVisibleThread(threadId As String, Optional visibleThreadId As String = Nothing) As Boolean
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()

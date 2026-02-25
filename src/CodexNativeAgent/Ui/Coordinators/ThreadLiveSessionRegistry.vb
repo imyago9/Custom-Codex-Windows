@@ -13,6 +13,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
         Public Property HasLoadedHistoricalSnapshot As Boolean
         Public Property SnapshotRawText As String = String.Empty
         Public ReadOnly Property SnapshotDisplayEntries As New List(Of TranscriptEntryDescriptor)()
+        Public ReadOnly Property OverlayTurnIds As New HashSet(Of String)(StringComparer.Ordinal)
         Public Property LastBoundUtc As DateTimeOffset
         Public Property LastRuntimeEventUtc As DateTimeOffset
         Public Property IsTurnActive As Boolean
@@ -133,6 +134,35 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 state.IsTurnActive = isTurnActive.Value
             End If
         End Sub
+
+        Public Sub MarkOverlayTurn(threadId As String, turnId As String)
+            Dim normalizedTurnId = NormalizeIdentifier(turnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return
+            End If
+
+            Dim state = GetOrCreate(threadId)
+            state.OverlayTurnIds.Add(normalizedTurnId)
+        End Sub
+
+        Public Function GetOverlayTurnIds(threadId As String) As IReadOnlyCollection(Of String)
+            Dim state As ThreadLiveSessionState = Nothing
+            If Not TryGet(threadId, state) OrElse state Is Nothing Then
+                Return New List(Of String)()
+            End If
+
+            Dim result As New List(Of String)(state.OverlayTurnIds.Count)
+            For Each turnId In state.OverlayTurnIds
+                Dim normalizedTurnId = NormalizeIdentifier(turnId)
+                If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                    Continue For
+                End If
+
+                result.Add(normalizedTurnId)
+            Next
+
+            Return result
+        End Function
 
         Public Sub SetPendingRebuild(threadId As String, pendingRebuild As Boolean)
             Dim state = GetOrCreate(threadId)

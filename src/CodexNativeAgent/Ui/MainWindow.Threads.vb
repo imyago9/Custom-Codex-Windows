@@ -1279,6 +1279,7 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            Dim overlayTurnIds = ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore)
             Dim renderedScopedItemKeys As New HashSet(Of String)(StringComparer.Ordinal)
 
             For Each turn In runtimeStore.GetOrderedTurnStatesForThread(normalizedThreadId)
@@ -1289,6 +1290,10 @@ Namespace CodexNativeAgent.Ui
                 Dim turnThreadId = If(turn.ThreadId, normalizedThreadId).Trim()
                 Dim turnId = If(turn.TurnId, String.Empty).Trim()
                 If String.IsNullOrWhiteSpace(turnThreadId) OrElse String.IsNullOrWhiteSpace(turnId) Then
+                    Continue For
+                End If
+
+                If overlayTurnIds.Count > 0 AndAlso Not overlayTurnIds.Contains(turnId) Then
                     Continue For
                 End If
 
@@ -1328,6 +1333,11 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
+                If overlayTurnIds.Count > 0 AndAlso
+                   Not overlayTurnIds.Contains(If(item.TurnId, String.Empty).Trim()) Then
+                    Continue For
+                End If
+
                 Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
                 If String.IsNullOrWhiteSpace(scopedKey) OrElse Not renderedScopedItemKeys.Add(scopedKey) Then
                     Continue For
@@ -1335,6 +1345,11 @@ Namespace CodexNativeAgent.Ui
 
                 RenderItem(item)
             Next
+
+            If overlayTurnIds.Count = 0 Then
+                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                Return
+            End If
 
             Dim threadState = runtimeStore.GetThreadState(normalizedThreadId)
             If threadState Is Nothing OrElse threadState.TokenUsage Is Nothing Then
@@ -1347,6 +1362,31 @@ Namespace CodexNativeAgent.Ui
                                  threadState.LatestTurnId)
             UpdateTokenUsageWidget(normalizedThreadId, tokenTurnId, threadState.TokenUsage)
         End Sub
+
+        Private Function ResolveOverlayTurnIdsForReplay(threadId As String,
+                                                        runtimeStore As TurnFlowRuntimeStore) As HashSet(Of String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim results As New HashSet(Of String)(StringComparer.Ordinal)
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse runtimeStore Is Nothing Then
+                Return results
+            End If
+
+            For Each turnId In _threadLiveSessionRegistry.GetOverlayTurnIds(normalizedThreadId)
+                Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                    Continue For
+                End If
+
+                results.Add(normalizedTurnId)
+            Next
+
+            Dim activeTurnId = runtimeStore.GetActiveTurnId(normalizedThreadId)
+            If Not String.IsNullOrWhiteSpace(activeTurnId) Then
+                results.Add(activeTurnId)
+            End If
+
+            Return results
+        End Function
 
         Private Function EnumerateRuntimeItemsForThread(threadId As String) As IReadOnlyList(Of TurnItemRuntimeState)
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
