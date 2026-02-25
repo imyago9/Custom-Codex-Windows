@@ -1326,6 +1326,10 @@ Namespace CodexNativeAgent.Ui
                         Continue For
                     End If
 
+                    If item.IsScopeInferred Then
+                        Continue For
+                    End If
+
                     If Not StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "userMessage") Then
                         Continue For
                     End If
@@ -1353,6 +1357,10 @@ Namespace CodexNativeAgent.Ui
                         Continue For
                     End If
 
+                    If item.IsScopeInferred Then
+                        Continue For
+                    End If
+
                     If StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "userMessage") Then
                         Continue For
                     End If
@@ -1374,6 +1382,10 @@ Namespace CodexNativeAgent.Ui
             ' Fallback for items that may exist without a materialized turn state yet.
             For Each item In EnumerateRuntimeItemsForThread(normalizedThreadId)
                 If item Is Nothing Then
+                    Continue For
+                End If
+
+                If item.IsScopeInferred Then
                     Continue For
                 End If
 

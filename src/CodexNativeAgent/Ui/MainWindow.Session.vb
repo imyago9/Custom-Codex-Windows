@@ -811,10 +811,28 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If Not HandleRuntimeEventForThreadVisibility(item.ThreadId,
-                                                             item.TurnId,
+                Dim resolvedThreadId As String = Nothing
+                Dim resolvedTurnId As String = Nothing
+                If Not TryResolveRuntimeEventUiScope(item.ThreadId,
+                                                    item.TurnId,
+                                                    _notificationRuntimeThreadId,
+                                                    _notificationRuntimeTurnId,
+                                                    resolvedThreadId,
+                                                    resolvedTurnId) Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(resolvedThreadId,
+                                                             resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
                                                              dispatch.MethodName) Then
+                    Continue For
+                End If
+
+                ' Avoid rendering ambiguous item snapshots into the visible thread when the item itself
+                ' still lacks concrete scope; wait for a concrete-scoped update or rebuild replay.
+                If Not StringComparer.Ordinal.Equals(If(item.ThreadId, String.Empty).Trim(), resolvedThreadId) OrElse
+                   IsInferredRuntimeScopeId(item.ThreadId) Then
                     Continue For
                 End If
 
@@ -828,15 +846,26 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If Not HandleRuntimeEventForThreadVisibility(lifecycleMessage.ThreadId,
-                                                             lifecycleMessage.TurnId,
+                Dim resolvedThreadId As String = Nothing
+                Dim resolvedTurnId As String = Nothing
+                If Not TryResolveRuntimeEventUiScope(lifecycleMessage.ThreadId,
+                                                    lifecycleMessage.TurnId,
+                                                    _notificationRuntimeThreadId,
+                                                    _notificationRuntimeTurnId,
+                                                    resolvedThreadId,
+                                                    resolvedTurnId) Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(resolvedThreadId,
+                                                             resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
                                                              dispatch.MethodName) Then
                     Continue For
                 End If
 
-                AppendTurnLifecycleMarker(lifecycleMessage.ThreadId,
-                                          lifecycleMessage.TurnId,
+                AppendTurnLifecycleMarker(resolvedThreadId,
+                                          resolvedTurnId,
                                           lifecycleMessage.Status)
                 didMutateVisibleTranscript = True
             Next
@@ -846,15 +875,26 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If Not HandleRuntimeEventForThreadVisibility(metadataMessage.ThreadId,
-                                                             metadataMessage.TurnId,
+                Dim resolvedThreadId As String = Nothing
+                Dim resolvedTurnId As String = Nothing
+                If Not TryResolveRuntimeEventUiScope(metadataMessage.ThreadId,
+                                                    metadataMessage.TurnId,
+                                                    _notificationRuntimeThreadId,
+                                                    _notificationRuntimeTurnId,
+                                                    resolvedThreadId,
+                                                    resolvedTurnId) Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(resolvedThreadId,
+                                                             resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
                                                              dispatch.MethodName) Then
                     Continue For
                 End If
 
-                UpsertTurnMetadata(metadataMessage.ThreadId,
-                                   metadataMessage.TurnId,
+                UpsertTurnMetadata(resolvedThreadId,
+                                   resolvedTurnId,
                                    metadataMessage.Kind,
                                    metadataMessage.SummaryText)
                 didMutateVisibleTranscript = True
@@ -865,15 +905,26 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If Not HandleRuntimeEventForThreadVisibility(tokenUsageMessage.ThreadId,
-                                                             tokenUsageMessage.TurnId,
+                Dim resolvedThreadId As String = Nothing
+                Dim resolvedTurnId As String = Nothing
+                If Not TryResolveRuntimeEventUiScope(tokenUsageMessage.ThreadId,
+                                                    tokenUsageMessage.TurnId,
+                                                    _notificationRuntimeThreadId,
+                                                    _notificationRuntimeTurnId,
+                                                    resolvedThreadId,
+                                                    resolvedTurnId) Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(resolvedThreadId,
+                                                             resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
                                                              dispatch.MethodName) Then
                     Continue For
                 End If
 
-                UpdateTokenUsageWidget(tokenUsageMessage.ThreadId,
-                                       tokenUsageMessage.TurnId,
+                UpdateTokenUsageWidget(resolvedThreadId,
+                                       resolvedTurnId,
                                        tokenUsageMessage.TokenUsage)
             Next
 
@@ -950,10 +1001,26 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If Not HandleRuntimeEventForThreadVisibility(item.ThreadId,
-                                                             item.TurnId,
+                Dim resolvedThreadId As String = Nothing
+                Dim resolvedTurnId As String = Nothing
+                If Not TryResolveRuntimeEventUiScope(item.ThreadId,
+                                                    item.TurnId,
+                                                    Nothing,
+                                                    Nothing,
+                                                    resolvedThreadId,
+                                                    resolvedTurnId) Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(resolvedThreadId,
+                                                             resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
                                                              dispatch.MethodName) Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(If(item.ThreadId, String.Empty).Trim(), resolvedThreadId) OrElse
+                   IsInferredRuntimeScopeId(item.ThreadId) Then
                     Continue For
                 End If
 
@@ -981,10 +1048,26 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If Not HandleRuntimeEventForThreadVisibility(item.ThreadId,
-                                                             item.TurnId,
+                Dim resolvedThreadId As String = Nothing
+                Dim resolvedTurnId As String = Nothing
+                If Not TryResolveRuntimeEventUiScope(item.ThreadId,
+                                                    item.TurnId,
+                                                    Nothing,
+                                                    Nothing,
+                                                    resolvedThreadId,
+                                                    resolvedTurnId) Then
+                    Continue For
+                End If
+
+                If Not HandleRuntimeEventForThreadVisibility(resolvedThreadId,
+                                                             resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
                                                              "approval_resolution") Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(If(item.ThreadId, String.Empty).Trim(), resolvedThreadId) OrElse
+                   IsInferredRuntimeScopeId(item.ThreadId) Then
                     Continue For
                 End If
 
@@ -997,6 +1080,93 @@ Namespace CodexNativeAgent.Ui
             End If
         End Sub
 
+        Private Function TryResolveRuntimeEventUiScope(threadId As String,
+                                                       turnId As String,
+                                                       fallbackThreadId As String,
+                                                       fallbackTurnId As String,
+                                                       ByRef resolvedThreadId As String,
+                                                       ByRef resolvedTurnId As String) As Boolean
+            resolvedThreadId = If(threadId, String.Empty).Trim()
+            resolvedTurnId = If(turnId, String.Empty).Trim()
+
+            Dim normalizedFallbackThreadId = If(fallbackThreadId, String.Empty).Trim()
+            Dim normalizedFallbackTurnId = If(fallbackTurnId, String.Empty).Trim()
+
+            If IsInferredRuntimeScopeId(resolvedTurnId) Then
+                resolvedTurnId = String.Empty
+            End If
+            If String.IsNullOrWhiteSpace(resolvedTurnId) AndAlso Not String.IsNullOrWhiteSpace(normalizedFallbackTurnId) Then
+                resolvedTurnId = normalizedFallbackTurnId
+            End If
+
+            If IsInferredRuntimeScopeId(resolvedThreadId) Then
+                resolvedThreadId = String.Empty
+            End If
+
+            If String.IsNullOrWhiteSpace(resolvedThreadId) AndAlso
+               Not String.IsNullOrWhiteSpace(resolvedTurnId) Then
+                Dim threadIdFromTurn As String = Nothing
+                If TryResolveThreadIdFromRuntimeTurn(resolvedTurnId, threadIdFromTurn) Then
+                    resolvedThreadId = threadIdFromTurn
+                End If
+            End If
+
+            If String.IsNullOrWhiteSpace(resolvedThreadId) AndAlso
+               Not String.IsNullOrWhiteSpace(normalizedFallbackThreadId) Then
+                resolvedThreadId = normalizedFallbackThreadId
+            End If
+
+            If IsInferredRuntimeScopeId(resolvedThreadId) Then
+                resolvedThreadId = String.Empty
+            End If
+
+            Return Not String.IsNullOrWhiteSpace(resolvedThreadId)
+        End Function
+
+        Private Function TryResolveThreadIdFromRuntimeTurn(turnId As String, ByRef resolvedThreadId As String) As Boolean
+            resolvedThreadId = String.Empty
+
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedTurnId) OrElse IsInferredRuntimeScopeId(normalizedTurnId) Then
+                Return False
+            End If
+
+            Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
+            If runtimeStore Is Nothing OrElse runtimeStore.TurnsById Is Nothing Then
+                Return False
+            End If
+
+            For Each pair In runtimeStore.TurnsById
+                Dim turn = pair.Value
+                If turn Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(If(turn.TurnId, String.Empty).Trim(), normalizedTurnId) Then
+                    Continue For
+                End If
+
+                Dim candidateThreadId = If(turn.ThreadId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(candidateThreadId) OrElse IsInferredRuntimeScopeId(candidateThreadId) Then
+                    Continue For
+                End If
+
+                resolvedThreadId = candidateThreadId
+                Return True
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function IsInferredRuntimeScopeId(value As String) As Boolean
+            Dim normalized = If(value, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return False
+            End If
+
+            Return normalized.StartsWith("__inferred_", StringComparison.Ordinal)
+        End Function
+
         Private Function HandleRuntimeEventForThreadVisibility(threadId As String,
                                                                turnId As String,
                                                                visibleThreadId As String,
@@ -1004,8 +1174,12 @@ Namespace CodexNativeAgent.Ui
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             Dim normalizedTurnId = If(turnId, String.Empty).Trim()
 
-            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
-                Return True
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse IsInferredRuntimeScopeId(normalizedThreadId) Then
+                Return False
+            End If
+
+            If IsInferredRuntimeScopeId(normalizedTurnId) Then
+                normalizedTurnId = String.Empty
             End If
 
             Dim isVisible = IsVisibleThread(normalizedThreadId, visibleThreadId)

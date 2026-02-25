@@ -84,6 +84,11 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 state.SnapshotDisplayEntries.Add(descriptor)
             Next
 
+            ' A refreshed historical snapshot becomes the new baseline; any previously tracked
+            ' overlay turns should be rebuilt from new runtime activity after this point.
+            state.OverlayTurnIds.Clear()
+            state.PendingRebuild = False
+
             Dim normalizedVisibleTurnId = NormalizeIdentifier(visibleTurnId)
             If Not String.IsNullOrWhiteSpace(normalizedVisibleTurnId) Then
                 state.VisibleTurnId = normalizedVisibleTurnId
