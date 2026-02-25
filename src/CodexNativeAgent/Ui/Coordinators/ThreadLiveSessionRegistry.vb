@@ -207,6 +207,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
         Private Shared Function CloneDescriptor(source As TranscriptEntryDescriptor) As TranscriptEntryDescriptor
             Dim clone As New TranscriptEntryDescriptor() With {
                 .Kind = If(source.Kind, String.Empty),
+                .RuntimeKey = If(source.RuntimeKey, String.Empty),
                 .ThreadId = If(source.ThreadId, String.Empty),
                 .TurnId = If(source.TurnId, String.Empty),
                 .TimestampText = If(source.TimestampText, String.Empty),

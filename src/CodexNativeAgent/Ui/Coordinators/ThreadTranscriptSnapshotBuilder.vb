@@ -933,6 +933,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 Return
             End If
 
+            descriptor.RuntimeKey = normalizedKey
             If Not accumulator.ByKey.ContainsKey(normalizedKey) Then
                 accumulator.Order.Add(normalizedKey)
             End If

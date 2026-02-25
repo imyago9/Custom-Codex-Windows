@@ -196,7 +196,17 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             For Each descriptor In entries
-                AppendDescriptor(descriptor, appendToRaw:=False)
+                Dim entry = AppendDescriptor(descriptor, appendToRaw:=False)
+                If descriptor Is Nothing OrElse entry Is Nothing Then
+                    Continue For
+                End If
+
+                Dim runtimeKey = If(descriptor.RuntimeKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(runtimeKey) Then
+                    Continue For
+                End If
+
+                _runtimeEntriesByKey(runtimeKey) = entry
             Next
         End Sub
 
@@ -2596,12 +2606,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Return String.Empty
         End Function
 
-        Private Sub AppendDescriptor(descriptor As TranscriptEntryDescriptor,
-                                     appendToRaw As Boolean,
-                                     Optional rawRole As String = Nothing,
-                                     Optional rawBody As String = Nothing)
+        Private Function AppendDescriptor(descriptor As TranscriptEntryDescriptor,
+                                          appendToRaw As Boolean,
+                                          Optional rawRole As String = Nothing,
+                                          Optional rawBody As String = Nothing) As TranscriptEntryViewModel
             If descriptor Is Nothing Then
-                Return
+                Return Nothing
             End If
 
             If appendToRaw Then
@@ -2613,12 +2623,14 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             If Not ShouldDisplayDescriptor(descriptor) Then
-                Return
+                Return Nothing
             End If
 
-            _items.Add(CreateEntryFromDescriptor(descriptor))
+            Dim entry = CreateEntryFromDescriptor(descriptor)
+            _items.Add(entry)
             TrimEntriesIfNeeded()
-        End Sub
+            Return entry
+        End Function
 
         Private Sub PromoteAssistantStreamToReasoningChainStep(streamId As String)
             If String.IsNullOrWhiteSpace(streamId) Then
@@ -2687,6 +2699,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private Function CreateEntryFromDescriptor(descriptor As TranscriptEntryDescriptor) As TranscriptEntryViewModel
             Dim entry As New TranscriptEntryViewModel() With {
                 .Kind = If(descriptor.Kind, String.Empty),
+                .RuntimeKey = If(descriptor.RuntimeKey, String.Empty),
                 .ThreadId = If(descriptor.ThreadId, String.Empty),
                 .TurnId = If(descriptor.TurnId, String.Empty),
                 .TimestampText = If(descriptor.TimestampText, String.Empty),
