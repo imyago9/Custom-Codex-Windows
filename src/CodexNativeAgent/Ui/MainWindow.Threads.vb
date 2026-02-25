@@ -1322,8 +1322,11 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                Dim orderedTurnItems = runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
                 Dim replayCompletedTurnRuntimeOnly = turn.IsCompleted
+                Dim orderedTurnItems As IReadOnlyList(Of TurnItemRuntimeState) = runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
+                If replayCompletedTurnRuntimeOnly Then
+                    orderedTurnItems = OrderCompletedTurnRuntimeOnlyReplayItems(orderedTurnItems)
+                End If
 
                 If Not replayCompletedTurnRuntimeOnly Then
                     ' Rebuild ordering should match live rendering: user prompt first, then turn started.
@@ -1443,6 +1446,91 @@ Namespace CodexNativeAgent.Ui
                     Return True
                 Case Else
                     Return False
+            End Select
+        End Function
+
+        Private Shared Function OrderCompletedTurnRuntimeOnlyReplayItems(items As IReadOnlyList(Of TurnItemRuntimeState)) As IReadOnlyList(Of TurnItemRuntimeState)
+            If items Is Nothing OrElse items.Count <= 1 Then
+                Return If(items, New List(Of TurnItemRuntimeState)())
+            End If
+
+            Dim indexedItems As New List(Of KeyValuePair(Of Integer, TurnItemRuntimeState))(items.Count)
+            For i = 0 To items.Count - 1
+                indexedItems.Add(New KeyValuePair(Of Integer, TurnItemRuntimeState)(i, items(i)))
+            Next
+
+            indexedItems.Sort(
+                Function(left, right)
+                    Dim timestampCompare = CompareCompletedTurnReplayItemTimestamp(left.Value, right.Value)
+                    If timestampCompare <> 0 Then
+                        Return timestampCompare
+                    End If
+
+                    Dim typeCompare = CompareCompletedTurnReplayItemTypePriority(left.Value, right.Value)
+                    If typeCompare <> 0 Then
+                        Return typeCompare
+                    End If
+
+                    Return left.Key.CompareTo(right.Key)
+                End Function)
+
+            Dim results As New List(Of TurnItemRuntimeState)(indexedItems.Count)
+            For Each pair In indexedItems
+                results.Add(pair.Value)
+            Next
+
+            Return results
+        End Function
+
+        Private Shared Function CompareCompletedTurnReplayItemTimestamp(left As TurnItemRuntimeState,
+                                                                        right As TurnItemRuntimeState) As Integer
+            Dim leftTimestamp = GetCompletedTurnReplayItemSortTimestamp(left)
+            Dim rightTimestamp = GetCompletedTurnReplayItemSortTimestamp(right)
+
+            If leftTimestamp.HasValue AndAlso rightTimestamp.HasValue Then
+                Return DateTimeOffset.Compare(leftTimestamp.Value, rightTimestamp.Value)
+            End If
+
+            If leftTimestamp.HasValue Then
+                Return -1
+            End If
+
+            If rightTimestamp.HasValue Then
+                Return 1
+            End If
+
+            Return 0
+        End Function
+
+        Private Shared Function GetCompletedTurnReplayItemSortTimestamp(item As TurnItemRuntimeState) As DateTimeOffset?
+            If item Is Nothing Then
+                Return Nothing
+            End If
+
+            If item.StartedAt.HasValue Then
+                Return item.StartedAt.Value
+            End If
+
+            If item.CompletedAt.HasValue Then
+                Return item.CompletedAt.Value
+            End If
+
+            Return Nothing
+        End Function
+
+        Private Shared Function CompareCompletedTurnReplayItemTypePriority(left As TurnItemRuntimeState,
+                                                                           right As TurnItemRuntimeState) As Integer
+            Return GetCompletedTurnReplayItemTypePriority(left).CompareTo(GetCompletedTurnReplayItemTypePriority(right))
+        End Function
+
+        Private Shared Function GetCompletedTurnReplayItemTypePriority(item As TurnItemRuntimeState) As Integer
+            Select Case If(item?.ItemType, String.Empty).Trim().ToLowerInvariant()
+                Case "commandexecution"
+                    Return 0
+                Case "filechange"
+                    Return 1
+                Case Else
+                    Return 2
             End Select
         End Function
 

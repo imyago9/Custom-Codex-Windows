@@ -3132,7 +3132,12 @@ Namespace CodexNativeAgent.Ui
             _viewModel.IsSettingsBackEnabled = True
             _viewModel.IsQuickOpenVscEnabled = True
             _viewModel.IsQuickOpenTerminalEnabled = True
-            _viewModel.TranscriptPanel.CollapseCommandDetailsByDefault = hasActiveTurn
+            Dim hasLiveOverlayHistoryForCurrentThread = False
+            If Not String.IsNullOrWhiteSpace(_currentThreadId) Then
+                hasLiveOverlayHistoryForCurrentThread = _threadLiveSessionRegistry.GetOverlayTurnIds(_currentThreadId).Count > 0
+            End If
+
+            _viewModel.TranscriptPanel.CollapseCommandDetailsByDefault = hasActiveTurn OrElse hasLiveOverlayHistoryForCurrentThread
         End Sub
 
         Private Sub RefreshApprovalControlState(authenticated As Boolean)
