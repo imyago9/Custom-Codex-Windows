@@ -697,6 +697,10 @@ Namespace CodexNativeAgent.Ui
 
             Dim threadObject = Await _threadService.StartThreadAsync(options, CancellationToken.None).ConfigureAwait(True)
             ApplyCurrentThreadFromThreadObject(threadObject, clearPendingNewThreadSelection:=False)
+            ' Seed an empty historical baseline for brand-new threads before the first turn starts.
+            ' This prevents the first re-open during an in-flight turn from using a partial snapshot
+            ' as the baseline and duplicating prompt/output when overlay replay runs.
+            PersistThreadSelectionSnapshotToLiveRegistry(_currentThreadId, New ThreadTranscriptSnapshot())
         End Function
 
         Private Shared Function FindVisualAncestor(Of T As DependencyObject)(start As DependencyObject) As T
