@@ -25,6 +25,7 @@ coverage.*
 # Local .NET CLI state
 .dotnet/
 .dotnet-cli/
+reportplan.md
 
 # Temp/work directories
 tmp/

@@ -298,6 +298,8 @@ Namespace CodexNativeAgent.Ui
         Private Const LeftSidebarDefaultDockWidth As Double = 472.0R
         Private Const LeftSidebarVisibleMinWidth As Double = 368.0R
         Private Const LeftSidebarSplitterVisibleWidth As Double = 8.0R
+        Private Const WorkspaceResponsiveMinWidth As Double = 620.0R
+        Private Const WorkspaceResponsiveMinWidthWhenGitPaneOpen As Double = 520.0R
         Private Shared ReadOnly _gitFileIconCacheLock As New Object()
         Private Shared ReadOnly _gitFileIconCache As New Dictionary(Of String, ImageSource)(StringComparer.OrdinalIgnoreCase)
 
@@ -891,6 +893,15 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            Dim isGitPaneVisible =
+                RightGitPaneShell IsNot Nothing AndAlso
+                RightGitPaneShell.Visibility = Visibility.Visible
+            Dim leftSplitterWidth = If(_isLeftSidebarVisible, LeftSidebarSplitterVisibleWidth, 0.0R)
+            Dim rightSplitterWidth = If(isGitPaneVisible, 8.0R, 0.0R)
+            Dim reservedWorkspaceWidth =
+                If(isGitPaneVisible, WorkspaceResponsiveMinWidthWhenGitPaneOpen, WorkspaceResponsiveMinWidth)
+            Dim maxCombinedSideWidth = Math.Max(0.0R, surfaceWidth - leftSplitterWidth - rightSplitterWidth - reservedWorkspaceWidth)
+
             If LeftSidebarColumn IsNot Nothing Then
                 If _isLeftSidebarVisible Then
                     LeftSidebarColumn.MinWidth = LeftSidebarVisibleMinWidth
@@ -916,6 +927,45 @@ Namespace CodexNativeAgent.Ui
                 If rightActualWidth > RightGitPaneColumn.MaxWidth + 0.5R Then
                     RightGitPaneColumn.Width = New GridLength(RightGitPaneColumn.MaxWidth, GridUnitType.Pixel)
                     _gitPanelDockWidth = Math.Min(_gitPanelDockWidth, RightGitPaneColumn.MaxWidth)
+                End If
+            End If
+
+            ' Reserve breathing room for the center workspace on narrow/portrait windows.
+            Dim leftSideWidth = 0.0R
+            Dim leftMinWidth = 0.0R
+            If LeftSidebarColumn IsNot Nothing AndAlso _isLeftSidebarVisible Then
+                leftSideWidth = Math.Max(LeftSidebarColumn.ActualWidth, LeftSidebarColumn.Width.Value)
+                leftMinWidth = Math.Max(0.0R, LeftSidebarColumn.MinWidth)
+            End If
+
+            Dim rightSideWidth = 0.0R
+            Dim rightMinWidth = 0.0R
+            If RightGitPaneColumn IsNot Nothing AndAlso isGitPaneVisible Then
+                rightSideWidth = Math.Max(RightGitPaneColumn.ActualWidth, RightGitPaneColumn.Width.Value)
+                rightMinWidth = Math.Max(0.0R, RightGitPaneColumn.MinWidth)
+            End If
+
+            Dim overflow = (leftSideWidth + rightSideWidth) - maxCombinedSideWidth
+            If overflow > 0.5R Then
+                If LeftSidebarColumn IsNot Nothing AndAlso _isLeftSidebarVisible Then
+                    Dim shrinkableLeft = Math.Max(0.0R, leftSideWidth - leftMinWidth)
+                    Dim shrinkLeft = Math.Min(overflow, shrinkableLeft)
+                    If shrinkLeft > 0.5R Then
+                        leftSideWidth = Math.Max(leftMinWidth, leftSideWidth - shrinkLeft)
+                        LeftSidebarColumn.Width = New GridLength(leftSideWidth, GridUnitType.Pixel)
+                        overflow -= shrinkLeft
+                    End If
+                End If
+
+                If overflow > 0.5R AndAlso RightGitPaneColumn IsNot Nothing AndAlso isGitPaneVisible Then
+                    Dim shrinkableRight = Math.Max(0.0R, rightSideWidth - rightMinWidth)
+                    Dim shrinkRight = Math.Min(overflow, shrinkableRight)
+                    If shrinkRight > 0.5R Then
+                        rightSideWidth = Math.Max(rightMinWidth, rightSideWidth - shrinkRight)
+                        RightGitPaneColumn.Width = New GridLength(rightSideWidth, GridUnitType.Pixel)
+                        _gitPanelDockWidth = Math.Min(_gitPanelDockWidth, rightSideWidth)
+                        overflow -= shrinkRight
+                    End If
                 End If
             End If
         End Sub
@@ -1588,7 +1638,6 @@ Namespace CodexNativeAgent.Ui
         Private Sub ShowGitPanelDock()
             Const minGitPaneWidth As Double = 280.0R
             Const preferredGitPaneWidth As Double = 560.0R
-            Const minWorkspaceWidthWhenGitPaneOpen As Double = 520.0R
             Const maxGitPaneWidth As Double = 760.0R
 
             Dim targetWidth = _gitPanelDockWidth
@@ -1601,7 +1650,7 @@ Namespace CodexNativeAgent.Ui
 
             Dim maxFitWidth = Double.PositiveInfinity
             If WorkspacePaneHost IsNot Nothing AndAlso WorkspacePaneHost.ActualWidth > 0 Then
-                maxFitWidth = Math.Max(minGitPaneWidth, WorkspacePaneHost.ActualWidth - minWorkspaceWidthWhenGitPaneOpen)
+                maxFitWidth = Math.Max(minGitPaneWidth, WorkspacePaneHost.ActualWidth - WorkspaceResponsiveMinWidthWhenGitPaneOpen)
             End If
 
             If Not Double.IsInfinity(maxFitWidth) Then
