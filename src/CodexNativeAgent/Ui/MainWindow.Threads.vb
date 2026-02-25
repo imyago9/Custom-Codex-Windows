@@ -265,7 +265,10 @@ Namespace CodexNativeAgent.Ui
 
                     ApplyCurrentThreadFromThreadObject(payload.ThreadObject)
                     PersistThreadSelectionSnapshotToLiveRegistry(request.ThreadId, payload.TranscriptSnapshot)
-                    ApplyThreadTranscriptSnapshot(payload.TranscriptSnapshot, payload.HasTurns)
+                    RebuildVisibleTranscriptForThread(request.ThreadId)
+                    If Not payload.HasTurns AndAlso _viewModel.TranscriptPanel.Items.Count = 0 Then
+                        AppendSystemMessage("No historical turns loaded for this thread.")
+                    End If
                     AppendSystemMessage($"Loaded thread {_currentThreadId} from history.")
                     ShowStatus($"Loaded thread {_currentThreadId}.")
                     Return Task.CompletedTask
