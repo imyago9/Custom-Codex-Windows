@@ -1323,30 +1323,33 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 Dim orderedTurnItems = runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
+                Dim replayCompletedTurnRuntimeOnly = turn.IsCompleted
 
-                ' Rebuild ordering should match live rendering: user prompt first, then turn started.
-                For Each item In orderedTurnItems
-                    If item Is Nothing Then
-                        Continue For
-                    End If
+                If Not replayCompletedTurnRuntimeOnly Then
+                    ' Rebuild ordering should match live rendering: user prompt first, then turn started.
+                    For Each item In orderedTurnItems
+                        If item Is Nothing Then
+                            Continue For
+                        End If
 
-                    If item.IsScopeInferred Then
-                        Continue For
-                    End If
+                        If item.IsScopeInferred Then
+                            Continue For
+                        End If
 
-                    If Not StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "userMessage") Then
-                        Continue For
-                    End If
+                        If Not StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "userMessage") Then
+                            Continue For
+                        End If
 
-                    Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
-                    If String.IsNullOrWhiteSpace(scopedKey) OrElse Not renderedScopedItemKeys.Add(scopedKey) Then
-                        Continue For
-                    End If
+                        Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
+                        If String.IsNullOrWhiteSpace(scopedKey) OrElse Not renderedScopedItemKeys.Add(scopedKey) Then
+                            Continue For
+                        End If
 
-                    RenderItem(item)
-                Next
+                        RenderItem(item)
+                    Next
 
-                AppendTurnLifecycleMarker(turnThreadId, turnId, "started")
+                    AppendTurnLifecycleMarker(turnThreadId, turnId, "started")
+                End If
 
                 If Not String.IsNullOrWhiteSpace(turn.PlanSummary) Then
                     UpsertTurnMetadata(turnThreadId, turnId, "plan", turn.PlanSummary)
@@ -1365,6 +1368,11 @@ Namespace CodexNativeAgent.Ui
                         Continue For
                     End If
 
+                    If replayCompletedTurnRuntimeOnly AndAlso
+                       ShouldSkipCompletedTurnSnapshotDuplicatedOverlayItem(item) Then
+                        Continue For
+                    End If
+
                     If StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "userMessage") Then
                         Continue For
                     End If
@@ -1377,10 +1385,6 @@ Namespace CodexNativeAgent.Ui
                     RenderItem(item)
                 Next
 
-                If turn.IsCompleted Then
-                    Dim finalStatus = If(String.IsNullOrWhiteSpace(turn.TurnStatus), "completed", turn.TurnStatus)
-                    AppendTurnLifecycleMarker(turnThreadId, turnId, finalStatus)
-                End If
             Next
 
             ' Fallback for items that may exist without a materialized turn state yet.
@@ -1395,6 +1399,12 @@ Namespace CodexNativeAgent.Ui
 
                 If overlayTurnIds.Count > 0 AndAlso
                    Not overlayTurnIds.Contains(If(item.TurnId, String.Empty).Trim()) Then
+                    Continue For
+                End If
+
+                Dim itemTurnState = runtimeStore.GetTurnState(normalizedThreadId, item.TurnId)
+                If itemTurnState IsNot Nothing AndAlso itemTurnState.IsCompleted AndAlso
+                   ShouldSkipCompletedTurnSnapshotDuplicatedOverlayItem(item) Then
                     Continue For
                 End If
 
@@ -1422,6 +1432,19 @@ Namespace CodexNativeAgent.Ui
                                  threadState.LatestTurnId)
             UpdateTokenUsageWidget(normalizedThreadId, tokenTurnId, threadState.TokenUsage)
         End Sub
+
+        Private Shared Function ShouldSkipCompletedTurnSnapshotDuplicatedOverlayItem(item As TurnItemRuntimeState) As Boolean
+            If item Is Nothing Then
+                Return False
+            End If
+
+            Select Case If(item.ItemType, String.Empty).Trim().ToLowerInvariant()
+                Case "usermessage", "agentmessage", "reasoning"
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
 
         Private Function ResolveOverlayTurnIdsForReplay(threadId As String,
                                                         runtimeStore As TurnFlowRuntimeStore) As HashSet(Of String)

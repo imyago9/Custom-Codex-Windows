@@ -84,9 +84,9 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 state.SnapshotDisplayEntries.Add(descriptor)
             Next
 
-            ' A refreshed historical snapshot becomes the new baseline; any previously tracked
-            ' overlay turns should be rebuilt from new runtime activity after this point.
-            state.OverlayTurnIds.Clear()
+            ' Keep overlay turn tracking across snapshot refreshes so runtime-only bubbles
+            ' (command/file changes/tool activity) remain replayable for turns observed live
+            ' during this app session, even after the turn later completes.
             state.PendingRebuild = False
 
             Dim normalizedVisibleTurnId = NormalizeIdentifier(visibleTurnId)
