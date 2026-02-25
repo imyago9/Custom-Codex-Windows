@@ -28,35 +28,7 @@
                                                  BorderThickness="1"
                                                  Padding="6">
                                         <ContextMenu.Resources>
-                                            <Style TargetType="MenuItem">
-                                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                                <Setter Property="Padding" Value="10,7" />
-                                                <Setter Property="Margin" Value="2" />
-                                                <Setter Property="FontSize" Value="12.8" />
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="MenuItem">
-                                                            <Border x:Name="ItemChrome"
-                                                                    Background="Transparent"
-                                                                    BorderBrush="Transparent"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="8"
-                                                                    Padding="{TemplateBinding Padding}">
-                                                                <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsHighlighted" Value="True">
-                                                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                                    <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsEnabled" Value="False">
-                                                                    <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </Style>
+                                            <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" />
                                         </ContextMenu.Resources>
                                         <MenuItem x:Name="MnuSidebarNewThreadChooseFolder" Header="Choose folder..." />
                                     </ContextMenu>
@@ -145,33 +117,38 @@
                                     Padding="13"
                                     Margin="0,0,0,8">
                                 <Border.Resources>
-                                    <Style x:Key="ThreadToolbarMenuItemStyle" TargetType="MenuItem">
-                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                        <Setter Property="Padding" Value="10,7" />
-                                        <Setter Property="Margin" Value="2" />
-                                        <Setter Property="FontSize" Value="12.8" />
+                                    <Style x:Key="ThreadToolbarMenuItemStyle"
+                                           TargetType="MenuItem"
+                                           BasedOn="{StaticResource {x:Type MenuItem}}" />
+                                    <Style x:Key="ThreadToolbarIconButtonStyle"
+                                           TargetType="Button"
+                                           BasedOn="{StaticResource ButtonBaseStyle}">
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="MinHeight" Value="34" />
                                         <Setter Property="Template">
                                             <Setter.Value>
-                                                <ControlTemplate TargetType="MenuItem">
-                                                    <Border x:Name="ItemChrome"
-                                                            Background="Transparent"
-                                                            BorderBrush="Transparent"
-                                                            BorderThickness="1"
-                                                            CornerRadius="8"
-                                                            Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
-                                                    </Border>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Grid>
+                                                        <Border x:Name="QuickIconButtonGlass"
+                                                                CornerRadius="10"
+                                                                Background="Transparent"
+                                                                BorderBrush="Transparent"
+                                                                BorderThickness="1" />
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"
+                                                                          Margin="{TemplateBinding Padding}" />
+                                                    </Grid>
                                                     <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsChecked" Value="True">
-                                                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                            <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBackgroundBrush}" />
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBorderBrush}" />
                                                         </Trigger>
-                                                        <Trigger Property="IsHighlighted" Value="True">
-                                                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                            <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                        </Trigger>
-                                                        <Trigger Property="IsEnabled" Value="False">
-                                                            <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
+                                                        <Trigger Property="IsPressed" Value="True">
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBackgroundBrush}" />
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBorderBrush}" />
                                                         </Trigger>
                                                     </ControlTemplate.Triggers>
                                                 </ControlTemplate>
@@ -188,7 +165,7 @@
 
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                             <Button x:Name="BtnThreadFilterMenu"
-                                                    Style="{StaticResource ButtonBaseStyle}"
+                                                    Style="{StaticResource ThreadToolbarIconButtonStyle}"
                                                     Width="34"
                                                     MinWidth="34"
                                                     Padding="0"
@@ -229,7 +206,7 @@
                                             </Button>
 
                                             <Button x:Name="BtnThreadSortMenu"
-                                                    Style="{StaticResource ButtonBaseStyle}"
+                                                    Style="{StaticResource ThreadToolbarIconButtonStyle}"
                                                     Width="34"
                                                     MinWidth="34"
                                                     Padding="0"
@@ -270,7 +247,7 @@
                                                 Padding="0">
                                             <Border.Style>
                                                 <Style TargetType="Border">
-                                                    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                                    <Setter Property="Background" Value="Transparent" />
                                                     <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=TxtThreadSearch}" Value="True">
@@ -380,8 +357,29 @@
                                          HorizontalContentAlignment="Stretch"
                                          BorderThickness="0"
                                          Background="Transparent"
+                                         SnapsToDevicePixels="True"
+                                         ScrollViewer.CanContentScroll="True"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.Template>
+                                        <ControlTemplate TargetType="ListBox">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}">
+                                                <ScrollViewer x:Name="PART_ScrollViewer"
+                                                              Focusable="False"
+                                                              Background="Transparent"
+                                                              CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                                                              HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                                              VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
+                                                    <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                                </ScrollViewer>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </ListBox.Template>
                                     <ListBox.Resources>
                                         <Style x:Key="ThreadListScrollBarRepeatButtonStyle" TargetType="RepeatButton">
                                             <Setter Property="Background" Value="Transparent" />
@@ -489,41 +487,23 @@
                                                      BorderThickness="1"
                                                      Padding="6">
                                             <ContextMenu.Resources>
-                                                <Style TargetType="MenuItem">
-                                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                                    <Setter Property="Padding" Value="10,7" />
-                                                    <Setter Property="Margin" Value="2" />
-                                                    <Setter Property="FontSize" Value="12.8" />
-                                                    <Setter Property="Template">
-                                                        <Setter.Value>
-                                                            <ControlTemplate TargetType="MenuItem">
-                                                                <Border x:Name="ItemChrome"
-                                                                        Background="Transparent"
-                                                                        BorderBrush="Transparent"
-                                                                        BorderThickness="1"
-                                                                        CornerRadius="8"
-                                                                        Padding="{TemplateBinding Padding}">
-                                                                    <ContentPresenter VerticalAlignment="Center" ContentSource="Header" />
-                                                                </Border>
-                                                                <ControlTemplate.Triggers>
-                                                                    <Trigger Property="IsHighlighted" Value="True">
-                                                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                                        <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
-                                                                    </Trigger>
-                                                                    <Trigger Property="IsEnabled" Value="False">
-                                                                        <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
-                                                                    </Trigger>
-                                                                </ControlTemplate.Triggers>
-                                                            </ControlTemplate>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                </Style>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" />
                                             </ContextMenu.Resources>
                                             <MenuItem x:Name="MnuThreadGroupNewThreadHere"
-                                                      Header="New Thread Here"
+                                                      Header="New thread here"
                                                       Visibility="{Binding ThreadsPanel.ThreadMenuGroupNewThreadVisibility}"
                                                       IsEnabled="{Binding ThreadsPanel.ThreadMenuGroupNewThreadEnabled}"
                                                       Command="{Binding ThreadsPanel.NewThreadFromGroupContextCommand}" />
+                                            <MenuItem x:Name="MnuThreadGroupOpenVsCode"
+                                                      Header="Open in VS code"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuGroupOpenVsCodeVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuGroupOpenVsCodeEnabled}"
+                                                      Command="{Binding ThreadsPanel.OpenVsCodeFromGroupContextCommand}" />
+                                            <MenuItem x:Name="MnuThreadGroupOpenTerminal"
+                                                      Header="Open terminal"
+                                                      Visibility="{Binding ThreadsPanel.ThreadMenuGroupOpenTerminalVisibility}"
+                                                      IsEnabled="{Binding ThreadsPanel.ThreadMenuGroupOpenTerminalEnabled}"
+                                                      Command="{Binding ThreadsPanel.OpenTerminalFromGroupContextCommand}" />
                                             <Separator x:Name="SepThreadGroupContextTop"
                                                        Visibility="{Binding ThreadsPanel.ThreadMenuGroupTopSeparatorVisibility}" />
                                             <MenuItem x:Name="MnuThreadSelect"
@@ -531,15 +511,11 @@
                                                       Visibility="{Binding ThreadsPanel.ThreadMenuSelectVisibility}"
                                                       IsEnabled="{Binding ThreadsPanel.ThreadMenuSelectEnabled}"
                                                       Command="{Binding ThreadsPanel.SelectThreadContextCommand}" />
-                                            <Separator x:Name="SepThreadContextSelectRefresh"
-                                                       Visibility="{Binding ThreadsPanel.ThreadMenuSelectRefreshSeparatorVisibility}" />
                                             <MenuItem x:Name="MnuThreadRefreshSingle"
-                                                      Header="Refresh Thread"
+                                                      Header="Refresh thread"
                                                       Visibility="{Binding ThreadsPanel.ThreadMenuRefreshVisibility}"
                                                       IsEnabled="{Binding ThreadsPanel.ThreadMenuRefreshEnabled}"
                                                       Command="{Binding ThreadsPanel.RefreshThreadContextCommand}" />
-                                            <Separator x:Name="SepThreadContextRefreshActions"
-                                                       Visibility="{Binding ThreadsPanel.ThreadMenuRefreshActionsSeparatorVisibility}" />
                                             <MenuItem x:Name="MnuThreadFork"
                                                       Header="Fork"
                                                       Visibility="{Binding ThreadsPanel.ThreadMenuForkVisibility}"

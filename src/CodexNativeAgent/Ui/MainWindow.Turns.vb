@@ -281,8 +281,17 @@ Namespace CodexNativeAgent.Ui
         Private Async Function StartTurnAsync() As Task
             Dim submittedInputText As String = String.Empty
             Dim shouldRefreshThreadsAfterTurnStart As Boolean = False
-            Dim startedFromDraftNewThread = _pendingNewThreadFirstPromptSelection
             Dim threadIdToRefreshAfterTurnStart As String = String.Empty
+
+            If String.IsNullOrWhiteSpace(_viewModel.TurnComposer.InputText) Then
+                Throw New InvalidOperationException("Enter turn input before sending.")
+            End If
+
+            If String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not _pendingNewThreadFirstPromptSelection Then
+                Await StartThreadAsync()
+            End If
+
+            Dim startedFromDraftNewThread = _pendingNewThreadFirstPromptSelection
 
             If _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(_currentThreadId) Then
                 Await EnsurePendingDraftThreadCreatedAsync()

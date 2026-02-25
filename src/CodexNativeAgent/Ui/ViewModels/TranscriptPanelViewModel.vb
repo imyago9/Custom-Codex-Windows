@@ -16,6 +16,11 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Private Const MaxLogChars As Integer = 500000
         Private Const MaxTranscriptEntries As Integer = 2000
+        Private Const EnableFileChangeTurnDiffMergeProtocolDebug As Boolean = True
+        Private Shared ReadOnly TurnDiffAddedCountRegex As New Regex("(?<!\w)\+(?<n>\d+)\b", RegexOptions.Compiled Or RegexOptions.CultureInvariant)
+        Private Shared ReadOnly TurnDiffRemovedCountRegex As New Regex("(?<!\w)-(?<n>\d+)\b", RegexOptions.Compiled Or RegexOptions.CultureInvariant)
+        Private Shared ReadOnly TurnDiffInsertionsRegex As New Regex("(?<n>\d+)\s+insertions?\(\+\)", RegexOptions.Compiled Or RegexOptions.CultureInvariant Or RegexOptions.IgnoreCase)
+        Private Shared ReadOnly TurnDiffDeletionsRegex As New Regex("(?<n>\d+)\s+deletions?\(-\)", RegexOptions.Compiled Or RegexOptions.CultureInvariant Or RegexOptions.IgnoreCase)
 
         Private _transcriptText As String = String.Empty
         Private _protocolText As String = String.Empty
@@ -30,6 +35,10 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _tokenUsageVisibility As Visibility = Visibility.Collapsed
         Private ReadOnly _items As New ObservableCollection(Of TranscriptEntryViewModel)()
         Private ReadOnly _runtimeEntriesByKey As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+        Private ReadOnly _turnDiffSummaryByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private ReadOnly _fileChangeRuntimeKeyByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private ReadOnly _fileChangeTurnIdByRuntimeKey As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private ReadOnly _fileChangeItemStateByRuntimeKey As New Dictionary(Of String, TurnItemRuntimeState)(StringComparer.Ordinal)
         Private ReadOnly _activeAssistantStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
         Private ReadOnly _activeAssistantStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
         Private ReadOnly _activeAssistantRawPrefixes As New HashSet(Of String)(StringComparer.Ordinal)
@@ -146,6 +155,10 @@ Namespace CodexNativeAgent.Ui.ViewModels
             _fullTranscriptBuilder.Clear()
             _items.Clear()
             _runtimeEntriesByKey.Clear()
+            _turnDiffSummaryByTurnId.Clear()
+            _fileChangeRuntimeKeyByTurnId.Clear()
+            _fileChangeTurnIdByRuntimeKey.Clear()
+            _fileChangeItemStateByRuntimeKey.Clear()
             _activeAssistantStreams.Clear()
             _activeAssistantStreamBuffers.Clear()
             _activeAssistantRawPrefixes.Clear()
@@ -167,6 +180,10 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Public Sub SetTranscriptDisplaySnapshot(entries As IEnumerable(Of TranscriptEntryDescriptor))
             _items.Clear()
             _runtimeEntriesByKey.Clear()
+            _turnDiffSummaryByTurnId.Clear()
+            _fileChangeRuntimeKeyByTurnId.Clear()
+            _fileChangeTurnIdByRuntimeKey.Clear()
+            _fileChangeItemStateByRuntimeKey.Clear()
             _activeAssistantStreams.Clear()
             _activeAssistantStreamBuffers.Clear()
             _activeAssistantRawPrefixes.Clear()
@@ -601,6 +618,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .TimestampText = FormatLiveTimestamp(),
                 .RoleText = "Command",
                 .BodyText = If(String.IsNullOrWhiteSpace(cleanCommand), "(command)", cleanCommand),
+                .StatusText = NormalizeStatusToken(cleanStatus),
                 .SecondaryText = If(String.IsNullOrWhiteSpace(cleanStatus), String.Empty, $"status: {cleanStatus}"),
                 .DetailsText = cleanOutput.Trim(),
                 .IsCommandLike = True
@@ -673,12 +691,25 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return
             End If
 
+            Dim runtimeKey = $"item:{scopedKey}"
             Dim descriptor = BuildRuntimeItemDescriptor(itemState)
             If descriptor Is Nothing Then
                 Return
             End If
 
-            UpsertRuntimeDescriptor($"item:{scopedKey}", descriptor)
+            RegisterRuntimeItemAssociations(itemState, runtimeKey)
+            UpsertRuntimeDescriptor(runtimeKey, descriptor)
+
+            If StringComparer.OrdinalIgnoreCase.Equals(If(descriptor.Kind, String.Empty), "fileChange") Then
+                Dim cachedDiffSummary As String = Nothing
+                _turnDiffSummaryByTurnId.TryGetValue(NormalizeTurnId(itemState.TurnId), cachedDiffSummary)
+                AppendFileChangeTurnDiffMergeProtocolDebug("item_upsert",
+                                                           itemState.TurnId,
+                                                           runtimeKey,
+                                                           cachedDiffSummary,
+                                                           descriptor)
+                RemoveStandaloneTurnDiffEntriesForTurn(itemState.TurnId)
+            End If
         End Sub
 
         Public Sub UpsertTurnLifecycleMarker(threadId As String, turnId As String, status As String)
@@ -714,6 +745,27 @@ Namespace CodexNativeAgent.Ui.ViewModels
                String.IsNullOrWhiteSpace(normalizedKind) OrElse
                String.IsNullOrWhiteSpace(normalizedSummary) Then
                 Return
+            End If
+
+            If StringComparer.Ordinal.Equals(normalizedKind, "diff") Then
+                _turnDiffSummaryByTurnId(normalizedTurnId) = normalizedSummary
+                If TryRefreshMergedFileChangeForTurn(normalizedTurnId) Then
+                    AppendFileChangeTurnDiffMergeProtocolDebug("turn_diff_updated",
+                                                               normalizedTurnId,
+                                                               String.Empty,
+                                                               normalizedSummary,
+                                                               Nothing,
+                                                               note:="refreshed_filechange=True")
+                    RemoveStandaloneTurnDiffEntriesForTurn(normalizedTurnId)
+                    Return
+                End If
+
+                AppendFileChangeTurnDiffMergeProtocolDebug("turn_diff_updated",
+                                                           normalizedTurnId,
+                                                           String.Empty,
+                                                           normalizedSummary,
+                                                           Nothing,
+                                                           note:="refreshed_filechange=False")
             End If
 
             Dim descriptor = BuildTurnMetadataDescriptorForSnapshot(normalizedKind,
@@ -820,8 +872,167 @@ Namespace CodexNativeAgent.Ui.ViewModels
             TrimEntriesIfNeeded()
         End Sub
 
+        Private Sub RegisterRuntimeItemAssociations(itemState As TurnItemRuntimeState, runtimeKey As String)
+            Dim normalizedRuntimeKey = If(runtimeKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedRuntimeKey) Then
+                Return
+            End If
+
+            Dim itemType = If(itemState?.ItemType, String.Empty).Trim()
+            Dim isFileChange = StringComparer.OrdinalIgnoreCase.Equals(itemType, "filechange")
+
+            If Not isFileChange Then
+                RemoveFileChangeRuntimeAssociation(normalizedRuntimeKey)
+                Return
+            End If
+
+            Dim normalizedTurnId = NormalizeTurnId(itemState.TurnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                RemoveFileChangeRuntimeAssociation(normalizedRuntimeKey)
+                Return
+            End If
+
+            Dim previousRuntimeKey As String = Nothing
+            If _fileChangeRuntimeKeyByTurnId.TryGetValue(normalizedTurnId, previousRuntimeKey) AndAlso
+               Not StringComparer.Ordinal.Equals(previousRuntimeKey, normalizedRuntimeKey) Then
+                _fileChangeTurnIdByRuntimeKey.Remove(previousRuntimeKey)
+                _fileChangeItemStateByRuntimeKey.Remove(previousRuntimeKey)
+            End If
+
+            _fileChangeRuntimeKeyByTurnId(normalizedTurnId) = normalizedRuntimeKey
+            _fileChangeTurnIdByRuntimeKey(normalizedRuntimeKey) = normalizedTurnId
+            _fileChangeItemStateByRuntimeKey(normalizedRuntimeKey) = itemState
+        End Sub
+
+        Private Function TryRefreshMergedFileChangeForTurn(turnId As String) As Boolean
+            Dim normalizedTurnId = NormalizeTurnId(turnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return False
+            End If
+
+            Dim runtimeKey As String = Nothing
+            If Not _fileChangeRuntimeKeyByTurnId.TryGetValue(normalizedTurnId, runtimeKey) OrElse
+               String.IsNullOrWhiteSpace(runtimeKey) Then
+                Return False
+            End If
+
+            Dim itemState As TurnItemRuntimeState = Nothing
+            If Not _fileChangeItemStateByRuntimeKey.TryGetValue(runtimeKey, itemState) OrElse itemState Is Nothing Then
+                RemoveFileChangeRuntimeAssociation(runtimeKey)
+                Return False
+            End If
+
+            If Not _runtimeEntriesByKey.ContainsKey(runtimeKey) Then
+                RemoveFileChangeRuntimeAssociation(runtimeKey)
+                Return False
+            End If
+
+            Dim replacementDescriptor = BuildRuntimeItemDescriptor(itemState)
+            If replacementDescriptor Is Nothing Then
+                Return False
+            End If
+
+            Dim diffSummary As String = Nothing
+            _turnDiffSummaryByTurnId.TryGetValue(normalizedTurnId, diffSummary)
+            AppendFileChangeTurnDiffMergeProtocolDebug("refresh_from_turn_diff",
+                                                       normalizedTurnId,
+                                                       runtimeKey,
+                                                       diffSummary,
+                                                       replacementDescriptor)
+            UpsertRuntimeDescriptor(runtimeKey, replacementDescriptor)
+            Return True
+        End Function
+
+        Private Sub RemoveStandaloneTurnDiffEntriesForTurn(turnId As String)
+            Dim normalizedTurnId = NormalizeTurnId(turnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) OrElse _runtimeEntriesByKey.Count = 0 Then
+                Return
+            End If
+
+            Dim suffix = ":" & normalizedTurnId
+            Dim keysToRemove As New List(Of String)()
+            For Each pair In _runtimeEntriesByKey
+                Dim runtimeKey = If(pair.Key, String.Empty)
+                If runtimeKey.StartsWith("turn:meta:diff:", StringComparison.Ordinal) AndAlso
+                   runtimeKey.EndsWith(suffix, StringComparison.Ordinal) Then
+                    keysToRemove.Add(runtimeKey)
+                End If
+            Next
+
+            For Each runtimeKey In keysToRemove
+                RemoveRuntimeEntryByKey(runtimeKey)
+            Next
+        End Sub
+
+        Private Sub RemoveRuntimeEntryByKey(runtimeKey As String)
+            Dim normalizedKey = If(runtimeKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedKey) Then
+                Return
+            End If
+
+            Dim existing As TranscriptEntryViewModel = Nothing
+            If _runtimeEntriesByKey.TryGetValue(normalizedKey, existing) Then
+                _runtimeEntriesByKey.Remove(normalizedKey)
+                If existing IsNot Nothing Then
+                    _items.Remove(existing)
+                End If
+            End If
+
+            RemoveRuntimeKeyAssociations(normalizedKey)
+        End Sub
+
+        Private Sub RemoveRuntimeKeyAssociations(runtimeKey As String)
+            Dim normalizedKey = If(runtimeKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedKey) Then
+                Return
+            End If
+
+            RemoveFileChangeRuntimeAssociation(normalizedKey)
+        End Sub
+
+        Private Sub RemoveFileChangeRuntimeAssociation(runtimeKey As String)
+            Dim normalizedKey = If(runtimeKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedKey) Then
+                Return
+            End If
+
+            Dim normalizedTurnId As String = Nothing
+            If _fileChangeTurnIdByRuntimeKey.TryGetValue(normalizedKey, normalizedTurnId) Then
+                _fileChangeTurnIdByRuntimeKey.Remove(normalizedKey)
+                Dim currentTurnRuntimeKey As String = Nothing
+                If Not String.IsNullOrWhiteSpace(normalizedTurnId) AndAlso
+                   _fileChangeRuntimeKeyByTurnId.TryGetValue(normalizedTurnId, currentTurnRuntimeKey) AndAlso
+                   StringComparer.Ordinal.Equals(currentTurnRuntimeKey, normalizedKey) Then
+                    _fileChangeRuntimeKeyByTurnId.Remove(normalizedTurnId)
+                End If
+            End If
+
+            _fileChangeItemStateByRuntimeKey.Remove(normalizedKey)
+        End Sub
+
+        Private Shared Function NormalizeTurnId(turnId As String) As String
+            Return If(turnId, String.Empty).Trim()
+        End Function
+
         Private Function BuildRuntimeItemDescriptor(itemState As TurnItemRuntimeState) As TranscriptEntryDescriptor
-            Return BuildRuntimeItemDescriptorForSnapshot(itemState, FormatLiveTimestamp())
+            Dim descriptor = BuildRuntimeItemDescriptorForSnapshot(itemState, FormatLiveTimestamp())
+            If descriptor Is Nothing OrElse itemState Is Nothing Then
+                Return descriptor
+            End If
+
+            Dim normalizedTurnId = NormalizeTurnId(itemState.TurnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return descriptor
+            End If
+
+            If StringComparer.OrdinalIgnoreCase.Equals(If(descriptor.Kind, String.Empty), "fileChange") Then
+                Dim cachedDiffSummary As String = Nothing
+                If _turnDiffSummaryByTurnId.TryGetValue(normalizedTurnId, cachedDiffSummary) Then
+                    MergeTurnDiffIntoFileChangeDescriptor(descriptor, cachedDiffSummary)
+                End If
+            End If
+
+            Return descriptor
         End Function
 
         Friend Shared Function BuildRuntimeItemDescriptorForSnapshot(itemState As TurnItemRuntimeState,
@@ -867,15 +1078,22 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Case "reasoning"
                     Dim reasoningSummaryText = SanitizeReasoningCardDisplayText(itemState.ReasoningSummaryText)
                     Dim reasoningContentText = SanitizeReasoningCardDisplayText(itemState.ReasoningContentText)
+                    Dim hasReasoningSummary = Not String.IsNullOrWhiteSpace(reasoningSummaryText)
+                    Dim hasReasoningContent = Not String.IsNullOrWhiteSpace(reasoningContentText)
 
                     descriptor.Kind = "reasoningCard"
                     descriptor.RoleText = "Reasoning"
                     descriptor.IsMuted = True
                     descriptor.IsReasoning = True
                     descriptor.UseRawReasoningLayout = True
-                    descriptor.BodyText = If(String.IsNullOrWhiteSpace(reasoningSummaryText),
-                                             "Summary pending...",
-                                             reasoningSummaryText)
+                    If hasReasoningSummary Then
+                        descriptor.BodyText = reasoningSummaryText
+                    ElseIf hasReasoningContent Then
+                        ' Show a placeholder only after reasoning content has actually started streaming.
+                        descriptor.BodyText = "Summary pending..."
+                    Else
+                        descriptor.BodyText = String.Empty
+                    End If
                     descriptor.SecondaryText = String.Empty
                     descriptor.DetailsText = reasoningContentText
 
@@ -886,6 +1104,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     descriptor.BodyText = If(String.IsNullOrWhiteSpace(itemState.CommandText),
                                              "(command)",
                                              itemState.CommandText)
+                    descriptor.StatusText = NormalizeStatusToken(itemState.Status)
                     descriptor.SecondaryText = BuildCommandSecondaryText(itemState)
                     descriptor.DetailsText = If(itemState.CommandOutputText, String.Empty).Trim()
 
@@ -894,7 +1113,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     descriptor.RoleText = "Files"
                     descriptor.BodyText = BuildFileChangeBody(itemState)
                     descriptor.SecondaryText = BuildFileChangeSecondaryText(itemState)
-                    descriptor.DetailsText = BuildFileChangeDetails(itemState)
+                    descriptor.FileChangeItems = BuildFileChangeInlineItems(itemState)
+                    descriptor.DetailsText = BuildFileChangeExtraDetails(itemState)
 
                 Case "mcptoolcall"
                     descriptor.Kind = "toolMcp"
@@ -954,7 +1174,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             descriptor.IsStreaming = Not itemState.IsCompleted AndAlso IsStreamingRuntimeKind(descriptor.Kind)
             If descriptor.IsStreaming AndAlso String.IsNullOrWhiteSpace(descriptor.BodyText) AndAlso
-               String.IsNullOrWhiteSpace(descriptor.DetailsText) Then
+               String.IsNullOrWhiteSpace(descriptor.DetailsText) AndAlso
+               Not StringComparer.OrdinalIgnoreCase.Equals(descriptor.Kind, "reasoningCard") Then
                 descriptor.BodyText = "..."
             End If
 
@@ -986,19 +1207,19 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             Select Case compactStatus
                 Case "", "completed"
-                    body = $"Turn {normalizedTurnId} completed."
+                    body = "Turn completed."
                 Case "started"
-                    body = $"Turn {normalizedTurnId} started."
+                    body = "Turn started."
                 Case "interrupted"
-                    body = $"Turn {normalizedTurnId} interrupted."
+                    body = "Turn interrupted."
                 Case "failed"
-                    body = $"Turn {normalizedTurnId} failed."
+                    body = "Turn failed."
                 Case "cancelled", "canceled"
-                    body = $"Turn {normalizedTurnId} canceled."
+                    body = "Turn canceled."
                 Case "aborted"
-                    body = $"Turn {normalizedTurnId} aborted."
+                    body = "Turn aborted."
                 Case Else
-                    body = $"Turn {normalizedTurnId} ended ({If(String.IsNullOrWhiteSpace(normalizedStatus), "completed", normalizedStatus)})."
+                    body = $"Turn ended ({If(String.IsNullOrWhiteSpace(normalizedStatus), "completed", normalizedStatus)})."
             End Select
 
             Return New TranscriptEntryDescriptor() With {
@@ -1123,6 +1344,1110 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             Return String.Join(Environment.NewLine, lines)
+        End Function
+
+        Private Shared Function BuildFileChangeInlineItems(itemState As TurnItemRuntimeState) As List(Of TranscriptFileChangeListItemViewModel)
+            Dim items As New List(Of TranscriptFileChangeListItemViewModel)()
+            If itemState Is Nothing Then
+                Return items
+            End If
+
+            Dim changes = itemState.FileChangeChanges
+            If changes Is Nothing OrElse changes.Count = 0 Then
+                Return items
+            End If
+
+            Dim shown = 0
+            For Each changeNode In changes
+                If shown >= 24 Then
+                    Exit For
+                End If
+
+                Dim changeObject = TryCast(changeNode, JsonObject)
+                If changeObject Is Nothing Then
+                    Continue For
+                End If
+
+                Dim path = ReadString(changeObject, "path", "file")
+                If String.IsNullOrWhiteSpace(path) Then
+                    Continue For
+                End If
+
+                Dim added = ReadLong(changeObject,
+                                     "addedLineCount", "added_line_count",
+                                     "addedLines", "added_lines",
+                                     "additions", "added")
+                Dim removed = ReadLong(changeObject,
+                                       "removedLineCount", "removed_line_count",
+                                       "removedLines", "removed_lines",
+                                       "deletions", "removed")
+
+                items.Add(TranscriptFileChangeListItemViewModel.CreatePathItem(
+                    path,
+                    SanitizeOptionalLineCountLong(added),
+                    SanitizeOptionalLineCountLong(removed)))
+                shown += 1
+            Next
+
+            If changes.Count > shown Then
+                items.Add(TranscriptFileChangeListItemViewModel.CreateOverflowItem(
+                    $"... +{(changes.Count - shown).ToString(CultureInfo.InvariantCulture)} more"))
+            End If
+
+            Return items
+        End Function
+
+        Private Shared Function BuildFileChangeExtraDetails(itemState As TurnItemRuntimeState) As String
+            If itemState Is Nothing Then
+                Return String.Empty
+            End If
+
+            Return If(itemState.FileChangeOutputText, String.Empty).Trim()
+        End Function
+
+        Private NotInheritable Class TurnDiffFileCounts
+            Public Property Added As Integer?
+            Public Property Removed As Integer?
+        End Class
+
+        Friend Shared Sub MergeTurnDiffIntoFileChangeDescriptor(descriptor As TranscriptEntryDescriptor,
+                                                                turnDiffSummary As String)
+            If descriptor Is Nothing OrElse
+               Not StringComparer.OrdinalIgnoreCase.Equals(If(descriptor.Kind, String.Empty), "fileChange") Then
+                Return
+            End If
+
+            Dim normalizedDiffSummary = If(turnDiffSummary, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedDiffSummary) Then
+                Return
+            End If
+
+            descriptor.DetailsText = MergeFileChangeDetailsWithTurnDiff(descriptor.DetailsText, normalizedDiffSummary)
+
+            If descriptor.FileChangeItems Is Nothing OrElse descriptor.FileChangeItems.Count = 0 Then
+                Return
+            End If
+
+            descriptor.FileChangeItems = MergeFileChangeInlineItemsWithTurnDiff(descriptor.FileChangeItems, normalizedDiffSummary)
+        End Sub
+
+        Private Shared Function MergeFileChangeDetailsWithTurnDiff(existingDetails As String,
+                                                                   turnDiffSummary As String) As String
+            Dim normalizedDiffSummary = If(turnDiffSummary, String.Empty).Trim()
+            Dim normalizedExisting = If(existingDetails, String.Empty).Trim()
+
+            If String.IsNullOrWhiteSpace(normalizedDiffSummary) Then
+                Return normalizedExisting
+            End If
+
+            If String.IsNullOrWhiteSpace(normalizedExisting) Then
+                Return normalizedDiffSummary
+            End If
+
+            If StringComparer.Ordinal.Equals(normalizedExisting, normalizedDiffSummary) Then
+                Return normalizedExisting
+            End If
+
+            If normalizedExisting.IndexOf(normalizedDiffSummary, StringComparison.Ordinal) >= 0 Then
+                Return normalizedExisting
+            End If
+
+            If normalizedDiffSummary.IndexOf(normalizedExisting, StringComparison.Ordinal) >= 0 Then
+                Return normalizedDiffSummary
+            End If
+
+            Return normalizedDiffSummary & Environment.NewLine & Environment.NewLine & normalizedExisting
+        End Function
+
+        Private Shared Function MergeFileChangeInlineItemsWithTurnDiff(items As IList(Of TranscriptFileChangeListItemViewModel),
+                                                                       turnDiffSummary As String) As List(Of TranscriptFileChangeListItemViewModel)
+            Dim mergedItems As New List(Of TranscriptFileChangeListItemViewModel)()
+            If items Is Nothing OrElse items.Count = 0 Then
+                Return mergedItems
+            End If
+
+            Dim countsByPath = BuildTurnDiffCountsByPath(turnDiffSummary, items)
+            For Each item In items
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If item.IsOverflow Then
+                    mergedItems.Add(TranscriptFileChangeListItemViewModel.CreateOverflowItem(item.OverflowText))
+                    Continue For
+                End If
+
+                Dim addedCount = ParseSignedLineBadgeCount(item.AddedLinesText)
+                Dim removedCount = ParseSignedLineBadgeCount(item.RemovedLinesText)
+
+                Dim diffCounts As TurnDiffFileCounts = Nothing
+                If TryResolveTurnDiffCountsForFilePath(countsByPath, item.FullPathText, diffCounts) AndAlso diffCounts IsNot Nothing Then
+                    If diffCounts.Added.HasValue Then
+                        addedCount = diffCounts.Added
+                    End If
+                    If diffCounts.Removed.HasValue Then
+                        removedCount = diffCounts.Removed
+                    End If
+                End If
+
+                mergedItems.Add(TranscriptFileChangeListItemViewModel.CreatePathItem(item.FullPathText, addedCount, removedCount))
+            Next
+
+            Return mergedItems
+        End Function
+
+        Private Shared Function TryResolveTurnDiffCountsForFilePath(countsByPath As IDictionary(Of String, TurnDiffFileCounts),
+                                                                    filePath As String,
+                                                                    ByRef resolvedCounts As TurnDiffFileCounts) As Boolean
+            resolvedCounts = Nothing
+            If countsByPath Is Nothing OrElse countsByPath.Count = 0 Then
+                Return False
+            End If
+
+            Dim rawFilePath = If(filePath, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(rawFilePath) Then
+                Return False
+            End If
+
+            Dim direct As TurnDiffFileCounts = Nothing
+            If countsByPath.TryGetValue(rawFilePath, direct) AndAlso direct IsNot Nothing Then
+                resolvedCounts = direct
+                Return True
+            End If
+
+            Dim normalizedFilePath = NormalizeDiffPathForMatching(rawFilePath)
+            If String.IsNullOrWhiteSpace(normalizedFilePath) Then
+                Return False
+            End If
+
+            For Each candidate In BuildTurnDiffPathCandidates(rawFilePath)
+                Dim candidateCounts As TurnDiffFileCounts = Nothing
+                If countsByPath.TryGetValue(candidate, candidateCounts) AndAlso candidateCounts IsNot Nothing Then
+                    resolvedCounts = candidateCounts
+                    Return True
+                End If
+
+                Dim normalizedCandidate = NormalizeDiffPathForMatching(candidate)
+                If String.IsNullOrWhiteSpace(normalizedCandidate) Then
+                    Continue For
+                End If
+
+                For Each pair In countsByPath
+                    Dim keyText = If(pair.Key, String.Empty)
+                    Dim keyCounts = pair.Value
+                    If keyCounts Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim normalizedKey = NormalizeDiffPathForMatching(keyText)
+                    If String.IsNullOrWhiteSpace(normalizedKey) Then
+                        Continue For
+                    End If
+
+                    If StringComparer.OrdinalIgnoreCase.Equals(normalizedCandidate, normalizedKey) OrElse
+                       normalizedCandidate.EndsWith("/" & normalizedKey, StringComparison.OrdinalIgnoreCase) OrElse
+                       normalizedFilePath.EndsWith("/" & normalizedKey, StringComparison.OrdinalIgnoreCase) Then
+                        resolvedCounts = keyCounts
+                        Return True
+                    End If
+                Next
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function BuildTurnDiffCountsByPath(turnDiffSummary As String,
+                                                          items As IEnumerable(Of TranscriptFileChangeListItemViewModel)) As Dictionary(Of String, TurnDiffFileCounts)
+            Dim countsByPath As New Dictionary(Of String, TurnDiffFileCounts)(StringComparer.OrdinalIgnoreCase)
+            If String.IsNullOrWhiteSpace(turnDiffSummary) Then
+                Return countsByPath
+            End If
+
+            TryPopulateTurnDiffCountsByPathFromJson(turnDiffSummary, countsByPath)
+            TryPopulateTurnDiffCountsByUnifiedDiff(turnDiffSummary, countsByPath)
+
+            Dim visiblePathItems As New List(Of TranscriptFileChangeListItemViewModel)()
+            Dim lines = If(turnDiffSummary, String.Empty).Replace(ControlChars.CrLf, ControlChars.Lf).
+                                               Replace(ControlChars.Cr, ControlChars.Lf).
+                                               Split(ControlChars.Lf)
+            If lines.Length = 0 OrElse items Is Nothing Then
+                Return countsByPath
+            End If
+
+            For Each item In items
+                If item Is Nothing OrElse item.IsOverflow Then
+                    Continue For
+                End If
+
+                visiblePathItems.Add(item)
+
+                Dim fullPath = If(item.FullPathText, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(fullPath) OrElse countsByPath.ContainsKey(fullPath) Then
+                    Continue For
+                End If
+
+                Dim candidates = BuildTurnDiffPathCandidates(fullPath)
+                If candidates.Count = 0 Then
+                    Continue For
+                End If
+
+                For Each rawLine In lines
+                    Dim lineText = If(rawLine, String.Empty)
+                    If String.IsNullOrWhiteSpace(lineText) OrElse Not LineContainsAnyTurnDiffPathCandidate(lineText, candidates) Then
+                        Continue For
+                    End If
+
+                    Dim parsedCounts As TurnDiffFileCounts = Nothing
+                    If Not TryReadTurnDiffCountsFromText(lineText, parsedCounts) Then
+                        Continue For
+                    End If
+
+                    countsByPath(fullPath) = parsedCounts
+                    Exit For
+                Next
+            Next
+
+            If visiblePathItems.Count = 1 Then
+                Dim onlyItem = visiblePathItems(0)
+                Dim onlyPath = If(onlyItem.FullPathText, String.Empty).Trim()
+                If Not String.IsNullOrWhiteSpace(onlyPath) Then
+                    Dim existing As TurnDiffFileCounts = Nothing
+                    If Not countsByPath.TryGetValue(onlyPath, existing) OrElse existing Is Nothing OrElse
+                       (Not existing.Added.HasValue AndAlso Not existing.Removed.HasValue) Then
+                        Dim overallCounts As TurnDiffFileCounts = Nothing
+                        If TryReadTurnDiffOverallCounts(turnDiffSummary, overallCounts) AndAlso overallCounts IsNot Nothing Then
+                            countsByPath(onlyPath) = overallCounts
+                        End If
+                    End If
+                End If
+            End If
+
+            Return countsByPath
+        End Function
+
+        Private Shared Function NormalizeDiffPathForMatching(pathText As String) As String
+            Dim text = If(pathText, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return String.Empty
+            End If
+
+            text = text.Replace("\"c, "/"c)
+            Do While text.Contains("//", StringComparison.Ordinal)
+                text = text.Replace("//", "/", StringComparison.Ordinal)
+            Loop
+
+            Dim renameArrowIndex = text.IndexOf(" -> ", StringComparison.Ordinal)
+            If renameArrowIndex >= 0 AndAlso renameArrowIndex + 4 < text.Length Then
+                ' Prefer the destination path when matching rename strings against diff paths.
+                text = text.Substring(renameArrowIndex + 4).Trim()
+            End If
+
+            If text.Length >= 2 AndAlso Char.IsLetter(text(0)) AndAlso text(1) = ":"c Then
+                text = text.Substring(2)
+            End If
+
+            If text.StartsWith("./", StringComparison.Ordinal) Then
+                text = text.Substring(2)
+            End If
+
+            text = text.Trim("/"c)
+            Return text
+        End Function
+
+        Private Shared Sub TryPopulateTurnDiffCountsByUnifiedDiff(turnDiffSummary As String,
+                                                                  countsByPath As IDictionary(Of String, TurnDiffFileCounts))
+            If String.IsNullOrWhiteSpace(turnDiffSummary) OrElse countsByPath Is Nothing Then
+                Return
+            End If
+
+            Dim lines = turnDiffSummary.Replace(ControlChars.CrLf, ControlChars.Lf).
+                                        Replace(ControlChars.Cr, ControlChars.Lf).
+                                        Split(ControlChars.Lf)
+            If lines Is Nothing OrElse lines.Length = 0 Then
+                Return
+            End If
+
+            Dim currentOldPath As String = String.Empty
+            Dim currentNewPath As String = String.Empty
+            Dim currentAdded As Integer = 0
+            Dim currentRemoved As Integer = 0
+            Dim hasCurrentFile As Boolean = False
+            Dim inHunk As Boolean = False
+
+            For Each rawLine In lines
+                Dim lineText = If(rawLine, String.Empty)
+
+                If lineText.StartsWith("diff --git ", StringComparison.Ordinal) Then
+                    FlushUnifiedDiffFileCounts(countsByPath, currentOldPath, currentNewPath, currentAdded, currentRemoved)
+                    hasCurrentFile = True
+                    currentOldPath = String.Empty
+                    currentNewPath = String.Empty
+                    currentAdded = 0
+                    currentRemoved = 0
+                    inHunk = False
+                    Continue For
+                End If
+
+                If Not inHunk AndAlso lineText.StartsWith("--- ", StringComparison.Ordinal) Then
+                    If Not hasCurrentFile Then
+                        hasCurrentFile = True
+                        currentOldPath = String.Empty
+                        currentNewPath = String.Empty
+                        currentAdded = 0
+                        currentRemoved = 0
+                        inHunk = False
+                    End If
+
+                    Dim parsedOldPath = ParseUnifiedDiffPathMarker(lineText, "--- ")
+                    If Not String.IsNullOrWhiteSpace(parsedOldPath) Then
+                        currentOldPath = parsedOldPath
+                    End If
+                    Continue For
+                End If
+
+                If Not inHunk AndAlso lineText.StartsWith("+++ ", StringComparison.Ordinal) Then
+                    If Not hasCurrentFile Then
+                        hasCurrentFile = True
+                        currentOldPath = String.Empty
+                        currentNewPath = String.Empty
+                        currentAdded = 0
+                        currentRemoved = 0
+                        inHunk = False
+                    End If
+
+                    Dim parsedNewPath = ParseUnifiedDiffPathMarker(lineText, "+++ ")
+                    If Not String.IsNullOrWhiteSpace(parsedNewPath) Then
+                        currentNewPath = parsedNewPath
+                    End If
+                    Continue For
+                End If
+
+                If Not hasCurrentFile Then
+                    Continue For
+                End If
+
+                If lineText.StartsWith("@@ ", StringComparison.Ordinal) OrElse
+                   lineText.StartsWith("@@", StringComparison.Ordinal) Then
+                    inHunk = True
+                    Continue For
+                End If
+
+                If lineText.StartsWith("+", StringComparison.Ordinal) Then
+                    currentAdded += 1
+                    Continue For
+                End If
+
+                If lineText.StartsWith("-", StringComparison.Ordinal) Then
+                    currentRemoved += 1
+                    Continue For
+                End If
+            Next
+
+            FlushUnifiedDiffFileCounts(countsByPath, currentOldPath, currentNewPath, currentAdded, currentRemoved)
+        End Sub
+
+        Private Shared Function ParseUnifiedDiffPathMarker(lineText As String, markerPrefix As String) As String
+            If String.IsNullOrWhiteSpace(lineText) OrElse String.IsNullOrWhiteSpace(markerPrefix) OrElse
+               Not lineText.StartsWith(markerPrefix, StringComparison.Ordinal) Then
+                Return String.Empty
+            End If
+
+            Dim token = lineText.Substring(markerPrefix.Length).Trim()
+            If String.IsNullOrWhiteSpace(token) Then
+                Return String.Empty
+            End If
+
+            Dim tabIndex = token.IndexOf(ControlChars.Tab)
+            If tabIndex > 0 Then
+                token = token.Substring(0, tabIndex)
+            End If
+
+            token = token.Trim()
+            If String.IsNullOrWhiteSpace(token) OrElse StringComparer.Ordinal.Equals(token, "/dev/null") Then
+                Return String.Empty
+            End If
+
+            If token.StartsWith("""", StringComparison.Ordinal) AndAlso token.EndsWith("""", StringComparison.Ordinal) AndAlso token.Length >= 2 Then
+                token = token.Substring(1, token.Length - 2)
+            End If
+
+            If token.StartsWith("a/", StringComparison.Ordinal) OrElse token.StartsWith("b/", StringComparison.Ordinal) Then
+                token = token.Substring(2)
+            End If
+
+            Return token.Trim()
+        End Function
+
+        Private Shared Sub FlushUnifiedDiffFileCounts(countsByPath As IDictionary(Of String, TurnDiffFileCounts),
+                                                      oldPath As String,
+                                                      newPath As String,
+                                                      addedCount As Integer,
+                                                      removedCount As Integer)
+            If countsByPath Is Nothing Then
+                Return
+            End If
+
+            Dim sanitizedAdded = SanitizeOptionalLineCount(If(addedCount > 0, CType(addedCount, Integer?), Nothing))
+            Dim sanitizedRemoved = SanitizeOptionalLineCount(If(removedCount > 0, CType(removedCount, Integer?), Nothing))
+            If Not sanitizedAdded.HasValue AndAlso Not sanitizedRemoved.HasValue Then
+                Return
+            End If
+
+            Dim cleanOldPath = If(oldPath, String.Empty).Trim()
+            Dim cleanNewPath = If(newPath, String.Empty).Trim()
+
+            If Not String.IsNullOrWhiteSpace(cleanNewPath) Then
+                SetTurnDiffCountsForPath(countsByPath, cleanNewPath, sanitizedAdded, sanitizedRemoved)
+            End If
+
+            If Not String.IsNullOrWhiteSpace(cleanOldPath) Then
+                SetTurnDiffCountsForPath(countsByPath, cleanOldPath, sanitizedAdded, sanitizedRemoved)
+            End If
+
+            If Not String.IsNullOrWhiteSpace(cleanOldPath) AndAlso
+               Not String.IsNullOrWhiteSpace(cleanNewPath) AndAlso
+               Not StringComparer.OrdinalIgnoreCase.Equals(cleanOldPath, cleanNewPath) Then
+                SetTurnDiffCountsForPath(countsByPath,
+                                         $"{cleanOldPath} -> {cleanNewPath}",
+                                         sanitizedAdded,
+                                         sanitizedRemoved)
+            End If
+        End Sub
+
+        Private Shared Sub SetTurnDiffCountsForPath(countsByPath As IDictionary(Of String, TurnDiffFileCounts),
+                                                    pathText As String,
+                                                    addedCount As Integer?,
+                                                    removedCount As Integer?)
+            If countsByPath Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedPath = If(pathText, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedPath) Then
+                Return
+            End If
+
+            Dim existing As TurnDiffFileCounts = Nothing
+            If Not countsByPath.TryGetValue(normalizedPath, existing) OrElse existing Is Nothing Then
+                existing = New TurnDiffFileCounts()
+                countsByPath(normalizedPath) = existing
+            End If
+
+            If addedCount.HasValue Then
+                existing.Added = addedCount
+            End If
+            If removedCount.HasValue Then
+                existing.Removed = removedCount
+            End If
+        End Sub
+
+        Private Shared Sub TryPopulateTurnDiffCountsByPathFromJson(turnDiffSummary As String,
+                                                                   countsByPath As IDictionary(Of String, TurnDiffFileCounts))
+            If String.IsNullOrWhiteSpace(turnDiffSummary) OrElse countsByPath Is Nothing Then
+                Return
+            End If
+
+            Try
+                Dim root = JsonNode.Parse(turnDiffSummary)
+                If root Is Nothing Then
+                    Return
+                End If
+
+                CollectTurnDiffCountsFromJsonNode(root, countsByPath, depth:=0)
+            Catch
+                ' Plain-text summaries are common; JSON parse is best-effort only.
+            End Try
+        End Sub
+
+        Private Shared Sub CollectTurnDiffCountsFromJsonNode(node As JsonNode,
+                                                             countsByPath As IDictionary(Of String, TurnDiffFileCounts),
+                                                             depth As Integer)
+            If node Is Nothing OrElse countsByPath Is Nothing OrElse depth > 4 Then
+                Return
+            End If
+
+            Dim obj = TryCast(node, JsonObject)
+            If obj IsNot Nothing Then
+                TryAddTurnDiffCountsFromJsonObject(obj, countsByPath)
+
+                Dim nestedDiff = TryCast(obj("diff"), JsonNode)
+                If nestedDiff IsNot Nothing Then
+                    CollectTurnDiffCountsFromJsonNode(nestedDiff, countsByPath, depth + 1)
+                End If
+
+                For Each arrayKey In New String() {"files", "changes", "items"}
+                    Dim nestedArray = TryCast(obj(arrayKey), JsonNode)
+                    If nestedArray IsNot Nothing Then
+                        CollectTurnDiffCountsFromJsonNode(nestedArray, countsByPath, depth + 1)
+                    End If
+                Next
+
+                Return
+            End If
+
+            Dim arr = TryCast(node, JsonArray)
+            If arr Is Nothing Then
+                Return
+            End If
+
+            For Each child In arr
+                CollectTurnDiffCountsFromJsonNode(child, countsByPath, depth + 1)
+            Next
+        End Sub
+
+        Private Shared Sub TryAddTurnDiffCountsFromJsonObject(obj As JsonObject,
+                                                              countsByPath As IDictionary(Of String, TurnDiffFileCounts))
+            If obj Is Nothing OrElse countsByPath Is Nothing Then
+                Return
+            End If
+
+            Dim path = ReadString(obj, "path", "file", "filename", "name")
+            If String.IsNullOrWhiteSpace(path) Then
+                Return
+            End If
+
+            Dim addedCount = SanitizeOptionalLineCountLong(ReadLong(obj,
+                                                                    "addedLineCount", "added_line_count",
+                                                                    "addedLines", "added_lines",
+                                                                    "additions", "added", "plus"))
+            Dim removedCount = SanitizeOptionalLineCountLong(ReadLong(obj,
+                                                                      "removedLineCount", "removed_line_count",
+                                                                      "removedLines", "removed_lines",
+                                                                      "deletions", "removed", "minus"))
+            If Not addedCount.HasValue AndAlso Not removedCount.HasValue Then
+                Return
+            End If
+
+            Dim normalizedPath = path.Trim()
+            Dim existing As TurnDiffFileCounts = Nothing
+            If Not countsByPath.TryGetValue(normalizedPath, existing) OrElse existing Is Nothing Then
+                existing = New TurnDiffFileCounts()
+                countsByPath(normalizedPath) = existing
+            End If
+
+            If addedCount.HasValue Then
+                existing.Added = addedCount
+            End If
+            If removedCount.HasValue Then
+                existing.Removed = removedCount
+            End If
+        End Sub
+
+        Private Shared Function BuildTurnDiffPathCandidates(fullPathText As String) As List(Of String)
+            Dim candidates As New List(Of String)()
+            Dim seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+
+            For Each candidate In ExpandTurnDiffPathCandidates(fullPathText)
+                Dim normalized = If(candidate, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalized) Then
+                    Continue For
+                End If
+
+                If seen.Add(normalized) Then
+                    candidates.Add(normalized)
+                End If
+            Next
+
+            Return candidates
+        End Function
+
+        Private Shared Iterator Function ExpandTurnDiffPathCandidates(fullPathText As String) As IEnumerable(Of String)
+            Dim rawText = If(fullPathText, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(rawText) Then
+                Return
+            End If
+
+            Yield rawText
+
+            Dim renameArrowIndex = rawText.IndexOf(" -> ", StringComparison.Ordinal)
+            If renameArrowIndex > 0 AndAlso renameArrowIndex + 4 < rawText.Length Then
+                Yield rawText.Substring(0, renameArrowIndex).Trim()
+                Yield rawText.Substring(renameArrowIndex + 4).Trim()
+            End If
+
+            Dim baseCandidates As New List(Of String)()
+            baseCandidates.Add(rawText)
+            If renameArrowIndex > 0 AndAlso renameArrowIndex + 4 < rawText.Length Then
+                baseCandidates.Add(rawText.Substring(0, renameArrowIndex).Trim())
+                baseCandidates.Add(rawText.Substring(renameArrowIndex + 4).Trim())
+            End If
+
+            For Each baseCandidate In baseCandidates
+                Dim normalized = If(baseCandidate, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalized) Then
+                    Continue For
+                End If
+
+                If normalized.Contains("\"c) Then
+                    Yield normalized.Replace("\"c, "/"c)
+                End If
+                If normalized.Contains("/"c) Then
+                    Yield normalized.Replace("/"c, "\"c)
+                End If
+
+                If normalized.Length > 2 AndAlso normalized(1) = "/"c AndAlso (normalized(0) = "a"c OrElse normalized(0) = "b"c) Then
+                    Continue For
+                End If
+
+                Yield "a/" & normalized
+                Yield "b/" & normalized
+            Next
+        End Function
+
+        Private Shared Function LineContainsAnyTurnDiffPathCandidate(lineText As String,
+                                                                     candidates As IEnumerable(Of String)) As Boolean
+            If String.IsNullOrWhiteSpace(lineText) OrElse candidates Is Nothing Then
+                Return False
+            End If
+
+            For Each candidate In candidates
+                If String.IsNullOrWhiteSpace(candidate) Then
+                    Continue For
+                End If
+
+                If lineText.IndexOf(candidate, StringComparison.OrdinalIgnoreCase) >= 0 Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function TryReadTurnDiffCountsFromText(lineText As String,
+                                                              ByRef counts As TurnDiffFileCounts) As Boolean
+            counts = Nothing
+            If String.IsNullOrWhiteSpace(lineText) Then
+                Return False
+            End If
+
+            Dim addedMatch = TurnDiffAddedCountRegex.Match(lineText)
+            Dim removedMatch = TurnDiffRemovedCountRegex.Match(lineText)
+            Dim addedCount = ParseRegexLineCount(addedMatch)
+            Dim removedCount = ParseRegexLineCount(removedMatch)
+            If Not addedCount.HasValue AndAlso Not removedCount.HasValue Then
+                Dim insertionMatch = TurnDiffInsertionsRegex.Match(lineText)
+                Dim deletionMatch = TurnDiffDeletionsRegex.Match(lineText)
+                addedCount = ParseRegexLineCount(insertionMatch)
+                removedCount = ParseRegexLineCount(deletionMatch)
+            End If
+
+            If Not addedCount.HasValue AndAlso Not removedCount.HasValue Then
+                TryReadTurnDiffCountsFromDiffStatBar(lineText, addedCount, removedCount)
+            End If
+
+            If Not addedCount.HasValue AndAlso Not removedCount.HasValue Then
+                Return False
+            End If
+
+            counts = New TurnDiffFileCounts() With {
+                .Added = addedCount,
+                .Removed = removedCount
+            }
+            Return True
+        End Function
+
+        Private Shared Function ParseRegexLineCount(match As Match) As Integer?
+            If match Is Nothing OrElse Not match.Success Then
+                Return Nothing
+            End If
+
+            Dim numberText = If(match.Groups("n")?.Value, String.Empty)
+            If String.IsNullOrWhiteSpace(numberText) Then
+                Return Nothing
+            End If
+
+            Dim parsed As Integer
+            If Not Integer.TryParse(numberText, NumberStyles.Integer, CultureInfo.InvariantCulture, parsed) Then
+                Return Nothing
+            End If
+
+            Return SanitizeOptionalLineCount(parsed)
+        End Function
+
+        Private Shared Sub TryReadTurnDiffCountsFromDiffStatBar(lineText As String,
+                                                                ByRef addedCount As Integer?,
+                                                                ByRef removedCount As Integer?)
+            If String.IsNullOrWhiteSpace(lineText) Then
+                Return
+            End If
+
+            Dim pipeIndex = lineText.IndexOf("|"c)
+            If pipeIndex < 0 OrElse pipeIndex + 1 >= lineText.Length Then
+                Return
+            End If
+
+            Dim rhs = lineText.Substring(pipeIndex + 1)
+            Dim plusCount = 0
+            Dim minusCount = 0
+            For Each ch In rhs
+                If ch = "+"c Then
+                    plusCount += 1
+                ElseIf ch = "-"c Then
+                    minusCount += 1
+                End If
+            Next
+
+            If plusCount > 0 Then
+                addedCount = plusCount
+            End If
+            If minusCount > 0 Then
+                removedCount = minusCount
+            End If
+        End Sub
+
+        Private Shared Function TryReadTurnDiffOverallCounts(turnDiffSummary As String,
+                                                             ByRef counts As TurnDiffFileCounts) As Boolean
+            counts = Nothing
+            If String.IsNullOrWhiteSpace(turnDiffSummary) Then
+                Return False
+            End If
+
+            Dim normalized = turnDiffSummary.Replace(ControlChars.CrLf, ControlChars.Lf).
+                                             Replace(ControlChars.Cr, ControlChars.Lf)
+            Dim lines = normalized.Split(ControlChars.Lf)
+
+            ' Prefer explicit totals lines ("N insertions(+), M deletions(-)") over raw +n/-n matches.
+            For Each rawLine In lines
+                Dim lineText = If(rawLine, String.Empty)
+                If String.IsNullOrWhiteSpace(lineText) Then
+                    Continue For
+                End If
+
+                Dim insertionMatch = TurnDiffInsertionsRegex.Match(lineText)
+                Dim deletionMatch = TurnDiffDeletionsRegex.Match(lineText)
+                Dim addedCount = ParseRegexLineCount(insertionMatch)
+                Dim removedCount = ParseRegexLineCount(deletionMatch)
+                If addedCount.HasValue OrElse removedCount.HasValue Then
+                    counts = New TurnDiffFileCounts() With {
+                        .Added = addedCount,
+                        .Removed = removedCount
+                    }
+                    Return True
+                End If
+            Next
+
+            ' Fallback: if the summary is a single line with +n/-n totals, use that.
+            If lines.Length = 1 Then
+                Dim lineCounts As TurnDiffFileCounts = Nothing
+                If TryReadTurnDiffCountsFromText(lines(0), lineCounts) Then
+                    counts = lineCounts
+                    Return True
+                End If
+            End If
+
+            Return False
+        End Function
+
+        Private Shared Function ParseSignedLineBadgeCount(value As String) As Integer?
+            Dim text = If(value, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return Nothing
+            End If
+
+            If text.StartsWith("+", StringComparison.Ordinal) OrElse
+               text.StartsWith("-", StringComparison.Ordinal) Then
+                text = text.Substring(1)
+            End If
+
+            Dim parsed As Integer
+            If Not Integer.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, parsed) Then
+                Return Nothing
+            End If
+
+            Return SanitizeOptionalLineCount(parsed)
+        End Function
+
+        Private Sub AppendFileChangeTurnDiffMergeProtocolDebug(stage As String,
+                                                               turnId As String,
+                                                               runtimeKey As String,
+                                                               turnDiffSummary As String,
+                                                               descriptor As TranscriptEntryDescriptor,
+                                                               Optional note As String = "")
+            If Not EnableFileChangeTurnDiffMergeProtocolDebug Then
+                Return
+            End If
+
+            Try
+                Dim normalizedStage = If(stage, String.Empty).Trim()
+                Dim normalizedTurnId = NormalizeTurnId(turnId)
+                Dim normalizedRuntimeKey = If(runtimeKey, String.Empty).Trim()
+                Dim diffText = If(turnDiffSummary, String.Empty)
+                Dim diffTrimmed = diffText.Trim()
+                Dim hasUnifiedDiff = diffTrimmed.StartsWith("diff --git ", StringComparison.Ordinal)
+
+                Dim itemCount = 0
+                Dim pathItemCount = 0
+                If descriptor?.FileChangeItems IsNot Nothing Then
+                    itemCount = descriptor.FileChangeItems.Count
+                    For Each item In descriptor.FileChangeItems
+                        If item Is Nothing OrElse item.IsOverflow Then
+                            Continue For
+                        End If
+                        pathItemCount += 1
+                    Next
+                End If
+
+                Dim parsedMap As Dictionary(Of String, TurnDiffFileCounts) = Nothing
+                If descriptor?.FileChangeItems IsNot Nothing AndAlso descriptor.FileChangeItems.Count > 0 AndAlso
+                   Not String.IsNullOrWhiteSpace(diffTrimmed) Then
+                    parsedMap = BuildTurnDiffCountsByPath(diffTrimmed, descriptor.FileChangeItems)
+                Else
+                    parsedMap = New Dictionary(Of String, TurnDiffFileCounts)(StringComparer.OrdinalIgnoreCase)
+                End If
+
+                Dim builder As New StringBuilder()
+                builder.Append("[")
+                builder.Append(Date.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture))
+                builder.Append("] debug: filechange_turndiff_merge")
+                builder.Append(" stage=").Append(FormatProtocolDebugToken(normalizedStage))
+                builder.Append(" turnId=").Append(FormatProtocolDebugToken(normalizedTurnId))
+                builder.Append(" runtimeKey=").Append(FormatProtocolDebugToken(normalizedRuntimeKey))
+                builder.Append(" diff_len=").Append(diffTrimmed.Length.ToString(CultureInfo.InvariantCulture))
+                builder.Append(" unified=").Append(If(hasUnifiedDiff, "1", "0"))
+                builder.Append(" descriptor_present=").Append(If(descriptor Is Nothing, "0", "1"))
+                builder.Append(" file_items=").Append(pathItemCount.ToString(CultureInfo.InvariantCulture))
+                builder.Append(" parsed_keys=").Append(parsedMap.Count.ToString(CultureInfo.InvariantCulture))
+                If Not String.IsNullOrWhiteSpace(note) Then
+                    builder.Append(" note=").Append(FormatProtocolDebugToken(note))
+                End If
+
+                If parsedMap.Count > 0 Then
+                    builder.Append(" keys=")
+                    AppendProtocolDebugParsedKeySample(builder, parsedMap)
+                End If
+
+                If descriptor?.FileChangeItems IsNot Nothing AndAlso descriptor.FileChangeItems.Count > 0 Then
+                    builder.Append(" files=")
+                    AppendProtocolDebugFileBadgeSummary(builder, descriptor.FileChangeItems, parsedMap)
+                End If
+
+                builder.AppendLine()
+                AppendProtocolChunk(builder.ToString())
+            Catch ex As Exception
+                Dim safeMessage = If(ex.Message, ex.GetType().Name)
+                AppendProtocolChunk($"[{Date.Now:HH:mm:ss}] debug: filechange_turndiff_merge_error message={FormatProtocolDebugToken(safeMessage)}{Environment.NewLine}")
+            End Try
+        End Sub
+
+        Private Shared Sub AppendProtocolDebugParsedKeySample(builder As StringBuilder,
+                                                              parsedMap As IDictionary(Of String, TurnDiffFileCounts))
+            If builder Is Nothing OrElse parsedMap Is Nothing OrElse parsedMap.Count = 0 Then
+                Return
+            End If
+
+            Dim written = 0
+            For Each pair In parsedMap
+                If written > 0 Then
+                    builder.Append(";")
+                End If
+                builder.Append(FormatProtocolDebugToken(pair.Key))
+                builder.Append(":")
+                builder.Append(FormatProtocolDebugCountPair(pair.Value))
+                written += 1
+                If written >= 6 Then
+                    Exit For
+                End If
+            Next
+
+            If parsedMap.Count > written Then
+                builder.Append(";...")
+            End If
+        End Sub
+
+        Private Shared Sub AppendProtocolDebugFileBadgeSummary(builder As StringBuilder,
+                                                               items As IEnumerable(Of TranscriptFileChangeListItemViewModel),
+                                                               parsedMap As IDictionary(Of String, TurnDiffFileCounts))
+            If builder Is Nothing OrElse items Is Nothing Then
+                Return
+            End If
+
+            Dim written = 0
+            For Each item In items
+                If item Is Nothing OrElse item.IsOverflow Then
+                    Continue For
+                End If
+
+                If written > 0 Then
+                    builder.Append(";")
+                End If
+
+                Dim fullPath = If(item.FullPathText, String.Empty).Trim()
+                builder.Append(FormatProtocolDebugToken(fullPath))
+                builder.Append("=")
+                builder.Append(FormatProtocolDebugToken(item.AddedLinesText))
+                builder.Append("/")
+                builder.Append(FormatProtocolDebugToken(item.RemovedLinesText))
+
+                Dim parsedCounts As TurnDiffFileCounts = Nothing
+                If parsedMap IsNot Nothing AndAlso
+                   TryResolveTurnDiffCountsForFilePath(parsedMap, fullPath, parsedCounts) AndAlso
+                   parsedCounts IsNot Nothing Then
+                    builder.Append("(parsed:")
+                    builder.Append(FormatProtocolDebugCountPair(parsedCounts))
+                    builder.Append(")")
+                Else
+                    builder.Append("(parsed:none)")
+                End If
+
+                written += 1
+                If written >= 8 Then
+                    Exit For
+                End If
+            Next
+
+            If written = 0 Then
+                builder.Append("none")
+            End If
+        End Sub
+
+        Private Shared Function FormatProtocolDebugCountPair(counts As TurnDiffFileCounts) As String
+            If counts Is Nothing Then
+                Return "none"
+            End If
+
+            Dim plusText = If(counts.Added.HasValue AndAlso counts.Added.Value > 0,
+                              "+" & counts.Added.Value.ToString(CultureInfo.InvariantCulture),
+                              "_")
+            Dim minusText = If(counts.Removed.HasValue AndAlso counts.Removed.Value > 0,
+                               "-" & counts.Removed.Value.ToString(CultureInfo.InvariantCulture),
+                               "_")
+            Return plusText & "/" & minusText
+        End Function
+
+        Private Shared Function FormatProtocolDebugToken(value As String) As String
+            Dim text = If(value, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return "_"
+            End If
+
+            text = text.Replace(ControlChars.Cr, " "c).
+                        Replace(ControlChars.Lf, " "c).
+                        Replace(ControlChars.Tab, " "c)
+            Do While text.Contains("  ", StringComparison.Ordinal)
+                text = text.Replace("  ", " ", StringComparison.Ordinal)
+            Loop
+
+            If text.Length > 120 Then
+                text = text.Substring(0, 117) & "..."
+            End If
+
+            If text.IndexOfAny(New Char() {" "c, ";"c, "="c}) >= 0 Then
+                Return """" & text.Replace("""", "'"c) & """"
+            End If
+
+            Return text
+        End Function
+
+        Private Shared Sub ApplyFileChangeInlineListFormatting(entry As TranscriptEntryViewModel)
+            If entry Is Nothing Then
+                Return
+            End If
+
+            Dim parsed = ParseFileChangeInlineList(entry.DetailsText)
+            entry.SetFileChangeItems(parsed.Items)
+            entry.DetailsText = parsed.RemainingDetails
+        End Sub
+
+        Private Shared Function ParseFileChangeInlineList(detailsText As String) As (Items As List(Of TranscriptFileChangeListItemViewModel), RemainingDetails As String)
+            Dim items As New List(Of TranscriptFileChangeListItemViewModel)()
+            Dim normalized = If(detailsText, String.Empty).Replace(ControlChars.CrLf, ControlChars.Lf).
+                                                Replace(ControlChars.Cr, ControlChars.Lf)
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return (items, String.Empty)
+            End If
+
+            Dim lines = normalized.Split(ControlChars.Lf)
+            Dim lineIndex = 0
+            Dim parsedAny = False
+
+            While lineIndex < lines.Length
+                Dim rawLine = If(lines(lineIndex), String.Empty)
+                If String.IsNullOrWhiteSpace(rawLine) Then
+                    Exit While
+                End If
+
+                Dim parsedItem = TryParseFileChangeInlineListLine(rawLine)
+                If parsedItem Is Nothing Then
+                    If parsedAny Then
+                        Exit While
+                    End If
+
+                    Return (New List(Of TranscriptFileChangeListItemViewModel)(), normalized.Trim())
+                End If
+
+                items.Add(parsedItem)
+                parsedAny = True
+                lineIndex += 1
+            End While
+
+            If Not parsedAny Then
+                Return (items, normalized.Trim())
+            End If
+
+            While lineIndex < lines.Length AndAlso String.IsNullOrWhiteSpace(lines(lineIndex))
+                lineIndex += 1
+            End While
+
+            Dim remainingBuilder As New StringBuilder()
+            While lineIndex < lines.Length
+                If remainingBuilder.Length > 0 Then
+                    remainingBuilder.AppendLine()
+                End If
+                remainingBuilder.Append(lines(lineIndex))
+                lineIndex += 1
+            End While
+
+            Return (items, remainingBuilder.ToString().Trim())
+        End Function
+
+        Private Shared Function TryParseFileChangeInlineListLine(rawLine As String) As TranscriptFileChangeListItemViewModel
+            Dim lineText = If(rawLine, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(lineText) Then
+                Return Nothing
+            End If
+
+            If lineText.StartsWith("... +", StringComparison.Ordinal) AndAlso
+               lineText.EndsWith(" more", StringComparison.Ordinal) Then
+                Return TranscriptFileChangeListItemViewModel.CreateOverflowItem(lineText)
+            End If
+
+            Dim separatorIndex = lineText.IndexOf(": ", StringComparison.Ordinal)
+            If separatorIndex > 0 Then
+                Dim candidatePath = lineText.Substring(separatorIndex + 2).Trim()
+                If LooksLikeFileChangePath(candidatePath) Then
+                    Return TranscriptFileChangeListItemViewModel.CreatePathItem(candidatePath)
+                End If
+            End If
+
+            If LooksLikeFileChangePath(lineText) Then
+                Return TranscriptFileChangeListItemViewModel.CreatePathItem(lineText)
+            End If
+
+            Return Nothing
+        End Function
+
+        Private Shared Function LooksLikeFileChangePath(value As String) As Boolean
+            Dim text = If(value, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return False
+            End If
+
+            If text.Contains(" -> ", StringComparison.Ordinal) OrElse
+               text.Contains("/"c) OrElse
+               text.Contains("\"c) Then
+                Return True
+            End If
+
+            If text.StartsWith("."c) Then
+                Return True
+            End If
+
+            Dim dotIndex = text.LastIndexOf("."c)
+            If dotIndex > 0 AndAlso dotIndex < text.Length - 1 Then
+                Return True
+            End If
+
+            Return text.IndexOf(" "c) < 0
         End Function
 
         Private Shared Function BuildToolBody(itemState As TurnItemRuntimeState) As String
@@ -1304,6 +2629,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .TimestampText = If(descriptor.TimestampText, String.Empty),
                 .RoleText = If(descriptor.RoleText, String.Empty),
                 .BodyText = If(descriptor.BodyText, String.Empty),
+                .StatusText = If(descriptor.StatusText, String.Empty),
                 .SecondaryText = If(descriptor.SecondaryText, String.Empty),
                 .DetailsText = If(descriptor.DetailsText, String.Empty)
             }
@@ -1331,6 +2657,14 @@ Namespace CodexNativeAgent.Ui.ViewModels
                    Not descriptor.UseRawReasoningLayout Then
                 Dim reasoningSource = If(String.IsNullOrWhiteSpace(descriptor.DetailsText), descriptor.BodyText, descriptor.DetailsText)
                 ApplyReasoningMarkdownFormatting(entry, reasoningSource)
+            End If
+
+            If StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "fileChange") Then
+                If descriptor.FileChangeItems IsNot Nothing AndAlso descriptor.FileChangeItems.Count > 0 Then
+                    entry.SetFileChangeItems(descriptor.FileChangeItems)
+                Else
+                    ApplyFileChangeInlineListFormatting(entry)
+                End If
             End If
 
             entry.AllowDetailsCollapse = ShouldAllowDetailsCollapse(entry.Kind)
@@ -1427,7 +2761,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         End Function
 
         Private Function ShouldCollapseDetailsByDefault(kind As String) As Boolean
-            If StringComparer.OrdinalIgnoreCase.Equals(kind, "reasoningCard") Then
+            If StringComparer.OrdinalIgnoreCase.Equals(kind, "reasoningCard") OrElse
+               StringComparer.OrdinalIgnoreCase.Equals(kind, "fileChange") Then
                 Return True
             End If
 
@@ -1436,7 +2771,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Private Shared Function ShouldAllowDetailsCollapse(kind As String) As Boolean
             Select Case If(kind, String.Empty).Trim().ToLowerInvariant()
-                Case "command", "filechange", "reasoningcard",
+                Case "command", "reasoningcard", "filechange",
                      "toolmcp", "toolcollab", "toolwebsearch", "toolimageview"
                     Return True
                 Case Else
@@ -1506,6 +2841,29 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             Return source
+        End Function
+
+        Private Shared Function NormalizeStatusToken(value As String) As String
+            Dim text = If(value, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return String.Empty
+            End If
+
+            Dim compact = text.Replace("-", String.Empty, StringComparison.Ordinal).
+                               Replace("_", String.Empty, StringComparison.Ordinal).
+                               Replace(" ", String.Empty, StringComparison.Ordinal).
+                               ToLowerInvariant()
+
+            Select Case compact
+                Case "inprogress", "running", "started"
+                    Return "in_progress"
+                Case "completed", "complete", "succeeded", "success", "ok", "done"
+                    Return "completed"
+                Case "failed", "failure", "error"
+                    Return "failed"
+                Case Else
+                    Return text.ToLowerInvariant()
+            End Select
         End Function
 
         Private Shared Function SanitizeReasoningCardDisplayText(value As String) As String
@@ -1831,6 +3189,18 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Return value.Value
         End Function
 
+        Private Shared Function SanitizeOptionalLineCountLong(value As Long?) As Integer?
+            If Not value.HasValue OrElse value.Value <= 0 Then
+                Return Nothing
+            End If
+
+            If value.Value > Integer.MaxValue Then
+                Return Integer.MaxValue
+            End If
+
+            Return CInt(value.Value)
+        End Function
+
         Private Sub AppendRawRoleLine(role As String, text As String)
             If String.IsNullOrWhiteSpace(text) Then
                 Return
@@ -1873,6 +3243,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             If Not String.IsNullOrWhiteSpace(keyToRemove) Then
                 _runtimeEntriesByKey.Remove(keyToRemove)
+                RemoveRuntimeKeyAssociations(keyToRemove)
             End If
         End Sub
 

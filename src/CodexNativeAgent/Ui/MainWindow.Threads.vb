@@ -394,6 +394,12 @@ Namespace CodexNativeAgent.Ui
             Dim header = TryCast(container.DataContext, ThreadGroupHeaderEntry)
             If header IsNot Nothing Then
                 _threadGroupContextTarget = header
+                _suppressThreadSelectionEvents = True
+                Try
+                    _viewModel.ThreadsPanel.SelectedListItem = header
+                Finally
+                    _suppressThreadSelectionEvents = False
+                End Try
                 e.Handled = True
                 PrepareThreadGroupContextMenu(header)
                 SidebarPaneHost.ThreadItemContextMenu.PlacementTarget = container
@@ -404,6 +410,7 @@ Namespace CodexNativeAgent.Ui
             Dim entry = TryCast(container.DataContext, ThreadListEntry)
             If entry IsNot Nothing Then
                 _threadContextTarget = entry
+                SelectThreadEntry(entry, suppressAutoLoad:=True)
                 e.Handled = True
                 PrepareThreadContextMenu(entry)
                 SidebarPaneHost.ThreadItemContextMenu.PlacementTarget = container
@@ -523,12 +530,7 @@ Namespace CodexNativeAgent.Ui
         Private Async Function StartThreadFromGroupHeaderContextMenuAsync() As Task
             Await _threadWorkflowCoordinator.RunThreadContextActionAsync(
                 Function()
-                    Dim target = ResolveContextThreadGroupEntry()
-                    If target Is Nothing OrElse String.IsNullOrWhiteSpace(target.ProjectPath) Then
-                        Return Nothing
-                    End If
-
-                    Return target
+                    Return ResolveContextThreadGroupEntryWithProjectPath()
                 End Function,
                 "Select a project folder first.",
                 Async Function(target)
@@ -536,6 +538,52 @@ Namespace CodexNativeAgent.Ui
                     _newThreadTargetOverrideCwd = target.ProjectPath
                     SyncNewThreadTargetChip()
                     Await StartThreadAsync()
+                End Function)
+        End Function
+
+        Private Async Function OpenThreadGroupInVsCodeFromContextMenuAsync() As Task
+            Await _threadWorkflowCoordinator.RunThreadContextActionAsync(
+                Function()
+                    Return ResolveContextThreadGroupEntryWithProjectPath()
+                End Function,
+                "Select a project folder first.",
+                Function(target)
+                    If Not Directory.Exists(target.ProjectPath) Then
+                        ShowStatus($"Folder not found: {target.ProjectPath}", isError:=True, displayToast:=True)
+                        Return Task.CompletedTask
+                    End If
+
+                    If StartVsCode(target.ProjectPath, ".") Then
+                        ShowStatus($"Opened VS Code in {target.ProjectPath}")
+                        Return Task.CompletedTask
+                    End If
+
+                    ShowStatus("Could not open VS Code. Make sure `code` is installed and available on PATH.",
+                               isError:=True,
+                               displayToast:=True)
+                    Return Task.CompletedTask
+                End Function)
+        End Function
+
+        Private Async Function OpenThreadGroupInTerminalFromContextMenuAsync() As Task
+            Await _threadWorkflowCoordinator.RunThreadContextActionAsync(
+                Function()
+                    Return ResolveContextThreadGroupEntryWithProjectPath()
+                End Function,
+                "Select a project folder first.",
+                Function(target)
+                    If Not Directory.Exists(target.ProjectPath) Then
+                        ShowStatus($"Folder not found: {target.ProjectPath}", isError:=True, displayToast:=True)
+                        Return Task.CompletedTask
+                    End If
+
+                    If StartProcessInDirectory("powershell.exe", "-NoExit", target.ProjectPath) Then
+                        ShowStatus($"Opened PowerShell in {target.ProjectPath}")
+                        Return Task.CompletedTask
+                    End If
+
+                    ShowStatus("Could not open PowerShell.", isError:=True, displayToast:=True)
+                    Return Task.CompletedTask
                 End Function)
         End Function
 
@@ -553,6 +601,15 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Return TryCast(_viewModel.ThreadsPanel.SelectedListItem, ThreadGroupHeaderEntry)
+        End Function
+
+        Private Function ResolveContextThreadGroupEntryWithProjectPath() As ThreadGroupHeaderEntry
+            Dim target = ResolveContextThreadGroupEntry()
+            If target Is Nothing OrElse String.IsNullOrWhiteSpace(target.ProjectPath) Then
+                Return Nothing
+            End If
+
+            Return target
         End Function
 
         Private Sub SelectThreadEntry(entry As ThreadListEntry, suppressAutoLoad As Boolean)

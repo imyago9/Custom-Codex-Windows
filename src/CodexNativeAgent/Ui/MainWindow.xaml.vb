@@ -295,6 +295,9 @@ Namespace CodexNativeAgent.Ui
         Private Const SHGFI_USEFILEATTRIBUTES As UInteger = &H10UI
         Private Const FILE_ATTRIBUTE_DIRECTORY As UInteger = &H10UI
         Private Const FILE_ATTRIBUTE_NORMAL As UInteger = &H80UI
+        Private Const LeftSidebarDefaultDockWidth As Double = 472.0R
+        Private Const LeftSidebarVisibleMinWidth As Double = 368.0R
+        Private Const LeftSidebarSplitterVisibleWidth As Double = 8.0R
         Private Shared ReadOnly _gitFileIconCacheLock As New Object()
         Private Shared ReadOnly _gitFileIconCache As New Dictionary(Of String, ImageSource)(StringComparer.OrdinalIgnoreCase)
 
@@ -430,9 +433,12 @@ Namespace CodexNativeAgent.Ui
         Private _suppressGitPanelSelectionEvents As Boolean
         Private _gitPanelActiveTab As String = "changes"
         Private _gitPanelDockWidth As Double = 560.0R
+        Private _leftSidebarDockWidth As Double = LeftSidebarDefaultDockWidth
+        Private _isLeftSidebarVisible As Boolean = True
         Private _currentGitPanelSnapshot As GitPanelSnapshot
         Private _gitPanelSelectedDiffFilePath As String = String.Empty
         Private _protocolDialogWindow As Window
+        Private _isStatusBarExpanded As Boolean
         Private _settings As New AppSettings()
         Private ReadOnly _viewModel As New MainWindowViewModel()
         Private ReadOnly _sessionCoordinator As SessionCoordinator
@@ -547,6 +553,8 @@ Namespace CodexNativeAgent.Ui
                 AddressOf ArchiveThreadFromContextMenuAsync,
                 AddressOf UnarchiveThreadFromContextMenuAsync,
                 AddressOf StartThreadFromGroupHeaderContextMenuAsync,
+                AddressOf OpenThreadGroupInVsCodeFromContextMenuAsync,
+                AddressOf OpenThreadGroupInTerminalFromContextMenuAsync,
                 AddressOf ToggleTheme,
                 AddressOf ExportDiagnosticsAsync)
 
@@ -602,9 +610,14 @@ Namespace CodexNativeAgent.Ui
             SyncAppearanceControls()
             SyncThreadToolbarMenus()
             SyncNewThreadTargetChip()
+            SetStatusBarExpanded(False)
+            SyncThreadsSidebarToggleVisual()
         End Sub
 
         Private Sub InitializeEventHandlers()
+            AddHandler Me.SizeChanged, Sub(sender, e) UpdateMainPaneResizeBounds()
+            AddHandler BtnStatusBarToggle.Click, Sub(sender, e) ToggleStatusBarVisibility()
+            AddHandler WorkspacePaneHost.BtnQuickToggleThreadsPanel.Click, Sub(sender, e) ToggleThreadsSidebarVisibility()
             AddHandler SidebarPaneHost.BtnSidebarNewThread.Click, Async Sub(sender, e)
                                                        ShowWorkspaceView()
                                                        Await RunUiActionAsync(AddressOf StartThreadAsync)
@@ -754,12 +767,157 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub MainWindow_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
+            UpdateMainPaneResizeBounds()
+            SyncStatusBarToggleVisual()
+
             If _startupConnectAttempted Then
                 Return
             End If
 
             _startupConnectAttempted = True
             FireAndForget(RunUiActionAsync(AddressOf AutoConnectOnStartupAsync))
+        End Sub
+
+        Private Sub ToggleStatusBarVisibility()
+            SetStatusBarExpanded(Not _isStatusBarExpanded)
+        End Sub
+
+        Private Sub SetStatusBarExpanded(isExpanded As Boolean)
+            _isStatusBarExpanded = isExpanded
+            If StatusBarPaneHost IsNot Nothing Then
+                StatusBarPaneHost.Visibility = If(isExpanded, Visibility.Visible, Visibility.Collapsed)
+            End If
+
+            SyncStatusBarToggleVisual()
+        End Sub
+
+        Private Sub SyncStatusBarToggleVisual()
+            If TxtStatusBarToggleGlyph IsNot Nothing Then
+                ' Up when collapsed (expand), down when expanded (collapse).
+                TxtStatusBarToggleGlyph.Text = If(_isStatusBarExpanded, ChrW(&HE70D), ChrW(&HE70E))
+            End If
+
+            If BtnStatusBarToggle IsNot Nothing Then
+                BtnStatusBarToggle.ToolTip = If(_isStatusBarExpanded, "Hide status bar", "Show status bar")
+            End If
+        End Sub
+
+        Private Sub ToggleThreadsSidebarVisibility()
+            SetThreadsSidebarVisible(Not _isLeftSidebarVisible)
+        End Sub
+
+        Private Sub SetThreadsSidebarVisible(isVisible As Boolean)
+            If LeftSidebarColumn Is Nothing Then
+                _isLeftSidebarVisible = isVisible
+                SyncThreadsSidebarToggleVisual()
+                Return
+            End If
+
+            If isVisible = _isLeftSidebarVisible AndAlso LeftSidebarColumn.ActualWidth >= 1.0R Then
+                SyncThreadsSidebarToggleVisual()
+                Return
+            End If
+
+            If Not isVisible Then
+                Dim actualWidth = LeftSidebarColumn.ActualWidth
+                If actualWidth > 1.0R Then
+                    _leftSidebarDockWidth = Math.Max(LeftSidebarVisibleMinWidth, actualWidth)
+                End If
+            End If
+
+            _isLeftSidebarVisible = isVisible
+            ApplyThreadsSidebarDockState()
+            UpdateMainPaneResizeBounds()
+
+            If isVisible AndAlso LeftSidebarColumn IsNot Nothing Then
+                Dim targetWidth = Math.Max(LeftSidebarVisibleMinWidth, _leftSidebarDockWidth)
+                Dim maxWidth = LeftSidebarColumn.MaxWidth
+                If Not Double.IsNaN(maxWidth) AndAlso Not Double.IsInfinity(maxWidth) AndAlso maxWidth > 0 Then
+                    targetWidth = Math.Min(targetWidth, maxWidth)
+                End If
+
+                LeftSidebarColumn.Width = New GridLength(targetWidth, GridUnitType.Pixel)
+            End If
+        End Sub
+
+        Private Sub ApplyThreadsSidebarDockState()
+            If LeftSidebarColumn IsNot Nothing Then
+                LeftSidebarColumn.MinWidth = If(_isLeftSidebarVisible, LeftSidebarVisibleMinWidth, 0)
+                If Not _isLeftSidebarVisible Then
+                    LeftSidebarColumn.Width = New GridLength(0, GridUnitType.Pixel)
+                End If
+            End If
+
+            If LeftSidebarSplitterColumn IsNot Nothing Then
+                LeftSidebarSplitterColumn.Width = New GridLength(If(_isLeftSidebarVisible, LeftSidebarSplitterVisibleWidth, 0), GridUnitType.Pixel)
+            End If
+
+            If LeftSidebarSplitter IsNot Nothing Then
+                LeftSidebarSplitter.Visibility = If(_isLeftSidebarVisible, Visibility.Visible, Visibility.Collapsed)
+            End If
+
+            SyncThreadsSidebarToggleVisual()
+        End Sub
+
+        Private Sub SyncThreadsSidebarToggleVisual()
+            If WorkspacePaneHost Is Nothing Then
+                Return
+            End If
+
+            If WorkspacePaneHost.BtnQuickToggleThreadsPanel IsNot Nothing Then
+                WorkspacePaneHost.BtnQuickToggleThreadsPanel.ToolTip = If(_isLeftSidebarVisible, "Hide threads panel", "Show threads panel")
+            End If
+
+            If WorkspacePaneHost.BrushThreadsPanelToggleIconMask IsNot Nothing Then
+                Dim iconUri = If(_isLeftSidebarVisible,
+                                 "pack://application:,,,/Assets/hide-threads-white.png",
+                                 "pack://application:,,,/Assets/show-threads-white.png")
+                WorkspacePaneHost.BrushThreadsPanelToggleIconMask.ImageSource = New BitmapImage(New Uri(iconUri, UriKind.Absolute))
+            End If
+        End Sub
+
+        Private Sub UpdateMainPaneResizeBounds()
+            If MainSurfaceGrid Is Nothing Then
+                Return
+            End If
+
+            Dim surfaceWidth = MainSurfaceGrid.ActualWidth
+            If Double.IsNaN(surfaceWidth) OrElse Double.IsInfinity(surfaceWidth) OrElse surfaceWidth <= 0 Then
+                Return
+            End If
+
+            Dim halfSurfaceWidth = Math.Floor(surfaceWidth / 2.0R)
+            If halfSurfaceWidth <= 0 Then
+                Return
+            End If
+
+            If LeftSidebarColumn IsNot Nothing Then
+                If _isLeftSidebarVisible Then
+                    LeftSidebarColumn.MinWidth = LeftSidebarVisibleMinWidth
+                    LeftSidebarColumn.MaxWidth = Math.Max(LeftSidebarColumn.MinWidth, halfSurfaceWidth)
+
+                    Dim leftActualWidth = LeftSidebarColumn.ActualWidth
+                    If leftActualWidth > LeftSidebarColumn.MaxWidth + 0.5R Then
+                        LeftSidebarColumn.Width = New GridLength(LeftSidebarColumn.MaxWidth, GridUnitType.Pixel)
+                    End If
+                Else
+                    LeftSidebarColumn.MinWidth = 0
+                    LeftSidebarColumn.MaxWidth = Math.Max(0, halfSurfaceWidth)
+                    If LeftSidebarColumn.Width.Value > 0.5R OrElse LeftSidebarColumn.ActualWidth > 0.5R Then
+                        LeftSidebarColumn.Width = New GridLength(0, GridUnitType.Pixel)
+                    End If
+                End If
+            End If
+
+            If RightGitPaneColumn IsNot Nothing Then
+                RightGitPaneColumn.MaxWidth = Math.Max(RightGitPaneColumn.MinWidth, halfSurfaceWidth)
+
+                Dim rightActualWidth = RightGitPaneColumn.ActualWidth
+                If rightActualWidth > RightGitPaneColumn.MaxWidth + 0.5R Then
+                    RightGitPaneColumn.Width = New GridLength(RightGitPaneColumn.MaxWidth, GridUnitType.Pixel)
+                    _gitPanelDockWidth = Math.Min(_gitPanelDockWidth, RightGitPaneColumn.MaxWidth)
+                End If
+            End If
         End Sub
 
         Private Sub ShowProtocolDialog()
@@ -1450,6 +1608,13 @@ Namespace CodexNativeAgent.Ui
                 targetWidth = Math.Min(targetWidth, maxFitWidth)
             End If
 
+            If MainSurfaceGrid IsNot Nothing AndAlso MainSurfaceGrid.ActualWidth > 0 Then
+                Dim maxHalfWidth = Math.Floor(MainSurfaceGrid.ActualWidth / 2.0R)
+                If maxHalfWidth > 0 Then
+                    targetWidth = Math.Min(targetWidth, maxHalfWidth)
+                End If
+            End If
+
             targetWidth = Math.Max(minGitPaneWidth, Math.Min(targetWidth, maxGitPaneWidth))
 
             If RightGitPaneShell IsNot Nothing Then
@@ -1468,6 +1633,8 @@ Namespace CodexNativeAgent.Ui
             If RightGitPaneSplitter IsNot Nothing Then
                 RightGitPaneSplitter.Visibility = Visibility.Visible
             End If
+
+            UpdateMainPaneResizeBounds()
         End Sub
 
         Private Shared Function StartVsCode(workingDirectory As String, arguments As String) As Boolean
@@ -2892,9 +3059,8 @@ Namespace CodexNativeAgent.Ui
             If Not hasActiveTurn AndAlso session.HasCurrentTurn AndAlso Not RuntimeHasTurnHistoryForCurrentThread() Then
                 hasActiveTurn = True
             End If
-            Dim canStartDraftTurn = _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(_currentThreadId)
             Dim canUseExistingThreadTurnControls = authenticated AndAlso Not _threadContentLoading AndAlso session.HasCurrentThread
-            Dim canStartTurn = authenticated AndAlso Not _threadContentLoading AndAlso (session.HasCurrentThread OrElse canStartDraftTurn)
+            Dim canStartTurn = authenticated AndAlso Not _threadContentLoading
 
             _viewModel.TurnComposer.CanStartTurn = canStartTurn AndAlso Not hasActiveTurn
             _viewModel.TurnComposer.CanSteerTurn = canUseExistingThreadTurnControls AndAlso hasActiveTurn

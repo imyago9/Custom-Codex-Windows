@@ -1,7 +1,13 @@
+Imports System.Collections.Generic
+Imports System.Collections.ObjectModel
+Imports System.IO
+Imports System.Runtime.InteropServices
 Imports System.Windows
-Imports System.Windows.Media
-Imports CodexNativeAgent.Ui.Mvvm
 Imports System.Windows.Input
+Imports System.Windows.Interop
+Imports System.Windows.Media
+Imports System.Windows.Media.Imaging
+Imports CodexNativeAgent.Ui.Mvvm
 
 Namespace CodexNativeAgent.Ui.ViewModels.Transcript
     Public NotInheritable Class TranscriptEntryDescriptor
@@ -9,6 +15,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Public Property TimestampText As String = String.Empty
         Public Property RoleText As String = String.Empty
         Public Property BodyText As String = String.Empty
+        Public Property StatusText As String = String.Empty
         Public Property SecondaryText As String = String.Empty
         Public Property DetailsText As String = String.Empty
         Public Property AddedLineCount As Integer?
@@ -20,6 +27,263 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Public Property IsError As Boolean
         Public Property IsStreaming As Boolean
         Public Property UseRawReasoningLayout As Boolean
+        Public Property FileChangeItems As List(Of TranscriptFileChangeListItemViewModel)
+    End Class
+
+    Public NotInheritable Class TranscriptFileChangeListItemViewModel
+        Private Shared ReadOnly _fileIconCache As New Dictionary(Of String, ImageSource)(StringComparer.OrdinalIgnoreCase)
+        Private Shared ReadOnly _fileIconCacheLock As New Object()
+
+        Public Property FullPathText As String = String.Empty
+        Public Property DisplayPathPrefixText As String = String.Empty
+        Public Property DisplayPathFileNameText As String = String.Empty
+        Public Property OverflowText As String = String.Empty
+        Public Property IsOverflow As Boolean
+        Public Property AddedLinesText As String = String.Empty
+        Public Property RemovedLinesText As String = String.Empty
+        Public Property FileIconSource As ImageSource
+
+        Public ReadOnly Property PathVisibility As Visibility
+            Get
+                Return If(IsOverflow, Visibility.Collapsed, Visibility.Visible)
+            End Get
+        End Property
+
+        Public ReadOnly Property OverflowVisibility As Visibility
+            Get
+                Return If(IsOverflow, Visibility.Visible, Visibility.Collapsed)
+            End Get
+        End Property
+
+        Public ReadOnly Property AddedLinesVisibility As Visibility
+            Get
+                Return If(String.IsNullOrWhiteSpace(AddedLinesText), Visibility.Collapsed, Visibility.Visible)
+            End Get
+        End Property
+
+        Public ReadOnly Property RemovedLinesVisibility As Visibility
+            Get
+                Return If(String.IsNullOrWhiteSpace(RemovedLinesText), Visibility.Collapsed, Visibility.Visible)
+            End Get
+        End Property
+
+        Public ReadOnly Property FileIconVisibility As Visibility
+            Get
+                Return If(FileIconSource Is Nothing, Visibility.Collapsed, Visibility.Visible)
+            End Get
+        End Property
+
+        Public ReadOnly Property FileIconFallbackVisibility As Visibility
+            Get
+                Return If(FileIconSource Is Nothing, Visibility.Visible, Visibility.Collapsed)
+            End Get
+        End Property
+
+        Public Shared Function CreatePathItem(pathText As String,
+                                              Optional addedLineCount As Integer? = Nothing,
+                                              Optional removedLineCount As Integer? = Nothing) As TranscriptFileChangeListItemViewModel
+            Dim text = If(pathText, String.Empty).Trim()
+            Dim parts = BuildDisplayPathParts(text)
+            Dim iconPath = ResolveTargetPathForIcon(text)
+            Return New TranscriptFileChangeListItemViewModel() With {
+                .FullPathText = text,
+                .DisplayPathPrefixText = parts.Prefix,
+                .DisplayPathFileNameText = parts.FileName,
+                .AddedLinesText = If(addedLineCount.HasValue AndAlso addedLineCount.Value > 0,
+                                     $"+{addedLineCount.Value}",
+                                     String.Empty),
+                .RemovedLinesText = If(removedLineCount.HasValue AndAlso removedLineCount.Value > 0,
+                                       $"-{removedLineCount.Value}",
+                                       String.Empty),
+                .FileIconSource = GetFileIconSource(iconPath)
+            }
+        End Function
+
+        Public Shared Function CreateOverflowItem(summaryText As String) As TranscriptFileChangeListItemViewModel
+            Return New TranscriptFileChangeListItemViewModel() With {
+                .IsOverflow = True,
+                .OverflowText = If(summaryText, String.Empty).Trim()
+            }
+        End Function
+
+        Private Shared Function BuildDisplayPathParts(pathText As String) As (Prefix As String, FileName As String)
+            Dim text = If(pathText, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return (String.Empty, String.Empty)
+            End If
+
+            Dim renamePrefix As String = String.Empty
+            Dim targetPath = text
+            Dim renameArrowIndex = text.IndexOf(" -> ", StringComparison.Ordinal)
+            If renameArrowIndex >= 0 Then
+                renamePrefix = text.Substring(0, renameArrowIndex + 4)
+                targetPath = text.Substring(renameArrowIndex + 4)
+            End If
+
+            Dim lastSlash = Math.Max(targetPath.LastIndexOf("/"c), targetPath.LastIndexOf("\"c))
+            If lastSlash < 0 Then
+                Return (renamePrefix, CompactFileNamePreservingEnd(targetPath))
+            End If
+
+            Dim prefix = renamePrefix & targetPath.Substring(0, lastSlash + 1)
+            Dim fileName = targetPath.Substring(lastSlash + 1)
+            If String.IsNullOrWhiteSpace(fileName) Then
+                Return (String.Empty, CompactFileNamePreservingEnd(text))
+            End If
+
+            Return (prefix, CompactFileNamePreservingEnd(fileName))
+        End Function
+
+        Private Shared Function ResolveTargetPathForIcon(pathText As String) As String
+            Dim text = If(pathText, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return String.Empty
+            End If
+
+            Dim renameArrowIndex = text.IndexOf(" -> ", StringComparison.Ordinal)
+            If renameArrowIndex >= 0 AndAlso renameArrowIndex + 4 < text.Length Then
+                Return text.Substring(renameArrowIndex + 4).Trim()
+            End If
+
+            Return text
+        End Function
+
+        Private Shared Function CompactFileNamePreservingEnd(fileName As String) As String
+            Dim text = If(fileName, String.Empty)
+            If String.IsNullOrWhiteSpace(text) Then
+                Return String.Empty
+            End If
+
+            Const maxLen As Integer = 34
+            If text.Length <= maxLen Then
+                Return text
+            End If
+
+            Dim ext = Path.GetExtension(text)
+            Dim stem = text
+            If Not String.IsNullOrWhiteSpace(ext) AndAlso ext.Length < text.Length Then
+                stem = text.Substring(0, text.Length - ext.Length)
+            Else
+                ext = String.Empty
+            End If
+
+            If String.IsNullOrEmpty(stem) Then
+                Return text
+            End If
+
+            Dim tailStemLen = Math.Min(8, Math.Max(3, stem.Length \ 3))
+            Dim headStemLen = Math.Max(5, maxLen - ext.Length - 3 - tailStemLen)
+            If headStemLen + tailStemLen >= stem.Length Then
+                Return text
+            End If
+
+            Return stem.Substring(0, headStemLen) &
+                   "..." &
+                   stem.Substring(stem.Length - tailStemLen) &
+                   ext
+        End Function
+
+        Private Shared Function GetFileIconSource(pathText As String) As ImageSource
+            Dim relativePath = If(pathText, String.Empty).Trim()
+            Dim isDirectory = relativePath.EndsWith("/", StringComparison.Ordinal) OrElse
+                              relativePath.EndsWith("\", StringComparison.Ordinal)
+
+            Dim extension = String.Empty
+            If Not isDirectory Then
+                extension = Path.GetExtension(relativePath)
+            End If
+
+            Dim cacheKey As String
+            If isDirectory Then
+                cacheKey = "dir"
+            ElseIf Not String.IsNullOrWhiteSpace(extension) Then
+                cacheKey = "ext:" & extension.Trim().ToLowerInvariant()
+            Else
+                cacheKey = "file"
+            End If
+
+            SyncLock _fileIconCacheLock
+                Dim cached As ImageSource = Nothing
+                If _fileIconCache.TryGetValue(cacheKey, cached) Then
+                    Return cached
+                End If
+            End SyncLock
+
+            Dim iconSource = CreateShellAssociatedIconSource(relativePath, isDirectory)
+
+            SyncLock _fileIconCacheLock
+                If Not _fileIconCache.ContainsKey(cacheKey) Then
+                    _fileIconCache(cacheKey) = iconSource
+                End If
+                Return _fileIconCache(cacheKey)
+            End SyncLock
+        End Function
+
+        Private Shared Function CreateShellAssociatedIconSource(relativePath As String, isDirectory As Boolean) As ImageSource
+            Try
+                Dim queryPath As String
+                If isDirectory Then
+                    queryPath = "folder"
+                Else
+                    Dim ext = Path.GetExtension(If(relativePath, String.Empty))
+                    If String.IsNullOrWhiteSpace(ext) Then
+                        queryPath = "file.bin"
+                    Else
+                        queryPath = "file" & ext.Trim()
+                    End If
+                End If
+
+                Dim fileAttrs = If(isDirectory, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL)
+                Dim flags = SHGFI_ICON Or SHGFI_SMALLICON Or SHGFI_USEFILEATTRIBUTES
+
+                Dim info As New SHFILEINFO()
+                Dim result = SHGetFileInfo(queryPath, fileAttrs, info, CUInt(Marshal.SizeOf(GetType(SHFILEINFO))), flags)
+                If result = IntPtr.Zero OrElse info.hIcon = IntPtr.Zero Then
+                    Return Nothing
+                End If
+
+                Try
+                    Dim iconImage = Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(16, 16))
+                    If iconImage IsNot Nothing AndAlso iconImage.CanFreeze Then
+                        iconImage.Freeze()
+                    End If
+                    Return iconImage
+                Finally
+                    DestroyIcon(info.hIcon)
+                End Try
+            Catch
+                Return Nothing
+            End Try
+        End Function
+
+        <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Unicode)>
+        Private Structure SHFILEINFO
+            Public hIcon As IntPtr
+            Public iIcon As Integer
+            Public dwAttributes As UInteger
+            <MarshalAs(UnmanagedType.ByValTStr, SizeConst:=260)>
+            Public szDisplayName As String
+            <MarshalAs(UnmanagedType.ByValTStr, SizeConst:=80)>
+            Public szTypeName As String
+        End Structure
+
+        <DllImport("shell32.dll", CharSet:=CharSet.Unicode)>
+        Private Shared Function SHGetFileInfo(pszPath As String,
+                                              dwFileAttributes As UInteger,
+                                              ByRef psfi As SHFILEINFO,
+                                              cbFileInfo As UInteger,
+                                              uFlags As UInteger) As IntPtr
+        End Function
+
+        <DllImport("user32.dll", SetLastError:=True)>
+        Private Shared Function DestroyIcon(hIcon As IntPtr) As Boolean
+        End Function
+
+        Private Const FILE_ATTRIBUTE_DIRECTORY As UInteger = &H10UI
+        Private Const FILE_ATTRIBUTE_NORMAL As UInteger = &H80UI
+        Private Const SHGFI_ICON As UInteger = &H100UI
+        Private Const SHGFI_SMALLICON As UInteger = &H1UI
+        Private Const SHGFI_USEFILEATTRIBUTES As UInteger = &H10UI
     End Class
 
     Public NotInheritable Class TranscriptEntryViewModel
@@ -29,6 +293,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _timestampText As String = String.Empty
         Private _roleText As String = String.Empty
         Private _bodyText As String = String.Empty
+        Private _statusText As String = String.Empty
         Private _secondaryText As String = String.Empty
         Private _detailsText As String = String.Empty
         Private _rowOpacity As Double = 1.0R
@@ -50,6 +315,8 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _streamingIndicatorVisibility As Visibility = Visibility.Collapsed
         Private _streamingIndicatorText As String = "in progress"
         Private _changeStatsVisibility As Visibility = Visibility.Collapsed
+        Private _fileChangeListVisibility As Visibility = Visibility.Collapsed
+        Private _activityBodyChipVisibility As Visibility = Visibility.Visible
         Private _addedLinesText As String = String.Empty
         Private _removedLinesText As String = String.Empty
         Private _addedLinesVisibility As Visibility = Visibility.Collapsed
@@ -59,6 +326,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _detailsToggleVisibility As Visibility = Visibility.Collapsed
         Private _detailsToggleText As String = "Show details"
         Private ReadOnly _toggleDetailsCommand As ICommand
+        Private ReadOnly _fileChangeItems As New ObservableCollection(Of TranscriptFileChangeListItemViewModel)()
 
         Public Sub New()
             _toggleDetailsCommand = New RelayCommand(Sub() ToggleDetails())
@@ -101,6 +369,15 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Get
             Set(value As String)
                 SetProperty(_bodyText, If(value, String.Empty))
+            End Set
+        End Property
+
+        Public Property StatusText As String
+            Get
+                Return _statusText
+            End Get
+            Set(value As String)
+                SetProperty(_statusText, If(value, String.Empty))
             End Set
         End Property
 
@@ -296,6 +573,30 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Set
         End Property
 
+        Public Property FileChangeListVisibility As Visibility
+            Get
+                Return _fileChangeListVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_fileChangeListVisibility, value)
+            End Set
+        End Property
+
+        Public Property ActivityBodyChipVisibility As Visibility
+            Get
+                Return _activityBodyChipVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_activityBodyChipVisibility, value)
+            End Set
+        End Property
+
+        Public ReadOnly Property FileChangeItems As ObservableCollection(Of TranscriptFileChangeListItemViewModel)
+            Get
+                Return _fileChangeItems
+            End Get
+        End Property
+
         Public Property AddedLinesText As String
             Get
                 Return _addedLinesText
@@ -390,6 +691,23 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End If
 
             BodyText = _bodyText & chunk
+        End Sub
+
+        Public Sub SetFileChangeItems(items As IEnumerable(Of TranscriptFileChangeListItemViewModel))
+            _fileChangeItems.Clear()
+
+            If items IsNot Nothing Then
+                For Each item In items
+                    If item Is Nothing Then
+                        Continue For
+                    End If
+
+                    _fileChangeItems.Add(item)
+                Next
+            End If
+
+            FileChangeListVisibility = If(_fileChangeItems.Count > 0, Visibility.Visible, Visibility.Collapsed)
+            ActivityBodyChipVisibility = If(_fileChangeItems.Count > 0, Visibility.Collapsed, Visibility.Visible)
         End Sub
 
         Private Sub ToggleDetails()

@@ -193,6 +193,8 @@ Namespace CodexNativeAgent.Ui.Coordinators
                     itemOrder = runtimeStore.TurnItemOrder(turnKey)
                 End If
 
+                Dim turnHasFileChange = TurnContainsFileChangeItem(runtimeStore, itemOrder)
+                Dim lastFileChangeRuntimeKey As String = String.Empty
                 Dim insertedTurnStartSection = False
                 If itemOrder IsNot Nothing Then
                     For Each itemId In itemOrder
@@ -204,28 +206,45 @@ Namespace CodexNativeAgent.Ui.Coordinators
                             Continue For
                         End If
 
-                        Dim descriptor = TranscriptPanelViewModel.BuildRuntimeItemDescriptorForSnapshot(runtimeStore.ItemsById(itemId))
+                        Dim itemState = runtimeStore.ItemsById(itemId)
+                        Dim descriptor = TranscriptPanelViewModel.BuildRuntimeItemDescriptorForSnapshot(itemState)
                         If descriptor Is Nothing Then
                             Continue For
                         End If
 
                         Dim isUserDescriptor = StringComparer.OrdinalIgnoreCase.Equals(If(descriptor.Kind, String.Empty), "user")
                         If Not insertedTurnStartSection AndAlso Not isUserDescriptor Then
-                            AppendTurnStartSection(accumulator, turnContext, turnState)
+                            AppendTurnStartSection(accumulator, turnContext, turnState, includeDiffSummary:=Not turnHasFileChange)
                             insertedTurnStartSection = True
                         End If
 
-                        UpsertDescriptor(accumulator, $"item:{itemId}", descriptor)
+                        Dim itemRuntimeKey = $"item:{itemId}"
+                        If StringComparer.OrdinalIgnoreCase.Equals(If(descriptor.Kind, String.Empty), "fileChange") Then
+                            lastFileChangeRuntimeKey = itemRuntimeKey
+                        End If
+
+                        UpsertDescriptor(accumulator, itemRuntimeKey, descriptor)
 
                         If Not insertedTurnStartSection AndAlso isUserDescriptor Then
-                            AppendTurnStartSection(accumulator, turnContext, turnState)
+                            AppendTurnStartSection(accumulator, turnContext, turnState, includeDiffSummary:=Not turnHasFileChange)
                             insertedTurnStartSection = True
                         End If
                     Next
                 End If
 
+                If turnHasFileChange AndAlso
+                   turnState IsNot Nothing AndAlso
+                   Not String.IsNullOrWhiteSpace(turnState.DiffSummary) AndAlso
+                   Not String.IsNullOrWhiteSpace(lastFileChangeRuntimeKey) Then
+                    Dim lastFileChangeDescriptor As TranscriptEntryDescriptor = Nothing
+                    If accumulator.ByKey.TryGetValue(lastFileChangeRuntimeKey, lastFileChangeDescriptor) AndAlso
+                       lastFileChangeDescriptor IsNot Nothing Then
+                        TranscriptPanelViewModel.MergeTurnDiffIntoFileChangeDescriptor(lastFileChangeDescriptor, turnState.DiffSummary)
+                    End If
+                End If
+
                 If Not insertedTurnStartSection Then
-                    AppendTurnStartSection(accumulator, turnContext, turnState)
+                    AppendTurnStartSection(accumulator, turnContext, turnState, includeDiffSummary:=Not turnHasFileChange)
                 End If
 
                 Dim completionStatus = If(turnState Is Nothing, "completed", turnState.TurnStatus)
@@ -923,7 +942,8 @@ Namespace CodexNativeAgent.Ui.Coordinators
 
         Private Shared Sub AppendTurnStartSection(accumulator As SnapshotDescriptorAccumulator,
                                                   turnContext As SnapshotTurnContext,
-                                                  turnState As TurnRuntimeState)
+                                                  turnState As TurnRuntimeState,
+                                                  Optional includeDiffSummary As Boolean = True)
             If accumulator Is Nothing OrElse turnContext Is Nothing Then
                 Return
             End If
@@ -937,7 +957,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 Return
             End If
 
-            If Not String.IsNullOrWhiteSpace(turnState.DiffSummary) Then
+            If includeDiffSummary AndAlso Not String.IsNullOrWhiteSpace(turnState.DiffSummary) Then
                 UpsertDescriptor(accumulator,
                                  BuildTurnMetadataRuntimeKey(turnContext.ThreadId, turnContext.TurnId, "diff"),
                                  TranscriptPanelViewModel.BuildTurnMetadataDescriptorForSnapshot("diff",
@@ -954,6 +974,30 @@ Namespace CodexNativeAgent.Ui.Coordinators
 
         Private Shared Function BuildTurnLifecycleRuntimeKey(turnId As String, slot As String) As String
             Return $"turn:lifecycle:{NormalizeIdentifier(slot)}:{NormalizeIdentifier(turnId)}"
+        End Function
+
+        Private Shared Function TurnContainsFileChangeItem(runtimeStore As TurnFlowRuntimeStore,
+                                                           itemOrder As IEnumerable(Of String)) As Boolean
+            If runtimeStore Is Nothing OrElse itemOrder Is Nothing Then
+                Return False
+            End If
+
+            For Each itemId In itemOrder
+                If String.IsNullOrWhiteSpace(itemId) OrElse Not runtimeStore.ItemsById.ContainsKey(itemId) Then
+                    Continue For
+                End If
+
+                Dim itemState = runtimeStore.ItemsById(itemId)
+                If itemState Is Nothing Then
+                    Continue For
+                End If
+
+                If StringComparer.OrdinalIgnoreCase.Equals(If(itemState.ItemType, String.Empty).Trim(), "filechange") Then
+                    Return True
+                End If
+            Next
+
+            Return False
         End Function
 
         Private Shared Function BuildTurnMetadataRuntimeKey(threadId As String,

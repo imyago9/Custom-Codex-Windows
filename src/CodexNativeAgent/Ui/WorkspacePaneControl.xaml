@@ -6,48 +6,84 @@
                     Background="Transparent"
                     BorderThickness="0"
                     Padding="{DynamicResource MainShellPadding}">
-                <Grid>
+                <Grid x:Name="WorkspaceLayoutRoot">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" MinHeight="260" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition x:Name="TurnComposerHostRow"
+                                       Height="Auto"
+                                       MinHeight="136" />
                     </Grid.RowDefinitions>
 
-                    <Border Grid.Row="0"
-                            CornerRadius="14"
-                            BorderThickness="1"
-                            BorderBrush="{DynamicResource WorkspaceHeaderGlassOuterBorderBrush}"
-                            Background="{DynamicResource WorkspaceHeaderGlassOuterBackgroundBrush}"
-                            Margin="0,0,0,12">
+                    <Grid Grid.Row="0"
+                          Margin="0,0,0,12">
                         <Grid>
-                            <Border Style="{x:Null}"
-                                    CornerRadius="14"
-                                    Background="{x:Null}"
-                                    BorderBrush="{DynamicResource WorkspaceHeaderGlassInnerBorderBrush}"
-                                    BorderThickness="1"
-                                    Margin="1" />
-                            <Border Style="{x:Null}"
-                                    CornerRadius="13"
-                                    Margin="1"
-                                    Opacity="0.95">
-                                <Border.Background>
-                                    <DynamicResource ResourceKey="WorkspaceHeaderGlassFillBrush" />
-                                </Border.Background>
-                            </Border>
-                            <Border Style="{x:Null}"
-                                    CornerRadius="13"
-                                    Margin="1"
-                                    VerticalAlignment="Top"
-                                    Height="20"
-                                    IsHitTestVisible="False">
-                                <Border.Background>
-                                    <DynamicResource ResourceKey="WorkspaceHeaderGlassSheenBrush" />
-                                </Border.Background>
-                            </Border>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                            <DockPanel Margin="14,12">
-                                <StackPanel DockPanel.Dock="Left">
+                            <DockPanel Grid.Row="0"
+                                       Margin="14,12">
+                                <DockPanel.Resources>
+                                    <Style x:Key="QuickIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}">
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="MinWidth" Value="34" />
+                                        <Setter Property="MinHeight" Value="34" />
+                                        <Setter Property="Padding" Value="6" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Grid>
+                                                        <Border x:Name="QuickIconButtonGlass"
+                                                                CornerRadius="10"
+                                                                Background="Transparent"
+                                                                BorderBrush="Transparent"
+                                                                BorderThickness="1" />
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"
+                                                                          Margin="{TemplateBinding Padding}" />
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBackgroundBrush}" />
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBorderBrush}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsPressed" Value="True">
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBackgroundBrush}" />
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBorderBrush}" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </DockPanel.Resources>
+
+                                <StackPanel DockPanel.Dock="Left"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Top">
+                                    <Button x:Name="BtnQuickToggleThreadsPanel"
+                                            Style="{StaticResource QuickIconButtonStyle}"
+                                            ToolTip="Hide threads panel"
+                                            Margin="0,0,10,0">
+                                        <Rectangle Width="16"
+                                                   Height="16"
+                                                   Fill="{DynamicResource TextSecondaryBrush}">
+                                            <Rectangle.OpacityMask>
+                                                <ImageBrush x:Name="BrushThreadsPanelToggleIconMask"
+                                                            ImageSource="pack://application:,,,/Assets/hide-threads-white.png"
+                                                            Stretch="Uniform" />
+                                            </Rectangle.OpacityMask>
+                                        </Rectangle>
+                                    </Button>
+
+                                    <StackPanel>
                                     <TextBlock x:Name="LblCurrentThread" Text="{Binding CurrentThreadText}" FontSize="20" FontWeight="SemiBold" />
                                     <TextBlock x:Name="LblCurrentTurn"
                                                Text="{Binding CurrentTurnText}"
@@ -65,46 +101,10 @@
                                                    FontSize="11"
                                                    Foreground="{DynamicResource TextSecondaryBrush}" />
                                     </Border>
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
-                                    <StackPanel.Resources>
-                                        <Style x:Key="QuickIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}">
-                                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-                                            <Setter Property="Background" Value="Transparent" />
-                                            <Setter Property="BorderBrush" Value="Transparent" />
-                                            <Setter Property="BorderThickness" Value="0" />
-                                            <Setter Property="MinWidth" Value="34" />
-                                            <Setter Property="MinHeight" Value="34" />
-                                            <Setter Property="Padding" Value="6" />
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <Grid>
-                                                            <Border x:Name="QuickIconButtonGlass"
-                                                                    CornerRadius="10"
-                                                                    Background="Transparent"
-                                                                    BorderBrush="Transparent"
-                                                                    BorderThickness="1" />
-                                                            <ContentPresenter HorizontalAlignment="Center"
-                                                                              VerticalAlignment="Center"
-                                                                              Margin="{TemplateBinding Padding}" />
-                                                        </Grid>
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBackgroundBrush}" />
-                                                                <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBorderBrush}" />
-                                                            </Trigger>
-                                                            <Trigger Property="IsPressed" Value="True">
-                                                                <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBackgroundBrush}" />
-                                                                <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBorderBrush}" />
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                        </Style>
-                                    </StackPanel.Resources>
                                     <Button x:Name="BtnQuickOpenVsc"
                                             Style="{StaticResource QuickIconButtonStyle}"
                                             ToolTip="Open in VS Code"
@@ -142,8 +142,14 @@
                                     </Button>
                                 </StackPanel>
                             </DockPanel>
+
+                            <Border Grid.Row="1"
+                                    Height="2"
+                                    Margin="0,2,0,0"
+                                    Background="{DynamicResource BorderStrongBrush}"
+                                    Opacity="0.82" />
                         </Grid>
-                    </Border>
+                    </Grid>
 
                     <Border x:Name="WorkspaceHintBanner"
                             Grid.Row="1"
@@ -227,8 +233,12 @@
                                      ItemsSource="{Binding TranscriptPanel.Items}"
                                      Background="Transparent"
                                      BorderThickness="0"
+                                     FontSize="14.4"
                                      HorizontalContentAlignment="Stretch"
-                                     ScrollViewer.CanContentScroll="False"
+                                     ScrollViewer.CanContentScroll="True"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling"
+                                     VirtualizingPanel.ScrollUnit="Pixel"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      SelectionMode="Single">
@@ -249,7 +259,7 @@
                                         </Setter>
                                     </Style>
                                     <Style x:Key="TranscriptBadgeTextStyle" TargetType="TextBlock">
-                                        <Setter Property="FontSize" Value="11.5" />
+                                        <Setter Property="FontSize" Value="15.8" />
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                                     </Style>
@@ -257,7 +267,8 @@
                                         <Setter Property="TextWrapping" Value="Wrap" />
                                         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                                         <Setter Property="FontFamily" Value="{Binding BodyFontFamily}" />
-                                        <Setter Property="LineHeight" Value="20" />
+                                        <Setter Property="FontSize" Value="16.6" />
+                                        <Setter Property="LineHeight" Value="28" />
                                     </Style>
                                     <Style x:Key="TranscriptSelectableTextBoxStyle" TargetType="TextBox">
                                         <Setter Property="IsReadOnly" Value="True" />
@@ -274,6 +285,7 @@
                                         <Setter Property="MinHeight" Value="0" />
                                         <Setter Property="VerticalContentAlignment" Value="Top" />
                                         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                        <Setter Property="FontSize" Value="16.6" />
                                         <Setter Property="Cursor" Value="IBeam" />
                                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                                         <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
@@ -284,6 +296,12 @@
                                            BasedOn="{StaticResource TranscriptSelectableTextBoxStyle}">
                                         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                                         <Setter Property="FontFamily" Value="{Binding BodyFontFamily}" />
+                                    </Style>
+                                    <Style x:Key="TranscriptSelectableCommandDetailsTextBoxStyle"
+                                           TargetType="TextBox"
+                                           BasedOn="{StaticResource TranscriptSelectableTextBoxStyle}">
+                                        <Setter Property="MaxHeight" Value="320" />
+                                        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
                                     </Style>
                                 </ListBox.Resources>
                                 <ListBox.ItemTemplate>
@@ -307,7 +325,7 @@
                                                                      DockPanel.Dock="Right"
                                                                      Visibility="{Binding TimestampVisibility}"
                                                                      Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                     FontSize="11"
+                                                                     FontSize="15"
                                                                      AcceptsReturn="False"
                                                                      TextWrapping="NoWrap" />
                                                             <StackPanel Orientation="Horizontal">
@@ -315,7 +333,7 @@
                                                                          Style="{StaticResource TranscriptSelectableTextBoxStyle}"
                                                                          Visibility="{Binding RoleVisibility}"
                                                                          Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                         FontSize="11"
+                                                                         FontSize="15"
                                                                          FontWeight="SemiBold"
                                                                          Margin="0,0,6,0"
                                                                          AcceptsReturn="False"
@@ -324,7 +342,7 @@
                                                                          Style="{StaticResource TranscriptSelectableTextBoxStyle}"
                                                                          Visibility="{Binding StreamingIndicatorVisibility}"
                                                                          Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                         FontSize="11"
+                                                                         FontSize="15"
                                                                          AcceptsReturn="False"
                                                                          TextWrapping="NoWrap" />
                                                             </StackPanel>
@@ -338,7 +356,7 @@
                                                                  Visibility="{Binding SecondaryVisibility}"
                                                                  Margin="0,5,0,0"
                                                                  Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                 FontSize="11.5" />
+                                                                 FontSize="15.8" />
 
                                                         <Border x:Name="BubbleDetailsChrome"
                                                                 Visibility="{Binding DetailsVisibility}"
@@ -396,7 +414,7 @@
                                                                      DockPanel.Dock="Right"
                                                                      Visibility="{Binding TimestampVisibility}"
                                                                      Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                     FontSize="11"
+                                                                     FontSize="15"
                                                                      AcceptsReturn="False"
                                                                      TextWrapping="NoWrap" />
                                                             <StackPanel Orientation="Horizontal"
@@ -407,7 +425,7 @@
                                                                          Style="{StaticResource TranscriptSelectableTextBoxStyle}"
                                                                          Visibility="{Binding AddedLinesVisibility}"
                                                                          Foreground="{DynamicResource SuccessBrush}"
-                                                                         FontSize="11"
+                                                                         FontSize="15"
                                                                          FontWeight="SemiBold"
                                                                          Margin="0,0,8,0"
                                                                          AcceptsReturn="False"
@@ -416,7 +434,7 @@
                                                                          Style="{StaticResource TranscriptSelectableTextBoxStyle}"
                                                                          Visibility="{Binding RemovedLinesVisibility}"
                                                                          Foreground="{DynamicResource DangerBrush}"
-                                                                         FontSize="11"
+                                                                         FontSize="15"
                                                                          FontWeight="SemiBold"
                                                                          AcceptsReturn="False"
                                                                          TextWrapping="NoWrap" />
@@ -434,7 +452,7 @@
                                                                          Style="{StaticResource TranscriptSelectableTextBoxStyle}"
                                                                          Visibility="{Binding RoleVisibility}"
                                                                          Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                         FontSize="11"
+                                                                         FontSize="15"
                                                                          FontWeight="SemiBold"
                                                                          Margin="0,0,6,0"
                                                                          AcceptsReturn="False"
@@ -454,31 +472,183 @@
                                                                          Style="{StaticResource TranscriptSelectableTextBoxStyle}"
                                                                          Visibility="{Binding StreamingIndicatorVisibility}"
                                                                          Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                         FontSize="11"
+                                                                         FontSize="15"
                                                                          AcceptsReturn="False"
                                                                          TextWrapping="NoWrap" />
                                                             </Grid>
                                                         </DockPanel>
 
-                                                        <Border x:Name="ActivityBodyChip"
-                                                                Padding="8,6"
-                                                                CornerRadius="8"
-                                                                Background="{DynamicResource SurfaceMutedBrush}"
-                                                                BorderBrush="{DynamicResource BorderBrush}"
-                                                                BorderThickness="1">
-                                                            <TextBox Text="{Binding BodyText}"
-                                                                     Style="{StaticResource TranscriptSelectableBodyTextBoxStyle}"
-                                                                     Foreground="{DynamicResource TextSecondaryBrush}" />
-                                                        </Border>
+                                                        <Grid x:Name="ActivityBodyRow">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
 
-                                                        <TextBox Text="{Binding SecondaryText}"
+                                                            <Border x:Name="ActivityBodyChip"
+                                                                    Grid.Column="0"
+                                                                    Visibility="{Binding ActivityBodyChipVisibility}"
+                                                                    Padding="8,6"
+                                                                    CornerRadius="8"
+                                                                    Background="{DynamicResource SurfaceMutedBrush}"
+                                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                                    BorderThickness="1">
+                                                                <TextBox x:Name="ActivityBodyChipText"
+                                                                         Text="{Binding BodyText}"
+                                                                         Style="{StaticResource TranscriptSelectableBodyTextBoxStyle}"
+                                                                         Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                         Margin="0" />
+                                                            </Border>
+
+                                                            <ItemsControl x:Name="ActivityFileChangeList"
+                                                                          Grid.Column="0"
+                                                                          ItemsSource="{Binding FileChangeItems}"
+                                                                          HorizontalAlignment="Stretch"
+                                                                          Visibility="{Binding FileChangeListVisibility}">
+                                                                <ItemsControl.ItemContainerStyle>
+                                                                    <Style TargetType="ContentPresenter">
+                                                                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                                                    </Style>
+                                                                </ItemsControl.ItemContainerStyle>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Grid Margin="0,0,0,4" HorizontalAlignment="Stretch">
+                                                                            <Border x:Name="ActivityFileChangePathChip"
+                                                                                    Visibility="{Binding PathVisibility}"
+                                                                                    Background="{DynamicResource SurfaceMutedBrush}"
+                                                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                                                    BorderThickness="1"
+                                                                                    CornerRadius="8"
+                                                                                    Padding="8,6"
+                                                                                    HorizontalAlignment="Stretch"
+                                                                                    ToolTip="{Binding FullPathText}">
+                                                                                <Grid MinWidth="0" ClipToBounds="True">
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="Auto" />
+                                                                                        <ColumnDefinition Width="*" MinWidth="0" />
+                                                                                        <ColumnDefinition Width="Auto" />
+                                                                                    </Grid.ColumnDefinitions>
+
+                                                                                    <Grid Grid.Column="0"
+                                                                                          Width="18"
+                                                                                          Height="18"
+                                                                                          Margin="0,0,8,0"
+                                                                                          VerticalAlignment="Center">
+                                                                                        <Image Source="{Binding FileIconSource}"
+                                                                                               Width="16"
+                                                                                               Height="16"
+                                                                                               Stretch="Uniform"
+                                                                                               SnapsToDevicePixels="True"
+                                                                                               Visibility="{Binding FileIconVisibility}"
+                                                                                               HorizontalAlignment="Center"
+                                                                                               VerticalAlignment="Center" />
+                                                                                        <TextBlock Text="&#xE8A5;"
+                                                                                                   FontFamily="Segoe MDL2 Assets"
+                                                                                                   FontSize="10"
+                                                                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                                                   Visibility="{Binding FileIconFallbackVisibility}"
+                                                                                                   HorizontalAlignment="Center"
+                                                                                                   VerticalAlignment="Center"
+                                                                                                   LineHeight="10" />
+                                                                                    </Grid>
+
+                                                                                    <Grid Grid.Column="1"
+                                                                                          MinWidth="0"
+                                                                                          Margin="0,0,10,0"
+                                                                                          VerticalAlignment="Center">
+                                                                                        <Grid.ColumnDefinitions>
+                                                                                            <ColumnDefinition Width="Auto" />
+                                                                                            <ColumnDefinition Width="*" MinWidth="0" />
+                                                                                        </Grid.ColumnDefinitions>
+
+                                                                                        <TextBlock Grid.Column="0"
+                                                                                                   Text="{Binding DisplayPathFileNameText}"
+                                                                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                                                   FontWeight="SemiBold"
+                                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                                   TextWrapping="NoWrap"
+                                                                                                   VerticalAlignment="Center"
+                                                                                                   Margin="0,0,6,0" />
+
+                                                                                        <TextBlock Grid.Column="1"
+                                                                                                   Text="{Binding DisplayPathPrefixText}"
+                                                                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                                   TextWrapping="NoWrap"
+                                                                                                   VerticalAlignment="Center" />
+                                                                                    </Grid>
+
+                                                                                    <StackPanel Grid.Column="2"
+                                                                                                Orientation="Horizontal"
+                                                                                                VerticalAlignment="Center">
+                                                                                        <TextBlock Text="{Binding AddedLinesText}"
+                                                                                                   Visibility="{Binding AddedLinesVisibility}"
+                                                                                                   Foreground="{DynamicResource SuccessBrush}"
+                                                                                                   FontSize="13.2"
+                                                                                                   FontWeight="SemiBold"
+                                                                                                   Margin="0,0,8,0"
+                                                                                                   VerticalAlignment="Center"
+                                                                                                   LineHeight="13" />
+
+                                                                                        <TextBlock Text="{Binding RemovedLinesText}"
+                                                                                                   Visibility="{Binding RemovedLinesVisibility}"
+                                                                                                   Foreground="{DynamicResource DangerBrush}"
+                                                                                                   FontSize="13.2"
+                                                                                                   FontWeight="SemiBold"
+                                                                                                   VerticalAlignment="Center"
+                                                                                                   LineHeight="13" />
+                                                                                    </StackPanel>
+                                                                                </Grid>
+                                                                            </Border>
+
+                                                                            <TextBlock x:Name="ActivityFileChangeOverflowText"
+                                                                                       Text="{Binding OverflowText}"
+                                                                                       Visibility="{Binding OverflowVisibility}"
+                                                                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                                       FontStyle="Italic"
+                                                                                       FontSize="15" />
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+
+                                                            <Button x:Name="ActivityInlineDetailsToggleButton"
+                                                                    Grid.Column="1"
+                                                                    Visibility="Collapsed"
+                                                                    Command="{Binding ToggleDetailsCommand}"
+                                                                    ToolTip="{Binding DetailsToggleText}"
+                                                                    Style="{StaticResource PrimaryButtonStyle}"
+                                                                    Width="24"
+                                                                    MinWidth="24"
+                                                                    Height="24"
+                                                                    MinHeight="24"
+                                                                    Padding="0"
+                                                                    Margin="8,0,0,0"
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Center"
+                                                                    HorizontalContentAlignment="Center"
+                                                                    VerticalContentAlignment="Center"
+                                                                    Background="{DynamicResource SurfaceContrastBrush}"
+                                                                    BorderBrush="{DynamicResource BorderStrongBrush}">
+                                                                <Image x:Name="ActivityInlineDetailsToggleIcon"
+                                                                       Source="{DynamicResource WorkspaceDetailsToggleCollapsedIconImageSource}"
+                                                                       Width="12"
+                                                                       Height="12"
+                                                                       Stretch="Uniform"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center" />
+                                                            </Button>
+                                                        </Grid>
+
+                                                        <TextBox x:Name="ActivitySecondaryText"
+                                                                 Text="{Binding SecondaryText}"
                                                                  Style="{StaticResource TranscriptSelectableTextBoxStyle}"
                                                                  Visibility="{Binding SecondaryVisibility}"
                                                                  Margin="0,5,0,0"
                                                                  Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                 FontSize="11.5" />
+                                                                 FontSize="15.8" />
 
-                                                        <Button Visibility="{Binding DetailsToggleVisibility}"
+                                                        <Button x:Name="ActivityDetailsToggleButton"
+                                                                Visibility="{Binding DetailsToggleVisibility}"
                                                                 Command="{Binding ToggleDetailsCommand}"
                                                                 Style="{StaticResource ButtonBaseStyle}"
                                                                 Margin="0,8,0,0"
@@ -486,7 +656,7 @@
                                                                 MinHeight="24"
                                                                 HorizontalAlignment="Left">
                                                             <TextBlock Text="{Binding DetailsToggleText}"
-                                                                       FontSize="11.5"
+                                                                       FontSize="15.8"
                                                                        Foreground="{DynamicResource TextSecondaryBrush}" />
                                                         </Button>
 
@@ -498,8 +668,9 @@
                                                                 BorderBrush="{DynamicResource BorderBrush}"
                                                                 BorderThickness="1"
                                                                 CornerRadius="10">
-                                                            <TextBox Text="{Binding DetailsText}"
-                                                                     Style="{StaticResource TranscriptSelectableTextBoxStyle}"
+                                                            <TextBox x:Name="ActivityDetailsTextBox"
+                                                                     Text="{Binding DetailsText}"
+                                                                     Style="{StaticResource TranscriptSelectableCommandDetailsTextBoxStyle}"
                                                                      Foreground="{DynamicResource TextSecondaryBrush}"
                                                                      FontFamily="{Binding DetailsFontFamily}" />
                                                         </Border>
@@ -515,19 +686,75 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
                                                 <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivitySecondaryText" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityDetailsToggleButton" Property="Visibility" Value="Collapsed" />
                                             </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="command" />
+                                                    <Condition Binding="{Binding DetailsToggleVisibility}" Value="Visible" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityInlineDetailsToggleButton" Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="command" />
+                                                    <Condition Binding="{Binding IsDetailsExpanded}" Value="True" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityInlineDetailsToggleIcon" Property="Source" Value="{DynamicResource WorkspaceDetailsToggleExpandedIconImageSource}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="command" />
+                                                    <Condition Binding="{Binding StreamingIndicatorVisibility}" Value="Visible" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="command" />
+                                                    <Condition Binding="{Binding StatusText}" Value="completed" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="command" />
+                                                    <Condition Binding="{Binding StatusText}" Value="failed" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource DangerBrush}" />
+                                            </MultiDataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="fileChange">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivitySecondaryText" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityDetailsToggleButton" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityDetailsTextBox" Property="TextWrapping" Value="NoWrap" />
+                                                <Setter TargetName="ActivityDetailsTextBox" Property="HorizontalScrollBarVisibility" Value="Auto" />
+                                                <Setter TargetName="ActivityDetailsTextBox" Property="MaxHeight" Value="260" />
                                             </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="fileChange" />
+                                                    <Condition Binding="{Binding DetailsToggleVisibility}" Value="Visible" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityInlineDetailsToggleButton" Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="fileChange" />
+                                                    <Condition Binding="{Binding IsDetailsExpanded}" Value="True" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityInlineDetailsToggleIcon" Property="Source" Value="{DynamicResource WorkspaceDetailsToggleExpandedIconImageSource}" />
+                                            </MultiDataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="plan">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
@@ -556,6 +783,9 @@
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
                                                 <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityRoleText" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityInlineBodyText" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
                                                 <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="Transparent" />
@@ -628,8 +858,15 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityRoleText" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityInlineBodyText" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="turnDiff">
@@ -759,43 +996,43 @@
                         </Grid>
                     </Border>
 
-                    <Border Grid.Row="3"
-                            Style="{x:Null}"
-                            Effect="{x:Null}"
-                            CornerRadius="14"
-                            BorderThickness="1"
-                            BorderBrush="{DynamicResource TurnInputGlassOuterBorderBrush}"
-                            Background="{DynamicResource TurnInputGlassOuterBackgroundBrush}">
-                        <Grid>
-                            <Border Style="{x:Null}"
-                                    CornerRadius="14"
-                                    Background="{x:Null}"
-                                    BorderBrush="{DynamicResource TurnInputGlassInnerBorderBrush}"
-                                    BorderThickness="1"
-                                    Margin="1" />
-                            <Border Style="{x:Null}"
-                                    CornerRadius="13"
-                                    Margin="1"
-                                    Opacity="0.9">
-                                <Border.Background>
-                                    <DynamicResource ResourceKey="TurnInputGlassFillBrush" />
-                                </Border.Background>
-                            </Border>
-                            <Border Style="{x:Null}"
-                                    CornerRadius="13"
-                                    Margin="1"
-                                    VerticalAlignment="Top"
-                                    Height="18"
-                                    IsHitTestVisible="False">
-                                <Border.Background>
-                                    <DynamicResource ResourceKey="TurnInputGlassSheenBrush" />
-                                </Border.Background>
-                            </Border>
+                    <GridSplitter Grid.Row="3"
+                                  Height="10"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Center"
+                                  ResizeDirection="Rows"
+                                  ResizeBehavior="PreviousAndNext"
+                                  ShowsPreview="False"
+                                  Background="Transparent"
+                                  Cursor="SizeNS">
+                        <GridSplitter.Template>
+                            <ControlTemplate TargetType="GridSplitter">
+                                <Grid Background="Transparent">
+                                    <Border x:Name="SplitterLine"
+                                            Height="1"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource BorderBrush}"
+                                            Opacity="0.6" />
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="SplitterLine" Property="Background" Value="{DynamicResource BorderStrongBrush}" />
+                                        <Setter TargetName="SplitterLine" Property="Opacity" Value="0.95" />
+                                    </Trigger>
+                                    <Trigger Property="IsDragging" Value="True">
+                                        <Setter TargetName="SplitterLine" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                        <Setter TargetName="SplitterLine" Property="Opacity" Value="1" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </GridSplitter.Template>
+                    </GridSplitter>
 
-                        <Grid Margin="12">
+                    <Grid Grid.Row="4"
+                          Margin="12,0,12,12">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
@@ -861,13 +1098,11 @@
                                 </Grid>
                             </Border>
 
-                            <Grid Grid.Row="1">
+                            <Grid Grid.Row="1"
+                                  MinHeight="56">
                                 <TextBox x:Name="TxtTurnInput"
-                                         Height="56"
                                          MinHeight="56"
-                                         MaxHeight="56"
                                          MinLines="2"
-                                         MaxLines="2"
                                          AcceptsReturn="True"
                                          TextWrapping="Wrap"
                                          VerticalScrollBarVisibility="Auto"
@@ -897,6 +1132,41 @@
                             </Grid>
 
                             <Grid Grid.Row="2" Margin="0,10,0,0">
+                                <Grid.Resources>
+                                    <Style x:Key="TurnComposerIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}">
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="MinHeight" Value="34" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Grid>
+                                                        <Border x:Name="QuickIconButtonGlass"
+                                                                CornerRadius="10"
+                                                                Background="Transparent"
+                                                                BorderBrush="Transparent"
+                                                                BorderThickness="1" />
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"
+                                                                          Margin="{TemplateBinding Padding}" />
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBackgroundBrush}" />
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickHoverBorderBrush}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsPressed" Value="True">
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="Background" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBackgroundBrush}" />
+                                                            <Setter TargetName="QuickIconButtonGlass" Property="BorderBrush" Value="{DynamicResource WorkspaceHeaderGlassQuickPressedBorderBrush}" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Grid.Resources>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
@@ -935,7 +1205,7 @@
                                     </Border>
 
                                     <Button x:Name="BtnTurnComposerPickersToggle"
-                                            Style="{StaticResource ButtonBaseStyle}"
+                                            Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="34"
                                             MinWidth="34"
                                             Padding="0"
@@ -955,12 +1225,21 @@
 
                                 <WrapPanel Grid.Column="1" VerticalAlignment="Center">
                                     <Button x:Name="BtnTurnSteer"
-                                            Content="Steer Active Turn"
-                                            Style="{StaticResource ButtonBaseStyle}"
+                                            Style="{StaticResource TurnComposerIconButtonStyle}"
+                                            Width="42"
+                                            MinWidth="42"
+                                            Padding="0"
                                             Margin="0,0,6,6"
-                                            Command="{Binding TurnComposer.SteerTurnCommand}" />
+                                            Visibility="{Binding TurnComposer.InterruptTurnVisibility}"
+                                            Command="{Binding TurnComposer.SteerTurnCommand}"
+                                            ToolTip="Steer active turn">
+                                        <Image Source="{DynamicResource TurnSteerIconImageSource}"
+                                               Width="16"
+                                               Height="16"
+                                               Stretch="Uniform" />
+                                    </Button>
                                     <Button x:Name="BtnTurnStart"
-                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="42"
                                             MinWidth="42"
                                             Padding="0"
@@ -968,13 +1247,13 @@
                                             Visibility="{Binding TurnComposer.StartTurnVisibility}"
                                             Command="{Binding TurnComposer.StartTurnCommand}"
                                             ToolTip="Send (Ctrl+Enter)">
-                                        <Image Source="pack://application:,,,/Assets/send-input.png"
+                                        <Image Source="{DynamicResource TurnSendIconImageSource}"
                                                Width="16"
                                                Height="16"
                                                Stretch="Uniform" />
                                     </Button>
                                     <Button x:Name="BtnTurnInterrupt"
-                                            Style="{StaticResource DangerButtonStyle}"
+                                            Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="42"
                                             MinWidth="42"
                                             Padding="0"
@@ -982,7 +1261,7 @@
                                             Visibility="{Binding TurnComposer.InterruptTurnVisibility}"
                                             Command="{Binding TurnComposer.InterruptTurnCommand}"
                                             ToolTip="Interrupt">
-                                        <Image Source="pack://application:,,,/Assets/interrupt.png"
+                                        <Image Source="{DynamicResource TurnInterruptIconImageSource}"
                                                Width="14"
                                                Height="14"
                                                Stretch="Uniform" />
@@ -990,8 +1269,6 @@
                                 </WrapPanel>
                             </Grid>
                         </Grid>
-                        </Grid>
-                    </Border>
                 </Grid>
             </Border>
 </UserControl>

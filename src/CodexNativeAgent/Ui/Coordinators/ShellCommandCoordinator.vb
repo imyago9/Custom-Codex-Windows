@@ -37,6 +37,8 @@ Namespace CodexNativeAgent.Ui.Coordinators
                                 archiveThreadContextAsync As Func(Of Task),
                                 unarchiveThreadContextAsync As Func(Of Task),
                                 newThreadFromGroupAsync As Func(Of Task),
+                                openVsCodeFromGroupAsync As Func(Of Task),
+                                openTerminalFromGroupAsync As Func(Of Task),
                                 toggleTheme As Action,
                                 exportDiagnosticsAsync As Func(Of Task))
             If startTurnAsync Is Nothing Then Throw New ArgumentNullException(NameOf(startTurnAsync))
@@ -55,6 +57,8 @@ Namespace CodexNativeAgent.Ui.Coordinators
             If archiveThreadContextAsync Is Nothing Then Throw New ArgumentNullException(NameOf(archiveThreadContextAsync))
             If unarchiveThreadContextAsync Is Nothing Then Throw New ArgumentNullException(NameOf(unarchiveThreadContextAsync))
             If newThreadFromGroupAsync Is Nothing Then Throw New ArgumentNullException(NameOf(newThreadFromGroupAsync))
+            If openVsCodeFromGroupAsync Is Nothing Then Throw New ArgumentNullException(NameOf(openVsCodeFromGroupAsync))
+            If openTerminalFromGroupAsync Is Nothing Then Throw New ArgumentNullException(NameOf(openTerminalFromGroupAsync))
             If toggleTheme Is Nothing Then Throw New ArgumentNullException(NameOf(toggleTheme))
             If exportDiagnosticsAsync Is Nothing Then Throw New ArgumentNullException(NameOf(exportDiagnosticsAsync))
 
@@ -74,7 +78,9 @@ Namespace CodexNativeAgent.Ui.Coordinators
                                     forkThreadContextAsync,
                                     archiveThreadContextAsync,
                                     unarchiveThreadContextAsync,
-                                    newThreadFromGroupAsync)
+                                    newThreadFromGroupAsync,
+                                    openVsCodeFromGroupAsync,
+                                    openTerminalFromGroupAsync)
 
             _viewModel.SettingsPanel.ToggleThemeCommand = New RelayCommand(
                 Sub()
@@ -137,7 +143,9 @@ Namespace CodexNativeAgent.Ui.Coordinators
                                             forkThreadContextAsync As Func(Of Task),
                                             archiveThreadContextAsync As Func(Of Task),
                                             unarchiveThreadContextAsync As Func(Of Task),
-                                            newThreadFromGroupAsync As Func(Of Task))
+                                            newThreadFromGroupAsync As Func(Of Task),
+                                            openVsCodeFromGroupAsync As Func(Of Task),
+                                            openTerminalFromGroupAsync As Func(Of Task))
             _viewModel.ThreadsPanel.OpenSortMenuCommand = New RelayCommand(
                 Sub()
                     openSortMenu()
@@ -191,6 +199,16 @@ Namespace CodexNativeAgent.Ui.Coordinators
             _viewModel.ThreadsPanel.NewThreadFromGroupContextCommand = New AsyncRelayCommand(
                 Function()
                     Return _runUiActionAsync(newThreadFromGroupAsync)
+                End Function)
+
+            _viewModel.ThreadsPanel.OpenVsCodeFromGroupContextCommand = New AsyncRelayCommand(
+                Function()
+                    Return _runUiActionAsync(openVsCodeFromGroupAsync)
+                End Function)
+
+            _viewModel.ThreadsPanel.OpenTerminalFromGroupContextCommand = New AsyncRelayCommand(
+                Function()
+                    Return _runUiActionAsync(openTerminalFromGroupAsync)
                 End Function)
         End Sub
 

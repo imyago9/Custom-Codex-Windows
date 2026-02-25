@@ -33,6 +33,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _selectedListItem As Object
         Private ReadOnly _items As New ObservableCollection(Of Object)()
         Private _threadMenuGroupNewThreadVisibility As Visibility = Visibility.Collapsed
+        Private _threadMenuGroupOpenVsCodeVisibility As Visibility = Visibility.Collapsed
+        Private _threadMenuGroupOpenTerminalVisibility As Visibility = Visibility.Collapsed
         Private _threadMenuGroupTopSeparatorVisibility As Visibility = Visibility.Collapsed
         Private _threadMenuSelectVisibility As Visibility = Visibility.Visible
         Private _threadMenuSelectRefreshSeparatorVisibility As Visibility = Visibility.Visible
@@ -42,6 +44,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _threadMenuArchiveVisibility As Visibility = Visibility.Visible
         Private _threadMenuUnarchiveVisibility As Visibility = Visibility.Visible
         Private _threadMenuGroupNewThreadEnabled As Boolean
+        Private _threadMenuGroupOpenVsCodeEnabled As Boolean
+        Private _threadMenuGroupOpenTerminalEnabled As Boolean
         Private _threadMenuSelectEnabled As Boolean = True
         Private _threadMenuRefreshEnabled As Boolean
         Private _threadMenuForkEnabled As Boolean
@@ -57,6 +61,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _archiveThreadContextCommand As ICommand
         Private _unarchiveThreadContextCommand As ICommand
         Private _newThreadFromGroupContextCommand As ICommand
+        Private _openVsCodeFromGroupContextCommand As ICommand
+        Private _openTerminalFromGroupContextCommand As ICommand
 
         Public Property SearchText As String
             Get
@@ -298,6 +304,24 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property ThreadMenuGroupOpenVsCodeVisibility As Visibility
+            Get
+                Return _threadMenuGroupOpenVsCodeVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_threadMenuGroupOpenVsCodeVisibility, value)
+            End Set
+        End Property
+
+        Public Property ThreadMenuGroupOpenTerminalVisibility As Visibility
+            Get
+                Return _threadMenuGroupOpenTerminalVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_threadMenuGroupOpenTerminalVisibility, value)
+            End Set
+        End Property
+
         Public Property ThreadMenuSelectVisibility As Visibility
             Get
                 Return _threadMenuSelectVisibility
@@ -376,6 +400,24 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 SetProperty(_threadMenuSelectEnabled, value)
+            End Set
+        End Property
+
+        Public Property ThreadMenuGroupOpenVsCodeEnabled As Boolean
+            Get
+                Return _threadMenuGroupOpenVsCodeEnabled
+            End Get
+            Set(value As Boolean)
+                SetProperty(_threadMenuGroupOpenVsCodeEnabled, value)
+            End Set
+        End Property
+
+        Public Property ThreadMenuGroupOpenTerminalEnabled As Boolean
+            Get
+                Return _threadMenuGroupOpenTerminalEnabled
+            End Get
+            Set(value As Boolean)
+                SetProperty(_threadMenuGroupOpenTerminalEnabled, value)
             End Set
         End Property
 
@@ -505,6 +547,24 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property OpenVsCodeFromGroupContextCommand As ICommand
+            Get
+                Return _openVsCodeFromGroupContextCommand
+            End Get
+            Set(value As ICommand)
+                SetProperty(_openVsCodeFromGroupContextCommand, value)
+            End Set
+        End Property
+
+        Public Property OpenTerminalFromGroupContextCommand As ICommand
+            Get
+                Return _openTerminalFromGroupContextCommand
+            End Get
+            Set(value As ICommand)
+                SetProperty(_openTerminalFromGroupContextCommand, value)
+            End Set
+        End Property
+
         Public Sub UpdateInteractionState(session As SessionStateViewModel,
                                           isThreadsLoading As Boolean,
                                           isThreadContentLoading As Boolean)
@@ -526,6 +586,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Public Sub ConfigureThreadContextMenuForThread(canRunActions As Boolean,
                                                        isArchived As Boolean)
             ThreadMenuGroupNewThreadVisibility = Visibility.Collapsed
+            ThreadMenuGroupOpenVsCodeVisibility = Visibility.Collapsed
+            ThreadMenuGroupOpenTerminalVisibility = Visibility.Collapsed
             ThreadMenuGroupTopSeparatorVisibility = Visibility.Collapsed
             ThreadMenuSelectVisibility = Visibility.Visible
             ThreadMenuSelectRefreshSeparatorVisibility = Visibility.Visible
@@ -536,6 +598,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
             ThreadMenuUnarchiveVisibility = If(isArchived, Visibility.Visible, Visibility.Collapsed)
 
             ThreadMenuGroupNewThreadEnabled = False
+            ThreadMenuGroupOpenVsCodeEnabled = False
+            ThreadMenuGroupOpenTerminalEnabled = False
             ThreadMenuSelectEnabled = True
             ThreadMenuRefreshEnabled = canRunActions
             ThreadMenuForkEnabled = canRunActions
@@ -545,6 +609,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Public Sub ConfigureThreadContextMenuForGroup(canStartHere As Boolean)
             ThreadMenuGroupNewThreadVisibility = Visibility.Visible
+            ThreadMenuGroupOpenVsCodeVisibility = Visibility.Visible
+            ThreadMenuGroupOpenTerminalVisibility = Visibility.Visible
             ThreadMenuGroupTopSeparatorVisibility = Visibility.Collapsed
             ThreadMenuSelectVisibility = Visibility.Collapsed
             ThreadMenuSelectRefreshSeparatorVisibility = Visibility.Collapsed
@@ -555,6 +621,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
             ThreadMenuUnarchiveVisibility = Visibility.Collapsed
 
             ThreadMenuGroupNewThreadEnabled = canStartHere
+            ThreadMenuGroupOpenVsCodeEnabled = canStartHere
+            ThreadMenuGroupOpenTerminalEnabled = canStartHere
             ThreadMenuSelectEnabled = False
             ThreadMenuRefreshEnabled = False
             ThreadMenuForkEnabled = False

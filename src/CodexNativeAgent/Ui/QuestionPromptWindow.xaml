@@ -12,18 +12,11 @@
         SnapsToDevicePixels="True"
         UseLayoutRounding="True"
         FontFamily="Segoe UI, Segoe UI Variable Text"
+        Icon="pack://application:,,,/Assets/app-icon.ico"
         Background="{DynamicResource AppBackgroundBrush}">
     <Window.Resources />
 
     <Grid Background="{DynamicResource WindowBackgroundGradient}" Margin="16">
-        <Ellipse Width="220"
-                 Height="220"
-                 HorizontalAlignment="Right"
-                 VerticalAlignment="Top"
-                 Margin="0,-120,-100,0"
-                 Fill="{DynamicResource DialogBlobBrush}"
-                 IsHitTestVisible="False" />
-
         <Border Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1"

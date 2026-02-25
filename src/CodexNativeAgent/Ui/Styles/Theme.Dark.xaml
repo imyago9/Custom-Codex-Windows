@@ -40,22 +40,22 @@
     <SolidColorBrush x:Key="SidebarActiveBackgroundBrush" Color="#394A66" />
     <SolidColorBrush x:Key="SidebarActiveBorderBrush" Color="#6D89BF" />
 
-    <SolidColorBrush x:Key="WorkspaceHeaderGlassOuterBackgroundBrush" Color="#4A252A32" />
-    <SolidColorBrush x:Key="WorkspaceHeaderGlassOuterBorderBrush" Color="#6B778C" />
-    <SolidColorBrush x:Key="WorkspaceHeaderGlassInnerBorderBrush" Color="#2EFFFFFF" />
-    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickHoverBackgroundBrush" Color="#2EFFFFFF" />
-    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickHoverBorderBrush" Color="#36FFFFFF" />
-    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickPressedBackgroundBrush" Color="#42FFFFFF" />
-    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickPressedBorderBrush" Color="#46FFFFFF" />
+    <SolidColorBrush x:Key="WorkspaceHeaderGlassOuterBackgroundBrush" Color="#6A212B39" />
+    <SolidColorBrush x:Key="WorkspaceHeaderGlassOuterBorderBrush" Color="#5C5C718E" />
+    <SolidColorBrush x:Key="WorkspaceHeaderGlassInnerBorderBrush" Color="#243A4A61" />
+    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickHoverBackgroundBrush" Color="#30425361" />
+    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickHoverBorderBrush" Color="#58708EB4" />
+    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickPressedBackgroundBrush" Color="#3C4D6280" />
+    <SolidColorBrush x:Key="WorkspaceHeaderGlassQuickPressedBorderBrush" Color="#6A87A7D0" />
 
-    <SolidColorBrush x:Key="TurnInputGlassOuterBackgroundBrush" Color="#4221262D" />
-    <SolidColorBrush x:Key="TurnInputGlassOuterBorderBrush" Color="#6B778C" />
-    <SolidColorBrush x:Key="TurnInputGlassInnerBorderBrush" Color="#24FFFFFF" />
+    <SolidColorBrush x:Key="TurnInputGlassOuterBackgroundBrush" Color="#74222C3A" />
+    <SolidColorBrush x:Key="TurnInputGlassOuterBorderBrush" Color="#5A5E7390" />
+    <SolidColorBrush x:Key="TurnInputGlassInnerBorderBrush" Color="#233A4A61" />
 
     <LinearGradientBrush x:Key="WorkspaceHeaderGlassFillBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#56343B46" Offset="0" />
-        <GradientStop Color="#48303943" Offset="0.45" />
-        <GradientStop Color="#3A2A313B" Offset="1" />
+        <GradientStop Color="#7C2B3646" Offset="0" />
+        <GradientStop Color="#6E263243" Offset="0.48" />
+        <GradientStop Color="#601F2A38" Offset="1" />
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="WorkspaceHeaderGlassSheenBrush" StartPoint="0,0" EndPoint="0,1">
@@ -64,9 +64,9 @@
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="TurnInputGlassFillBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#4A303741" Offset="0" />
-        <GradientStop Color="#40303942" Offset="0.42" />
-        <GradientStop Color="#32262D36" Offset="1" />
+        <GradientStop Color="#802D394A" Offset="0" />
+        <GradientStop Color="#72293443" Offset="0.42" />
+        <GradientStop Color="#641F2937" Offset="1" />
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="TurnInputGlassSheenBrush" StartPoint="0,0" EndPoint="0,1">
@@ -119,6 +119,16 @@
                          UriSource="pack://application:,,,/Assets/git-white.png" />
     <imaging:BitmapImage x:Key="WorkspaceTimeToBuildEmptyStateImageSource"
                          UriSource="pack://application:,,,/Assets/timetobuild-white.png" />
+    <imaging:BitmapImage x:Key="WorkspaceDetailsToggleCollapsedIconImageSource"
+                         UriSource="pack://application:,,,/Assets/double-arrow-down-white.png" />
+    <imaging:BitmapImage x:Key="WorkspaceDetailsToggleExpandedIconImageSource"
+                         UriSource="pack://application:,,,/Assets/double-arrow-up-white.png" />
+    <imaging:BitmapImage x:Key="TurnSendIconImageSource"
+                         UriSource="pack://application:,,,/Assets/send-input-white.png" />
+    <imaging:BitmapImage x:Key="TurnSteerIconImageSource"
+                         UriSource="pack://application:,,,/Assets/steer-input-white.png" />
+    <imaging:BitmapImage x:Key="TurnInterruptIconImageSource"
+                         UriSource="pack://application:,,,/Assets/interrupt-white.png" />
 
     <BlurEffect x:Key="SidebarBackdropBlurEffect"
                 Radius="16" />

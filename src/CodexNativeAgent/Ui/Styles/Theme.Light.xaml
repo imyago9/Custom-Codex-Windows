@@ -119,6 +119,16 @@
                          UriSource="pack://application:,,,/Assets/git.png" />
     <imaging:BitmapImage x:Key="WorkspaceTimeToBuildEmptyStateImageSource"
                          UriSource="pack://application:,,,/Assets/timetobuild.png" />
+    <imaging:BitmapImage x:Key="WorkspaceDetailsToggleCollapsedIconImageSource"
+                         UriSource="pack://application:,,,/Assets/double-arrow-down.png" />
+    <imaging:BitmapImage x:Key="WorkspaceDetailsToggleExpandedIconImageSource"
+                         UriSource="pack://application:,,,/Assets/double-arrow-up.png" />
+    <imaging:BitmapImage x:Key="TurnSendIconImageSource"
+                         UriSource="pack://application:,,,/Assets/send-input.png" />
+    <imaging:BitmapImage x:Key="TurnSteerIconImageSource"
+                         UriSource="pack://application:,,,/Assets/steer-input.png" />
+    <imaging:BitmapImage x:Key="TurnInterruptIconImageSource"
+                         UriSource="pack://application:,,,/Assets/interrupt.png" />
 
     <BlurEffect x:Key="SidebarBackdropBlurEffect"
                 Radius="10" />
