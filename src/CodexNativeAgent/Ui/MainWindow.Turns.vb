@@ -474,14 +474,16 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub UpdateThreadTurnLabels()
-            Dim showDraftNewThreadTitle = _pendingNewThreadFirstPromptSelection OrElse String.IsNullOrWhiteSpace(_currentThreadId)
+            Dim visibleThreadId = GetVisibleThreadId()
+            Dim visibleTurnId = GetVisibleTurnId()
+            Dim showDraftNewThreadTitle = _pendingNewThreadFirstPromptSelection OrElse String.IsNullOrWhiteSpace(visibleThreadId)
             _viewModel.CurrentThreadText = If(showDraftNewThreadTitle,
                                               "New thread",
-                                              _currentThreadId)
+                                              visibleThreadId)
 
-            _viewModel.CurrentTurnText = If(String.IsNullOrWhiteSpace(_currentTurnId),
+            _viewModel.CurrentTurnText = If(String.IsNullOrWhiteSpace(visibleTurnId),
                                             "Turn: 0",
-                                            $"Turn: {_currentTurnId}")
+                                            $"Turn: {visibleTurnId}")
             SyncSessionStateViewModel()
         End Sub
 

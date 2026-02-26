@@ -3174,11 +3174,11 @@ Namespace CodexNativeAgent.Ui
                 Return "Authentication required: sign in from Settings to unlock threads and turns."
             End If
 
-            If String.IsNullOrWhiteSpace(_currentThreadId) Then
+            If String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
                 Return "Select a thread from the left panel, or send your first instruction to start a new one."
             End If
 
-            If String.IsNullOrWhiteSpace(_currentTurnId) Then
+            If String.IsNullOrWhiteSpace(GetVisibleTurnId()) Then
                 Return "Ready. Send with Ctrl+Enter."
             End If
 
@@ -3606,8 +3606,8 @@ Namespace CodexNativeAgent.Ui
             End If
             Dim transcriptLoading = transcriptPanel IsNot Nothing AndAlso
                                     transcriptPanel.LoadingOverlayVisibility = Visibility.Visible
-            Dim noThreadSelected = String.IsNullOrWhiteSpace(_currentThreadId)
-            Dim noActiveTurn = String.IsNullOrWhiteSpace(_currentTurnId)
+            Dim noThreadSelected = String.IsNullOrWhiteSpace(GetVisibleThreadId())
+            Dim noActiveTurn = String.IsNullOrWhiteSpace(GetVisibleTurnId())
             Dim showDraftNewThreadEmptyState = _pendingNewThreadFirstPromptSelection
             Dim showEmptyState = (noThreadSelected OrElse showDraftNewThreadEmptyState) AndAlso
                                  noActiveTurn AndAlso

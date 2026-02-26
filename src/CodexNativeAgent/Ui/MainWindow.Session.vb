@@ -12,6 +12,34 @@ Imports CodexNativeAgent.Ui.Coordinators
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
+        Private Function GetVisibleThreadId() As String
+            Return If(_currentThreadId, String.Empty).Trim()
+        End Function
+
+        Private Function GetVisibleTurnId() As String
+            Return If(_currentTurnId, String.Empty).Trim()
+        End Function
+
+        Private Function GetActiveTurnIdForThread(threadId As String,
+                                                  Optional fallbackTurnId As String = Nothing) As String
+            If _sessionNotificationCoordinator Is Nothing Then
+                Return String.Empty
+            End If
+
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return String.Empty
+            End If
+
+            Dim normalizedFallbackTurnId = If(fallbackTurnId, String.Empty).Trim()
+            Return If(_sessionNotificationCoordinator.RuntimeStore.GetActiveTurnId(normalizedThreadId, normalizedFallbackTurnId),
+                      String.Empty).Trim()
+        End Function
+
+        Private Function HasActiveRuntimeTurnForThread(threadId As String) As Boolean
+            Return Not String.IsNullOrWhiteSpace(GetActiveTurnIdForThread(threadId))
+        End Function
+
         Private Sub UpdateRuntimeFieldState()
             Dim connected = IsClientRunning()
             Dim editable = Not connected
@@ -38,8 +66,8 @@ Namespace CodexNativeAgent.Ui
             session.NextReconnectAttemptUtc = _nextReconnectAttemptUtc
             session.LastActivityUtc = _lastActivityUtc
             session.CurrentLoginId = _currentLoginId
-            session.CurrentThreadId = _currentThreadId
-            session.CurrentTurnId = _currentTurnId
+            session.CurrentThreadId = GetVisibleThreadId()
+            session.CurrentTurnId = GetVisibleTurnId()
             session.ProcessId = If(_client Is Nothing, 0, _client.ProcessId)
         End Sub
 
@@ -48,7 +76,7 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            Dim normalizedThreadId = If(_currentThreadId, String.Empty).Trim()
+            Dim normalizedThreadId = GetVisibleThreadId()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
                 If Not keepExistingWhenRuntimeIsIdle Then
                     _currentTurnId = String.Empty
@@ -57,7 +85,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
-            Dim activeTurnId = runtimeStore.GetActiveTurnId(normalizedThreadId, _currentTurnId)
+            Dim activeTurnId = GetActiveTurnIdForThread(normalizedThreadId, GetVisibleTurnId())
             If Not String.IsNullOrWhiteSpace(activeTurnId) Then
                 _currentTurnId = activeTurnId
                 Return
@@ -74,16 +102,7 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Function HasActiveRuntimeTurnForCurrentThread() As Boolean
-            If _sessionNotificationCoordinator Is Nothing Then
-                Return False
-            End If
-
-            Dim normalizedThreadId = If(_currentThreadId, String.Empty).Trim()
-            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
-                Return False
-            End If
-
-            Return _sessionNotificationCoordinator.RuntimeStore.HasActiveTurn(normalizedThreadId)
+            Return HasActiveRuntimeTurnForThread(GetVisibleThreadId())
         End Function
 
         Private Function RuntimeHasTurnHistoryForCurrentThread() As Boolean
@@ -91,7 +110,7 @@ Namespace CodexNativeAgent.Ui
                 Return False
             End If
 
-            Dim normalizedThreadId = If(_currentThreadId, String.Empty).Trim()
+            Dim normalizedThreadId = GetVisibleThreadId()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
                 Return False
             End If
