@@ -1409,6 +1409,30 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            If chunkSessionGeneration > 0 Then
+                Dim activeChunkSession = _threadTranscriptChunkSessionCoordinator.ActiveSession
+                If activeChunkSession IsNot Nothing AndAlso
+                   _threadTranscriptChunkSessionCoordinator.IsActiveSessionGeneration(normalizedThreadId, chunkSessionGeneration) Then
+                    activeChunkSession.PreparedProjection = projection
+
+                    Dim runtimeFingerprintState As ThreadLiveSessionState = Nothing
+                    If _threadLiveSessionRegistry.TryGet(normalizedThreadId, runtimeFingerprintState) AndAlso runtimeFingerprintState IsNot Nothing Then
+                        If runtimeFingerprintState.LastRuntimeEventUtc <> DateTimeOffset.MinValue Then
+                            activeChunkSession.PreparedProjectionRuntimeStateLastEventUtc = runtimeFingerprintState.LastRuntimeEventUtc
+                        Else
+                            activeChunkSession.PreparedProjectionRuntimeStateLastEventUtc = Nothing
+                        End If
+
+                        activeChunkSession.PreparedProjectionRuntimeStateActiveTurnId = If(runtimeFingerprintState.ActiveTurnId, String.Empty).Trim()
+                        activeChunkSession.PreparedProjectionRuntimeStateWasTurnActive = runtimeFingerprintState.IsTurnActive
+                    Else
+                        activeChunkSession.PreparedProjectionRuntimeStateLastEventUtc = Nothing
+                        activeChunkSession.PreparedProjectionRuntimeStateActiveTurnId = String.Empty
+                        activeChunkSession.PreparedProjectionRuntimeStateWasTurnActive = False
+                    End If
+                End If
+            End If
+
             Const initialChunkMaxRows As Integer = 140
             Const initialChunkMaxRenderWeight As Integer = 280
             Dim initialChunkPlan As ThreadTranscriptDisplayChunkPlan = Nothing

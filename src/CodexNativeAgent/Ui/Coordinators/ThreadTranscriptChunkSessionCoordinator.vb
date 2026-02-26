@@ -9,6 +9,10 @@ Namespace CodexNativeAgent.Ui.Coordinators
         Public Property IsLoadingOlderChunk As Boolean
         Public Property HasMoreOlderChunks As Boolean
         Public Property PendingPrependRequest As Boolean
+        Public Property PreparedProjection As ThreadTranscriptProjectionSnapshot
+        Public Property PreparedProjectionRuntimeStateLastEventUtc As DateTimeOffset?
+        Public Property PreparedProjectionRuntimeStateActiveTurnId As String = String.Empty
+        Public Property PreparedProjectionRuntimeStateWasTurnActive As Boolean
 
         Public Property OlderChunkLoadsRequested As Integer
         Public Property OlderChunkLoadsCompleted As Integer
@@ -75,6 +79,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 previous.OlderChunkLoadsCanceled += 1
             End If
             previous.PendingPrependRequest = False
+            ResetPreparedProjection(previous)
 
             _activeSession = Nothing
             Return previous
@@ -91,6 +96,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
             End If
 
             _activeSession.PendingPrependRequest = False
+            ResetPreparedProjection(_activeSession)
             _activeSession.GenerationId = NextSessionGenerationId()
             TouchSession(_activeSession, If(reason, "bump_generation"))
             Return _activeSession
@@ -248,6 +254,17 @@ Namespace CodexNativeAgent.Ui.Coordinators
 
             session.LastUpdatedUtc = DateTimeOffset.UtcNow
             session.LastLifecycleReason = If(reason, String.Empty)
+        End Sub
+
+        Private Shared Sub ResetPreparedProjection(session As ThreadTranscriptChunkSession)
+            If session Is Nothing Then
+                Return
+            End If
+
+            session.PreparedProjection = Nothing
+            session.PreparedProjectionRuntimeStateLastEventUtc = Nothing
+            session.PreparedProjectionRuntimeStateActiveTurnId = String.Empty
+            session.PreparedProjectionRuntimeStateWasTurnActive = False
         End Sub
 
         Private Shared Function NormalizeIdentifier(value As String) As String
