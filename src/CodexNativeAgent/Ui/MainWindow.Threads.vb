@@ -34,6 +34,7 @@ Namespace CodexNativeAgent.Ui
             Public Property UiYieldMs As Long
             Public Property UiBindMs As Long
             Public Property UiBindMode As String = String.Empty
+            Public Property UsedCachedPreview As Boolean
 
             Public ReadOnly Property CancellationToken As CancellationToken
                 Get
@@ -51,6 +52,8 @@ Namespace CodexNativeAgent.Ui
             Public Property HasTurns As Boolean
             Public Property TranscriptSnapshot As ThreadTranscriptSnapshot
             Public Property InitialDisplayChunkPlan As ThreadTranscriptDisplayChunkPlan
+            Public Property ContentFingerprint As String = String.Empty
+            Public Property ThreadUpdatedAtUnix As Long = Long.MinValue
             Public Property PerfReadSnapshotSourceMs As Long
             Public Property PerfBuildSnapshotMs As Long
             Public Property PerfBuildInitialChunkPlanMs As Long
@@ -203,11 +206,20 @@ Namespace CodexNativeAgent.Ui
             request.CancellationSource = threadLoadCts
             _threadSelectionLoadCts = threadLoadCts
 
-            SetTranscriptLoadingState(True, "Loading selected thread...")
+            Dim showedCachedPreview = TryShowCachedTranscriptTabSelectionPreview(request.ThreadId, "selection_cached_preview")
+            request.UsedCachedPreview = showedCachedPreview
+            If showedCachedPreview Then
+                SetTranscriptLoadingState(False)
+                ShowStatus("Refreshing selected thread...")
+                TraceThreadSelectionPerformance("cached_preview_show",
+                                                $"thread={request.ThreadId}; loadVersion={request.LoadVersion}")
+            Else
+                SetTranscriptLoadingState(True, "Loading selected thread...")
+                ShowStatus("Loading selected thread...")
+            End If
             RefreshControlStates()
-            ShowStatus("Loading selected thread...")
             TraceThreadSelectionPerformance("begin",
-                                            $"thread={request.ThreadId}; loadVersion={request.LoadVersion}")
+                                            $"thread={request.ThreadId}; loadVersion={request.LoadVersion}; cachedPreview={showedCachedPreview}")
             Return request
         End Function
 
@@ -279,11 +291,17 @@ Namespace CodexNativeAgent.Ui
                 threadObject = snapshotSourceThread
             End If
 
+            Dim payloadThreadUpdatedAtUnix = GetThreadUpdatedAtUnix(snapshotSourceThread)
+            Dim payloadContentFingerprint = BuildThreadSelectionPayloadContentFingerprint(snapshotSourceThread,
+                                                                                         transcriptSnapshot)
+
             Return New ThreadSelectionLoadPayload() With {
                 .ThreadObject = threadObject,
                 .HasTurns = hasTurns,
                 .TranscriptSnapshot = transcriptSnapshot,
                 .InitialDisplayChunkPlan = initialDisplayChunkPlan,
+                .ContentFingerprint = payloadContentFingerprint,
+                .ThreadUpdatedAtUnix = payloadThreadUpdatedAtUnix,
                 .PerfReadSnapshotSourceMs = readSnapshotSourceMs,
                 .PerfBuildSnapshotMs = buildSnapshotMs,
                 .PerfBuildInitialChunkPlanMs = buildInitialChunkPlanMs,
@@ -324,7 +342,7 @@ Namespace CodexNativeAgent.Ui
 
                     TraceThreadSelectionPerformance(
                         "payload_ready",
-                        $"thread={request.ThreadId}; loadVersion={request.LoadVersion}; hasTurns={payload.HasTurns}; payloadTotalMs={payload.PerfTotalMs}; readMs={payload.PerfReadSnapshotSourceMs}; snapshotBuildMs={payload.PerfBuildSnapshotMs}; initialChunkPlanMs={payload.PerfBuildInitialChunkPlanMs}; resumeMs={payload.PerfResumeThreadMs}; snapshotEntries={snapshot.DisplayEntries.Count}; rawChars={If(snapshot.RawText, String.Empty).Length}")
+                        $"thread={request.ThreadId}; loadVersion={request.LoadVersion}; hasTurns={payload.HasTurns}; payloadTotalMs={payload.PerfTotalMs}; readMs={payload.PerfReadSnapshotSourceMs}; snapshotBuildMs={payload.PerfBuildSnapshotMs}; initialChunkPlanMs={payload.PerfBuildInitialChunkPlanMs}; resumeMs={payload.PerfResumeThreadMs}; snapshotEntries={snapshot.DisplayEntries.Count}; rawChars={If(snapshot.RawText, String.Empty).Length}; updatedAt={payload.ThreadUpdatedAtUnix}")
 
                     Dim applyCurrentThreadStartMs = uiApplyPerf.ElapsedMilliseconds
                     ApplyCurrentThreadFromThreadObject(payload.ThreadObject)
@@ -428,31 +446,74 @@ Namespace CodexNativeAgent.Ui
                 visibleEntriesToRender = initialChunkPlan.DisplayEntries
             End If
 
+            Dim uiBindStartMs = perf.ElapsedMilliseconds
+            Dim docSwapStartMs = perf.ElapsedMilliseconds
+            Dim didSwapTranscriptDoc = EnsureTranscriptDocumentActivatedForThread(normalizedThreadId, "selection_fast_bind")
+            Dim docSwapMs = Math.Max(0, perf.ElapsedMilliseconds - docSwapStartMs)
+            Dim renderedDisplayCount = If(initialChunkPlan Is Nothing,
+                                          snapshot.DisplayEntries.Count,
+                                          initialChunkPlan.SelectedEntryCount)
+
+            Dim canSkipRebindAsUnchanged = False
+            Dim skipRebindReason = String.Empty
+            Dim cachedFingerprint As String = String.Empty
+            Dim cachedUpdatedAtUnix As Long = Long.MinValue
+            Dim cachedVisibleItemCount = _viewModel.TranscriptPanel.Items.Count
+            If TryGetActiveTranscriptDocumentContentFingerprint(normalizedThreadId, cachedFingerprint, cachedUpdatedAtUnix) Then
+                If Not String.IsNullOrWhiteSpace(payload.ContentFingerprint) AndAlso
+                   StringComparer.Ordinal.Equals(payload.ContentFingerprint, cachedFingerprint) Then
+                    ' Safety guard: only skip if the cached tab still looks like the initial bind shape.
+                    ' Expanded/prepended history would need per-tab chunk-session restore to skip safely.
+                    Const maxAllowedExtraCachedRowsForReuse As Integer = 40
+                    If cachedVisibleItemCount <= renderedDisplayCount + maxAllowedExtraCachedRowsForReuse Then
+                        canSkipRebindAsUnchanged = True
+                    Else
+                        skipRebindReason = $"visible_items_exceed_initial:{cachedVisibleItemCount}>{renderedDisplayCount + maxAllowedExtraCachedRowsForReuse}"
+                    End If
+                Else
+                    skipRebindReason = "fingerprint_mismatch"
+                End If
+            Else
+                skipRebindReason = "no_cached_fingerprint"
+            End If
+
             If chunkSessionGeneration > 0 AndAlso
                StringComparer.Ordinal.Equals(normalizedThreadId, GetVisibleThreadId()) AndAlso
                initialChunkPlan IsNot Nothing Then
                 RecordInitialTranscriptChunkRenderState(normalizedThreadId, chunkSessionGeneration, initialChunkPlan)
             End If
 
-            Dim uiBindStartMs = perf.ElapsedMilliseconds
-            Dim docSwapStartMs = perf.ElapsedMilliseconds
-            Dim didSwapTranscriptDoc = EnsureTranscriptDocumentActivatedForThread(normalizedThreadId, "selection_fast_bind")
-            Dim docSwapMs = Math.Max(0, perf.ElapsedMilliseconds - docSwapStartMs)
-            Dim clearStartMs = perf.ElapsedMilliseconds
+            Dim clearMs As Long = 0
+            Dim setRawTextMs As Long = 0
+            Dim setDisplayMs As Long = 0
             ClearPendingUserEchoTracking()
-            _viewModel.TranscriptPanel.ClearTranscript()
-            Dim clearMs = Math.Max(0, perf.ElapsedMilliseconds - clearStartMs)
-            TraceThreadSelectionPerformance("clear_transcript_breakdown",
-                                            $"thread={normalizedThreadId}; mode=fast; {_viewModel.TranscriptPanel.DescribeLastClearTranscriptTelemetry()}")
 
-            Dim setRawTextStartMs = perf.ElapsedMilliseconds
-            _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
-            Dim setRawTextMs = Math.Max(0, perf.ElapsedMilliseconds - setRawTextStartMs)
+            If canSkipRebindAsUnchanged Then
+                TraceThreadSelectionPerformance(
+                    "fast_bind_reuse_cached",
+                    $"thread={normalizedThreadId}; updatedAt={payload.ThreadUpdatedAtUnix}; cachedUpdatedAt={cachedUpdatedAtUnix}; rendered={renderedDisplayCount}; visibleItems={cachedVisibleItemCount}; docSwapped={didSwapTranscriptDoc}")
+            Else
+                Dim clearStartMs = perf.ElapsedMilliseconds
+                _viewModel.TranscriptPanel.ClearTranscript()
+                clearMs = Math.Max(0, perf.ElapsedMilliseconds - clearStartMs)
+                TraceThreadSelectionPerformance("clear_transcript_breakdown",
+                                                $"thread={normalizedThreadId}; mode=fast; {_viewModel.TranscriptPanel.DescribeLastClearTranscriptTelemetry()}")
 
-            Dim setDisplayStartMs = perf.ElapsedMilliseconds
-            _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(visibleEntriesToRender)
-            Dim setDisplayMs = Math.Max(0, perf.ElapsedMilliseconds - setDisplayStartMs)
+                Dim setRawTextStartMs = perf.ElapsedMilliseconds
+                _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
+                setRawTextMs = Math.Max(0, perf.ElapsedMilliseconds - setRawTextStartMs)
+
+                Dim setDisplayStartMs = perf.ElapsedMilliseconds
+                _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(visibleEntriesToRender)
+                setDisplayMs = Math.Max(0, perf.ElapsedMilliseconds - setDisplayStartMs)
+            End If
             Dim uiBindMs = Math.Max(0, perf.ElapsedMilliseconds - uiBindStartMs)
+
+            If Not String.IsNullOrWhiteSpace(payload.ContentFingerprint) Then
+                SetActiveTranscriptDocumentContentFingerprint(normalizedThreadId,
+                                                             payload.ContentFingerprint,
+                                                             payload.ThreadUpdatedAtUnix)
+            End If
 
             Dim overlayApplyStartMs = perf.ElapsedMilliseconds
             ApplyLiveRuntimeOverlayForThread(normalizedThreadId,
@@ -465,18 +526,17 @@ Namespace CodexNativeAgent.Ui
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
             RefreshThreadRuntimeIndicatorsIfNeeded()
 
-            Dim renderedDisplayCount = If(initialChunkPlan Is Nothing,
-                                          snapshot.DisplayEntries.Count,
-                                          initialChunkPlan.SelectedEntryCount)
             EnsureTranscriptChunkTopProbeTimerStarted()
             TraceTranscriptChunkSession("rebuild_fast_complete",
                                         $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={renderedDisplayCount}; totalProjectionCount={snapshot.DisplayEntries.Count}")
-            ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
+            If Not canSkipRebindAsUnchanged Then
+                ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
+            End If
             Dim finalizeBindMs = Math.Max(0, perf.ElapsedMilliseconds - finalizeBindStartMs)
 
             TraceThreadSelectionPerformance(
                 "fast_bind_complete",
-                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; docSwapMs={docSwapMs}; docSwapped={didSwapTranscriptDoc}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={snapshot.DisplayEntries.Count}")
+                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; docSwapMs={docSwapMs}; docSwapped={didSwapTranscriptDoc}; reusedUnchanged={canSkipRebindAsUnchanged}; reuseSkipReason={skipRebindReason}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={snapshot.DisplayEntries.Count}")
             Return True
         End Function
 
@@ -505,6 +565,56 @@ Namespace CodexNativeAgent.Ui
             Return ThreadTranscriptChunkPlanner.BuildLatestDisplayChunk(entries,
                                                                         initialChunkMaxRows,
                                                                         initialChunkMaxRenderWeight)
+        End Function
+
+        Private Shared Function GetThreadUpdatedAtUnix(threadObject As JsonObject) As Long
+            If threadObject Is Nothing Then
+                Return Long.MinValue
+            End If
+
+            Dim node As JsonNode = Nothing
+            If Not threadObject.TryGetPropertyValue("updatedAt", node) OrElse node Is Nothing Then
+                Return Long.MinValue
+            End If
+
+            Dim jsonValue = TryCast(node, JsonValue)
+            If jsonValue Is Nothing Then
+                Return Long.MinValue
+            End If
+
+            Dim longValue As Long
+            If jsonValue.TryGetValue(Of Long)(longValue) Then
+                Return longValue
+            End If
+
+            Dim intValue As Integer
+            If jsonValue.TryGetValue(Of Integer)(intValue) Then
+                Return CLng(intValue)
+            End If
+
+            Dim text As String = Nothing
+            If jsonValue.TryGetValue(Of String)(text) Then
+                If Long.TryParse(text, longValue) Then
+                    Return longValue
+                End If
+            End If
+
+            Return Long.MinValue
+        End Function
+
+        Private Shared Function BuildThreadSelectionPayloadContentFingerprint(threadObject As JsonObject,
+                                                                              snapshot As ThreadTranscriptSnapshot) As String
+            Dim safeSnapshot = If(snapshot, New ThreadTranscriptSnapshot())
+            Dim updatedAtUnix = GetThreadUpdatedAtUnix(threadObject)
+            Dim turnsCount = 0
+            Dim turnsArray = GetPropertyArray(threadObject, "turns")
+            If turnsArray IsNot Nothing Then
+                turnsCount = turnsArray.Count
+            End If
+
+            Dim displayCount = safeSnapshot.DisplayEntries.Count
+            Dim rawCharCount = If(safeSnapshot.RawText, String.Empty).Length
+            Return $"u={updatedAtUnix};t={turnsCount};d={displayCount};r={rawCharCount}"
         End Function
 
         Private Sub HandleThreadSelectionLoadFailureUi(request As ThreadSelectionLoadRequest, ex As Exception)

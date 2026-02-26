@@ -18,11 +18,15 @@ Namespace CodexNativeAgent.Ui
         Private ReadOnly _threadTranscriptChunkSessionCoordinator As New ThreadTranscriptChunkSessionCoordinator()
         Private ReadOnly _inactiveTranscriptDocumentsByThreadId As New Dictionary(Of String, CachedTranscriptDocumentState)(StringComparer.Ordinal)
         Private _activeTranscriptDocumentThreadId As String = String.Empty
+        Private _activeTranscriptDocumentContentFingerprint As String = String.Empty
+        Private _activeTranscriptDocumentUpdatedAtUnix As Long = Long.MinValue
 
         Private NotInheritable Class CachedTranscriptDocumentState
             Public Property ThreadId As String = String.Empty
             Public Property State As TranscriptPanelViewModel.TranscriptThreadDocumentState
             Public Property LastUsedUtc As DateTimeOffset = DateTimeOffset.UtcNow
+            Public Property ContentFingerprint As String = String.Empty
+            Public Property ThreadUpdatedAtUnix As Long = Long.MinValue
         End Class
 
         ' Visible selection helpers (Phase 7 scaffold):
@@ -97,9 +101,16 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim nextState As TranscriptPanelViewModel.TranscriptThreadDocumentState = Nothing
-            Dim reusedCachedState = TryTakeCachedTranscriptDocumentState(normalizedThreadId, nextState)
+            Dim nextContentFingerprint As String = String.Empty
+            Dim nextThreadUpdatedAtUnix As Long = Long.MinValue
+            Dim reusedCachedState = TryTakeCachedTranscriptDocumentState(normalizedThreadId,
+                                                                         nextState,
+                                                                         nextContentFingerprint,
+                                                                         nextThreadUpdatedAtUnix)
             If nextState Is Nothing Then
                 nextState = TranscriptPanelViewModel.CreateEmptyThreadDocumentState()
+                nextContentFingerprint = String.Empty
+                nextThreadUpdatedAtUnix = Long.MinValue
             End If
 
             Dim previousThreadId = _activeTranscriptDocumentThreadId
@@ -108,10 +119,15 @@ Namespace CodexNativeAgent.Ui
             Dim swapMs = swapPerf.ElapsedMilliseconds
 
             If Not String.IsNullOrWhiteSpace(previousThreadId) AndAlso previousState IsNot Nothing Then
-                StoreCachedTranscriptDocumentState(previousThreadId, previousState)
+                StoreCachedTranscriptDocumentState(previousThreadId,
+                                                  previousState,
+                                                  _activeTranscriptDocumentContentFingerprint,
+                                                  _activeTranscriptDocumentUpdatedAtUnix)
             End If
 
             _activeTranscriptDocumentThreadId = normalizedThreadId
+            _activeTranscriptDocumentContentFingerprint = If(nextContentFingerprint, String.Empty).Trim()
+            _activeTranscriptDocumentUpdatedAtUnix = nextThreadUpdatedAtUnix
             TrimInactiveTranscriptDocuments()
             EnsureTranscriptTabSurfaceActivatedForThread(normalizedThreadId)
 
@@ -138,10 +154,15 @@ Namespace CodexNativeAgent.Ui
             Dim swapMs = swapPerf.ElapsedMilliseconds
 
             If hasPreviousThread AndAlso previousState IsNot Nothing Then
-                StoreCachedTranscriptDocumentState(previousThreadId, previousState)
+                StoreCachedTranscriptDocumentState(previousThreadId,
+                                                  previousState,
+                                                  _activeTranscriptDocumentContentFingerprint,
+                                                  _activeTranscriptDocumentUpdatedAtUnix)
             End If
 
             _activeTranscriptDocumentThreadId = String.Empty
+            _activeTranscriptDocumentContentFingerprint = String.Empty
+            _activeTranscriptDocumentUpdatedAtUnix = Long.MinValue
             TrimInactiveTranscriptDocuments()
             EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
 
@@ -151,7 +172,9 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub StoreCachedTranscriptDocumentState(threadId As String,
-                                                       state As TranscriptPanelViewModel.TranscriptThreadDocumentState)
+                                                       state As TranscriptPanelViewModel.TranscriptThreadDocumentState,
+                                                       Optional contentFingerprint As String = Nothing,
+                                                       Optional threadUpdatedAtUnix As Long = Long.MinValue)
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse state Is Nothing Then
                 Return
@@ -160,13 +183,19 @@ Namespace CodexNativeAgent.Ui
             _inactiveTranscriptDocumentsByThreadId(normalizedThreadId) = New CachedTranscriptDocumentState() With {
                 .ThreadId = normalizedThreadId,
                 .State = state,
-                .LastUsedUtc = DateTimeOffset.UtcNow
+                .LastUsedUtc = DateTimeOffset.UtcNow,
+                .ContentFingerprint = If(contentFingerprint, String.Empty).Trim(),
+                .ThreadUpdatedAtUnix = threadUpdatedAtUnix
             }
         End Sub
 
         Private Function TryTakeCachedTranscriptDocumentState(threadId As String,
-                                                              ByRef state As TranscriptPanelViewModel.TranscriptThreadDocumentState) As Boolean
+                                                              ByRef state As TranscriptPanelViewModel.TranscriptThreadDocumentState,
+                                                              ByRef contentFingerprint As String,
+                                                              ByRef threadUpdatedAtUnix As Long) As Boolean
             state = Nothing
+            contentFingerprint = String.Empty
+            threadUpdatedAtUnix = Long.MinValue
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
                 Return False
@@ -180,6 +209,8 @@ Namespace CodexNativeAgent.Ui
             _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
             entry.LastUsedUtc = DateTimeOffset.UtcNow
             state = entry.State
+            contentFingerprint = If(entry.ContentFingerprint, String.Empty).Trim()
+            threadUpdatedAtUnix = entry.ThreadUpdatedAtUnix
             Return state IsNot Nothing
         End Function
 
@@ -231,8 +262,71 @@ Namespace CodexNativeAgent.Ui
         Private Sub ClearCachedTranscriptDocuments()
             _inactiveTranscriptDocumentsByThreadId.Clear()
             _activeTranscriptDocumentThreadId = String.Empty
+            _activeTranscriptDocumentContentFingerprint = String.Empty
+            _activeTranscriptDocumentUpdatedAtUnix = Long.MinValue
             ClearRetainedTranscriptTabSurfaces()
         End Sub
+
+        Private Function TryGetActiveTranscriptDocumentContentFingerprint(threadId As String,
+                                                                          ByRef contentFingerprint As String,
+                                                                          ByRef threadUpdatedAtUnix As Long) As Boolean
+            contentFingerprint = String.Empty
+            threadUpdatedAtUnix = Long.MinValue
+
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            If Not StringComparer.Ordinal.Equals(_activeTranscriptDocumentThreadId, normalizedThreadId) Then
+                Return False
+            End If
+
+            contentFingerprint = If(_activeTranscriptDocumentContentFingerprint, String.Empty).Trim()
+            threadUpdatedAtUnix = _activeTranscriptDocumentUpdatedAtUnix
+            Return Not String.IsNullOrWhiteSpace(contentFingerprint)
+        End Function
+
+        Private Sub SetActiveTranscriptDocumentContentFingerprint(threadId As String,
+                                                                 contentFingerprint As String,
+                                                                 threadUpdatedAtUnix As Long)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            If Not StringComparer.Ordinal.Equals(_activeTranscriptDocumentThreadId, normalizedThreadId) Then
+                Return
+            End If
+
+            _activeTranscriptDocumentContentFingerprint = If(contentFingerprint, String.Empty).Trim()
+            _activeTranscriptDocumentUpdatedAtUnix = threadUpdatedAtUnix
+        End Sub
+
+        Private Function TryShowCachedTranscriptTabSelectionPreview(threadId As String,
+                                                                    Optional reason As String = Nothing) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            If Not HasRetainedTranscriptTabSurface(normalizedThreadId) Then
+                Return False
+            End If
+
+            If Not StringComparer.Ordinal.Equals(_activeTranscriptDocumentThreadId, normalizedThreadId) AndAlso
+               Not _inactiveTranscriptDocumentsByThreadId.ContainsKey(normalizedThreadId) Then
+                Return False
+            End If
+
+            EnsureTranscriptDocumentActivatedForThread(normalizedThreadId, If(reason, "selection_cached_preview"))
+            SetVisibleThreadId(normalizedThreadId)
+            ClearVisibleTurnId()
+            UpdateThreadTurnLabels()
+            UpdateWorkspaceEmptyStateVisibility()
+            RefreshControlStates()
+            Return True
+        End Function
 
         Private Sub TraceTranscriptChunkSession(eventName As String,
                                                 Optional details As String = Nothing,

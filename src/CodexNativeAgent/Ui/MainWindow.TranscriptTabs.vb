@@ -1,10 +1,12 @@
 Imports System
 Imports System.Collections.Generic
+Imports System.Diagnostics
 Imports System.Windows
 Imports System.Windows.Controls
 Imports System.Windows.Controls.Primitives
 Imports System.Windows.Input
 Imports System.Windows.Media
+Imports System.Windows.Threading
 Imports CodexNativeAgent.Ui.ViewModels.Threads
 
 Namespace CodexNativeAgent.Ui
@@ -18,14 +20,23 @@ Namespace CodexNativeAgent.Ui
             Public Property IsPrimarySurface As Boolean
         End Class
 
+        Private NotInheritable Class TranscriptTabSurfaceRetireWorkItem
+            Public Property ThreadId As String = String.Empty
+            Public Property SurfaceListBox As ListBox
+            Public Property IsPrimarySurface As Boolean
+            Public Property QueuedUtc As DateTimeOffset = DateTimeOffset.UtcNow
+        End Class
+
         Private ReadOnly _transcriptTabSurfacesByThreadId As New Dictionary(Of String, TranscriptTabSurfaceHandle)(StringComparer.Ordinal)
         Private ReadOnly _transcriptInteractionHandlersAttached As New List(Of ListBox)()
+        Private ReadOnly _transcriptTabSurfaceRetireQueue As New Queue(Of TranscriptTabSurfaceRetireWorkItem)()
         Private _transcriptSurfaceHostPanel As Panel
         Private _transcriptTabStripBorder As Border
         Private _transcriptTabStripScrollViewer As ScrollViewer
         Private _transcriptTabStripPanel As StackPanel
         Private _activeTranscriptSurfaceListBox As ListBox
         Private _activeTranscriptSurfaceThreadId As String = String.Empty
+        Private _transcriptTabSurfaceRetireDrainScheduled As Boolean
 
         Private Function CurrentTranscriptListControl() As ListBox
             If _activeTranscriptSurfaceListBox IsNot Nothing Then
@@ -373,6 +384,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Async Sub OnTranscriptTabCloseButtonClick(sender As Object, e As RoutedEventArgs)
             e.Handled = True
+            Dim closePerf = Stopwatch.StartNew()
 
             Dim button = TryCast(sender, Button)
             If button Is Nothing Then
@@ -384,6 +396,9 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=close_begin thread={normalizedThreadId} active={StringComparer.Ordinal.Equals(normalizedThreadId, _activeTranscriptSurfaceThreadId)} openTabs={_transcriptTabSurfacesByThreadId.Count}")
+
             Dim isActiveTab = StringComparer.Ordinal.Equals(normalizedThreadId, _activeTranscriptSurfaceThreadId)
             Dim fallbackEntry As ThreadListEntry = Nothing
             If isActiveTab Then
@@ -394,16 +409,22 @@ Namespace CodexNativeAgent.Ui
             _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
 
             If Not isActiveTab Then
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=inactive_tab elapsedMs={closePerf.ElapsedMilliseconds} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
                 Return
             End If
 
             If fallbackEntry IsNot Nothing Then
                 SelectThreadEntry(fallbackEntry, suppressAutoLoad:=False)
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=switch_to_fallback elapsedMs={closePerf.ElapsedMilliseconds} fallback={fallbackEntry.Id} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
                 Return
             End If
 
             Await StartThreadAsync().ConfigureAwait(True)
             _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=start_blank elapsedMs={closePerf.ElapsedMilliseconds} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
         End Sub
 
         Private Function FindFirstVisibleTranscriptTabEntryExcluding(threadId As String) As ThreadListEntry
@@ -469,13 +490,14 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                candidate.SurfaceListBox.Visibility = If(StringComparer.Ordinal.Equals(candidate.ThreadId, normalizedThreadId),
-                                                         Visibility.Visible,
-                                                         Visibility.Collapsed)
+                Dim isVisible = StringComparer.Ordinal.Equals(candidate.ThreadId, normalizedThreadId)
+                candidate.SurfaceListBox.Visibility = If(isVisible, Visibility.Visible, Visibility.Collapsed)
+                candidate.SurfaceListBox.IsHitTestVisible = isVisible
             Next
 
             If Not HandleOwnsPrimaryTranscriptSurface(normalizedThreadId) Then
                 WorkspacePaneHost.LstTranscript.Visibility = Visibility.Collapsed
+                WorkspacePaneHost.LstTranscript.IsHitTestVisible = False
             End If
 
             _activeTranscriptSurfaceListBox = handle.SurfaceListBox
@@ -498,6 +520,7 @@ Namespace CodexNativeAgent.Ui
             WorkspacePaneHost.LstTranscript.DataContext = _viewModel
             WorkspacePaneHost.LstTranscript.ItemsSource = _viewModel.TranscriptPanel.Items
             WorkspacePaneHost.LstTranscript.Visibility = Visibility.Visible
+            WorkspacePaneHost.LstTranscript.IsHitTestVisible = True
 
             For Each kvp In _transcriptTabSurfacesByThreadId
                 Dim candidate = kvp.Value
@@ -506,6 +529,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 candidate.SurfaceListBox.Visibility = Visibility.Collapsed
+                candidate.SurfaceListBox.IsHitTestVisible = False
             Next
 
             _activeTranscriptSurfaceListBox = WorkspacePaneHost.LstTranscript
@@ -525,6 +549,122 @@ Namespace CodexNativeAgent.Ui
 
             Return handle.IsPrimarySurface AndAlso ReferenceEquals(handle.SurfaceListBox, If(WorkspacePaneHost, Nothing)?.LstTranscript)
         End Function
+
+        Private Function HasRetainedTranscriptTabSurface(threadId As String) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            Dim handle As TranscriptTabSurfaceHandle = Nothing
+            Return _transcriptTabSurfacesByThreadId.TryGetValue(normalizedThreadId, handle) AndAlso
+                   handle IsNot Nothing AndAlso
+                   handle.SurfaceListBox IsNot Nothing
+        End Function
+
+        Private Sub QueueTranscriptTabSurfaceRetireForIdle(handle As TranscriptTabSurfaceHandle)
+            If handle Is Nothing OrElse handle.SurfaceListBox Is Nothing Then
+                Return
+            End If
+
+            Dim listBox = handle.SurfaceListBox
+            listBox.Visibility = Visibility.Collapsed
+            listBox.IsHitTestVisible = False
+
+            _transcriptTabSurfaceRetireQueue.Enqueue(New TranscriptTabSurfaceRetireWorkItem() With {
+                .ThreadId = If(handle.ThreadId, String.Empty).Trim(),
+                .SurfaceListBox = listBox,
+                .IsPrimarySurface = handle.IsPrimarySurface
+            })
+
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=surface_retire_queued thread={If(handle.ThreadId, String.Empty)} queueCount={_transcriptTabSurfaceRetireQueue.Count}")
+
+            ScheduleTranscriptTabSurfaceRetireDrain()
+        End Sub
+
+        Private Sub ScheduleTranscriptTabSurfaceRetireDrain()
+            If _transcriptTabSurfaceRetireDrainScheduled Then
+                Return
+            End If
+
+            _transcriptTabSurfaceRetireDrainScheduled = True
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,
+                                   New Action(AddressOf DrainTranscriptTabSurfaceRetireQueue))
+        End Sub
+
+        Private Sub DrainTranscriptTabSurfaceRetireQueue()
+            _transcriptTabSurfaceRetireDrainScheduled = False
+
+            If _transcriptTabSurfaceRetireQueue.Count = 0 Then
+                Return
+            End If
+
+            Dim retirePerf = Stopwatch.StartNew()
+            Dim processed = 0
+            Const maxItemsPerIdlePass As Integer = 1
+            Const maxIdleBudgetMs As Long = 12
+
+            Do While _transcriptTabSurfaceRetireQueue.Count > 0 AndAlso
+                     processed < maxItemsPerIdlePass AndAlso
+                     retirePerf.ElapsedMilliseconds <= maxIdleBudgetMs
+                Dim workItem = _transcriptTabSurfaceRetireQueue.Dequeue()
+                If workItem Is Nothing OrElse workItem.SurfaceListBox Is Nothing Then
+                    Continue Do
+                End If
+
+                DisposeRetiredTranscriptSurfaceWorkItem(workItem)
+
+                processed += 1
+
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=surface_retire_disposed thread={If(workItem.ThreadId, String.Empty)} queuedMs={CLng((DateTimeOffset.UtcNow - workItem.QueuedUtc).TotalMilliseconds)} remaining={_transcriptTabSurfaceRetireQueue.Count}")
+            Loop
+
+            If _transcriptTabSurfaceRetireQueue.Count > 0 Then
+                ScheduleTranscriptTabSurfaceRetireDrain()
+            End If
+        End Sub
+
+        Private Sub DisposeRetiredTranscriptSurfaceWorkItem(workItem As TranscriptTabSurfaceRetireWorkItem)
+            If workItem Is Nothing OrElse workItem.SurfaceListBox Is Nothing Then
+                Return
+            End If
+
+            Dim listBox = workItem.SurfaceListBox
+
+            If Not workItem.IsPrimarySurface AndAlso _transcriptSurfaceHostPanel IsNot Nothing Then
+                _transcriptSurfaceHostPanel.Children.Remove(listBox)
+            End If
+
+            listBox.ItemsSource = Nothing
+            listBox.DataContext = Nothing
+
+            For i = _transcriptInteractionHandlersAttached.Count - 1 To 0 Step -1
+                If ReferenceEquals(_transcriptInteractionHandlersAttached(i), listBox) Then
+                    _transcriptInteractionHandlersAttached.RemoveAt(i)
+                End If
+            Next
+
+            For i = _transcriptChunkScrollChangedHandlerAttachedLists.Count - 1 To 0 Step -1
+                If ReferenceEquals(_transcriptChunkScrollChangedHandlerAttachedLists(i), listBox) Then
+                    _transcriptChunkScrollChangedHandlerAttachedLists.RemoveAt(i)
+                End If
+            Next
+        End Sub
+
+        Private Sub FlushQueuedTranscriptTabSurfaceRetiresImmediately()
+            If _transcriptTabSurfaceRetireQueue.Count = 0 Then
+                _transcriptTabSurfaceRetireDrainScheduled = False
+                Return
+            End If
+
+            Do While _transcriptTabSurfaceRetireQueue.Count > 0
+                DisposeRetiredTranscriptSurfaceWorkItem(_transcriptTabSurfaceRetireQueue.Dequeue())
+            Loop
+
+            _transcriptTabSurfaceRetireDrainScheduled = False
+        End Sub
 
         Private Sub RemoveRetainedTranscriptTabSurface(threadId As String)
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
@@ -546,21 +686,10 @@ Namespace CodexNativeAgent.Ui
             If handle.SurfaceListBox IsNot Nothing Then
                 If handle.IsPrimarySurface AndAlso WorkspacePaneHost IsNot Nothing AndAlso ReferenceEquals(handle.SurfaceListBox, WorkspacePaneHost.LstTranscript) Then
                     handle.SurfaceListBox.Visibility = Visibility.Collapsed
-                ElseIf _transcriptSurfaceHostPanel IsNot Nothing Then
-                    _transcriptSurfaceHostPanel.Children.Remove(handle.SurfaceListBox)
+                    handle.SurfaceListBox.IsHitTestVisible = False
+                Else
+                    QueueTranscriptTabSurfaceRetireForIdle(handle)
                 End If
-
-                For i = _transcriptInteractionHandlersAttached.Count - 1 To 0 Step -1
-                    If ReferenceEquals(_transcriptInteractionHandlersAttached(i), handle.SurfaceListBox) Then
-                        _transcriptInteractionHandlersAttached.RemoveAt(i)
-                    End If
-                Next
-
-                For i = _transcriptChunkScrollChangedHandlerAttachedLists.Count - 1 To 0 Step -1
-                    If ReferenceEquals(_transcriptChunkScrollChangedHandlerAttachedLists(i), handle.SurfaceListBox) Then
-                        _transcriptChunkScrollChangedHandlerAttachedLists.RemoveAt(i)
-                    End If
-                Next
             End If
 
             If StringComparer.Ordinal.Equals(_activeTranscriptSurfaceThreadId, normalizedThreadId) Then
@@ -577,6 +706,7 @@ Namespace CodexNativeAgent.Ui
 
             Dim surfaceHandles As New List(Of TranscriptTabSurfaceHandle)(_transcriptTabSurfacesByThreadId.Values)
             _transcriptTabSurfacesByThreadId.Clear()
+            FlushQueuedTranscriptTabSurfaceRetiresImmediately()
 
             For Each handle In surfaceHandles
                 If handle Is Nothing Then
@@ -593,10 +723,13 @@ Namespace CodexNativeAgent.Ui
 
                 If WorkspacePaneHost IsNot Nothing AndAlso ReferenceEquals(handle.SurfaceListBox, WorkspacePaneHost.LstTranscript) Then
                     handle.SurfaceListBox.Visibility = Visibility.Visible
+                    handle.SurfaceListBox.IsHitTestVisible = True
                     handle.SurfaceListBox.DataContext = _viewModel
                     handle.SurfaceListBox.ItemsSource = _viewModel.TranscriptPanel.Items
                 ElseIf _transcriptSurfaceHostPanel IsNot Nothing Then
                     _transcriptSurfaceHostPanel.Children.Remove(handle.SurfaceListBox)
+                    handle.SurfaceListBox.ItemsSource = Nothing
+                    handle.SurfaceListBox.DataContext = Nothing
                 End If
             Next
 
@@ -618,6 +751,7 @@ Namespace CodexNativeAgent.Ui
             If primaryListBox IsNot Nothing Then
                 AttachTranscriptInteractionHandlers(primaryListBox)
                 _activeTranscriptSurfaceListBox = WorkspacePaneHost.LstTranscript
+                primaryListBox.IsHitTestVisible = True
             Else
                 _activeTranscriptSurfaceListBox = Nothing
             End If
