@@ -878,16 +878,13 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 Dim threadId = entry.Id.Trim()
-                Dim hasActiveRuntimeTurn = False
-                If runtimeStore IsNot Nothing Then
-                    hasActiveRuntimeTurn = runtimeStore.HasActiveTurn(threadId)
-                End If
+                Dim hasActiveRuntimeTurn = runtimeStore IsNot Nothing AndAlso runtimeStore.HasActiveTurn(threadId)
 
                 Dim hasPendingRuntimeUpdates = False
                 Dim liveState As ThreadLiveSessionState = Nothing
                 If _threadLiveSessionRegistry.TryGet(threadId, liveState) AndAlso liveState IsNot Nothing Then
                     hasPendingRuntimeUpdates = liveState.PendingRebuild
-                    If Not hasActiveRuntimeTurn Then
+                    If runtimeStore Is Nothing AndAlso Not hasActiveRuntimeTurn Then
                         hasActiveRuntimeTurn = liveState.IsTurnActive AndAlso
                                                Not String.IsNullOrWhiteSpace(If(liveState.ActiveTurnId, String.Empty).Trim())
                     End If
