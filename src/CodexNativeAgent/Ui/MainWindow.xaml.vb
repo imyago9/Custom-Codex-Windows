@@ -40,6 +40,11 @@ Namespace CodexNativeAgent.Ui
             UserMessage = 32
         End Enum
 
+        Private Enum TranscriptScrollFollowMode
+            FollowBottom = 0
+            DetachedByUser = 1
+        End Enum
+
         Private NotInheritable Class ModelListEntry
             Public Property Id As String = String.Empty
             Public Property DisplayName As String = String.Empty
@@ -439,7 +444,7 @@ Namespace CodexNativeAgent.Ui
         Private _suppressTranscriptScaleUiChange As Boolean
         Private _turnComposerPickersCollapsed As Boolean
         Private _turnComposerPickersExpandedWidth As Double = 434.0R
-        Private _transcriptAutoScrollEnabled As Boolean = True
+        Private _transcriptScrollFollowMode As TranscriptScrollFollowMode = TranscriptScrollFollowMode.FollowBottom
         Private _suppressTranscriptScrollTracking As Boolean
         Private _transcriptScrollToBottomPending As Boolean
         Private _transcriptScrollViewer As ScrollViewer
@@ -3431,28 +3436,38 @@ Namespace CodexNativeAgent.Ui
 
             Dim verticalOffsetChanged = Math.Abs(e.VerticalChange) > 0.01R
             If Not verticalOffsetChanged Then
+                ' Consume one-shot user-arm on no-op clicks/wheel/key events so later content-growth
+                ' ScrollChanged events are not misclassified as user navigation.
+                If _transcriptUserScrollInteractionArmed AndAlso Not _transcriptScrollThumbDragActive Then
+                    _transcriptUserScrollInteractionArmed = False
+                End If
+
                 If atBottom AndAlso _transcriptScrollThumbDragActive Then
-                    _transcriptAutoScrollEnabled = True
+                    SetTranscriptFollowModeFollowBottom()
                 End If
                 Return
             End If
 
-            ' Content growth/layout changes during streaming can also move the offset a bit.
-            ' Only disable auto-follow on user-style scroll navigation (offset change without
-            ' extent/viewport growth in the same event).
-            Dim extentOrViewportChanged = Math.Abs(e.ExtentHeightChange) > 0.01R OrElse
-                                         Math.Abs(e.ViewportHeightChange) > 0.01R
             Dim isUserDrivenOffsetChange = _transcriptScrollThumbDragActive OrElse
-                                           _transcriptUserScrollInteractionArmed OrElse
-                                           Not extentOrViewportChanged
-            If isUserDrivenOffsetChange Then
-                If Not atBottom Then
-                    CancelPendingTranscriptScrollRequests()
-                End If
-                _transcriptAutoScrollEnabled = atBottom
-                If Not _transcriptScrollThumbDragActive Then
-                    _transcriptUserScrollInteractionArmed = False
-                End If
+                                           _transcriptUserScrollInteractionArmed
+            If Not isUserDrivenOffsetChange Then
+                Return
+            End If
+
+            If Not atBottom Then
+                CancelPendingTranscriptScrollRequests()
+            End If
+
+            If _transcriptScrollThumbDragActive Then
+                SetTranscriptFollowModeDetachedByUser()
+            ElseIf atBottom Then
+                SetTranscriptFollowModeFollowBottom()
+            Else
+                SetTranscriptFollowModeDetachedByUser()
+            End If
+
+            If Not _transcriptScrollThumbDragActive Then
+                _transcriptUserScrollInteractionArmed = False
             End If
         End Sub
 
@@ -3465,12 +3480,17 @@ Namespace CodexNativeAgent.Ui
             CancelPendingTranscriptScrollRequests()
 
             If e.Delta > 0 Then
-                _transcriptAutoScrollEnabled = False
+                SetTranscriptFollowModeDetachedByUser()
             End If
         End Sub
 
         Private Sub OnTranscriptPreviewMouseLeftButtonDown(sender As Object, e As MouseButtonEventArgs)
             If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
+                Return
+            End If
+
+            Dim source = TryCast(e.OriginalSource, DependencyObject)
+            If source Is Nothing OrElse FindVisualAncestor(Of ScrollBar)(source) Is Nothing Then
                 Return
             End If
 
@@ -3488,7 +3508,7 @@ Namespace CodexNativeAgent.Ui
                     _transcriptUserScrollInteractionArmed = True
                     CancelPendingTranscriptScrollRequests()
                     If e.Key = Key.Up OrElse e.Key = Key.PageUp OrElse e.Key = Key.Home Then
-                        _transcriptAutoScrollEnabled = False
+                        SetTranscriptFollowModeDetachedByUser()
                     End If
             End Select
         End Sub
@@ -3502,7 +3522,7 @@ Namespace CodexNativeAgent.Ui
             _transcriptUserScrollInteractionArmed = True
             CancelPendingTranscriptScrollRequests()
 
-            _transcriptAutoScrollEnabled = False
+            SetTranscriptFollowModeDetachedByUser()
         End Sub
 
         Private Sub OnTranscriptScrollThumbDragCompleted(sender As Object, e As DragCompletedEventArgs)
@@ -3514,7 +3534,11 @@ Namespace CodexNativeAgent.Ui
 
             Dim scroller = ResolveTranscriptScrollViewer()
             If scroller IsNot Nothing Then
-                _transcriptAutoScrollEnabled = IsScrollViewerAtBottomExtreme(scroller)
+                If IsScrollViewerAtBottomExtreme(scroller) Then
+                    SetTranscriptFollowModeFollowBottom()
+                Else
+                    SetTranscriptFollowModeDetachedByUser()
+                End If
             End If
 
             _transcriptUserScrollInteractionArmed = False
@@ -3754,6 +3778,11 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            If Not force AndAlso reason = TranscriptScrollRequestReason.RuntimeStream AndAlso
+               Not IsTranscriptFollowBottomEnabled() Then
+                Return
+            End If
+
             If Not force AndAlso reason = TranscriptScrollRequestReason.None Then
                 Return
             End If
@@ -3807,16 +3836,12 @@ Namespace CodexNativeAgent.Ui
                 Dim scroller = ResolveTranscriptScrollViewer()
                 Dim runtimeFollowOnly = IsRuntimeOnlyTranscriptScrollRequest(reasons)
                 If force Then
-                    _transcriptAutoScrollEnabled = True
-                ElseIf Not _transcriptAutoScrollEnabled Then
-                    If scroller IsNot Nothing AndAlso IsScrollViewerAtBottomExtreme(scroller) Then
-                        _transcriptAutoScrollEnabled = True
-                    Else
-                        If Not runtimeFollowOnly Then
-                            ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
-                        End If
-                        Return
+                    SetTranscriptFollowModeFollowBottom()
+                ElseIf Not IsTranscriptFollowBottomEnabled() Then
+                    If Not runtimeFollowOnly Then
+                        ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
                     End If
+                    Return
                 End If
 
                 If _transcriptScrollThumbDragActive AndAlso Not force Then
@@ -3872,7 +3897,11 @@ Namespace CodexNativeAgent.Ui
                             Return
                         End If
 
-                        If _transcriptScrollThumbDragActive OrElse Not _transcriptAutoScrollEnabled Then
+                        If _transcriptScrollThumbDragActive OrElse Not IsTranscriptFollowBottomEnabled() Then
+                            Return
+                        End If
+
+                        If IsScrollViewerAtBottomExtreme(scroller) Then
                             Return
                         End If
 
@@ -3883,6 +3912,18 @@ Namespace CodexNativeAgent.Ui
                             _suppressTranscriptScrollTracking = False
                         End Try
                     End Sub))
+        End Sub
+
+        Private Function IsTranscriptFollowBottomEnabled() As Boolean
+            Return _transcriptScrollFollowMode = TranscriptScrollFollowMode.FollowBottom
+        End Function
+
+        Private Sub SetTranscriptFollowModeFollowBottom()
+            _transcriptScrollFollowMode = TranscriptScrollFollowMode.FollowBottom
+        End Sub
+
+        Private Sub SetTranscriptFollowModeDetachedByUser()
+            _transcriptScrollFollowMode = TranscriptScrollFollowMode.DetachedByUser
         End Sub
 
         Private Sub CancelPendingTranscriptScrollRequests()
