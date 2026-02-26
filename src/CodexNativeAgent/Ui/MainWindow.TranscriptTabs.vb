@@ -56,6 +56,7 @@ Namespace CodexNativeAgent.Ui
         Private _activeTranscriptSurfaceListBox As ListBox
         Private _activeTranscriptSurfaceThreadId As String = String.Empty
         Private _transcriptTabSurfaceRetireDrainScheduled As Boolean
+        Private _primaryTranscriptSurfaceResetScheduled As Boolean
         Private _deferredBlankCloseFinalizeVersion As Integer
         Private Const TranscriptTabDormantSurfacePoolMax As Integer = 4
 
@@ -295,7 +296,8 @@ Namespace CodexNativeAgent.Ui
             End If
         End Sub
 
-        Private Function EnsureTranscriptTabSurfaceHandle(threadId As String) As TranscriptTabSurfaceHandle
+        Private Function EnsureTranscriptTabSurfaceHandle(threadId As String,
+                                                         Optional preferSecondarySurface As Boolean = False) As TranscriptTabSurfaceHandle
             EnsureTranscriptTabsUiInitialized()
 
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
@@ -314,7 +316,10 @@ Namespace CodexNativeAgent.Ui
                 Return Nothing
             End If
 
-            Dim usePrimarySurface = _transcriptTabSurfacesByThreadId.Count = 0
+            Dim usePrimarySurface = (_transcriptTabSurfacesByThreadId.Count = 0) AndAlso Not preferSecondarySurface
+            If preferSecondarySurface AndAlso _transcriptSurfaceHostPanel Is Nothing Then
+                usePrimarySurface = True
+            End If
             If Not usePrimarySurface AndAlso _transcriptSurfaceHostPanel Is Nothing Then
                 Return Nothing
             End If
@@ -609,9 +614,11 @@ Namespace CodexNativeAgent.Ui
 
             Dim blankSurfacePerf = Stopwatch.StartNew()
             ActivateFreshTranscriptDocument("tab_close_last_tab", activateBlankSurface:=False)
-            Dim transitionedToPendingDraft = EnsurePendingNewThreadTranscriptTabActivated()
+            Dim transitionedToPendingDraft = EnsurePendingNewThreadTranscriptTabActivated(preferSecondarySurface:=True)
             If Not transitionedToPendingDraft Then
                 ActivateBlankTranscriptSurfacePlaceholder()
+            Else
+                SchedulePrimaryTranscriptSurfaceResetIfDetached()
             End If
             Dim blankSurfaceMs = blankSurfacePerf.ElapsedMilliseconds
 
@@ -828,14 +835,15 @@ Namespace CodexNativeAgent.Ui
             UpdateWorkspaceEmptyStateVisibility()
         End Sub
 
-        Private Function EnsurePendingNewThreadTranscriptTabActivated() As Boolean
+        Private Function EnsurePendingNewThreadTranscriptTabActivated(Optional preferSecondarySurface As Boolean = False) As Boolean
             EnsureTranscriptTabsUiInitialized()
 
             If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
                 Return False
             End If
 
-            Dim handle = EnsureTranscriptTabSurfaceHandle(PendingNewThreadTranscriptTabId)
+            Dim handle = EnsureTranscriptTabSurfaceHandle(PendingNewThreadTranscriptTabId,
+                                                          preferSecondarySurface)
             If handle Is Nothing OrElse handle.SurfaceListBox Is Nothing Then
                 Return False
             End If
@@ -877,6 +885,73 @@ Namespace CodexNativeAgent.Ui
                            $"transcript_tab_perf event=pending_new_thread_tab_activated activeSurfaceThread={_activeTranscriptSurfaceThreadId} openTabs={_transcriptTabSurfacesByThreadId.Count}")
             Return True
         End Function
+
+        Private Function AnyTranscriptTabOwnsPrimarySurface() As Boolean
+            Dim primaryListBox = If(WorkspacePaneHost, Nothing)?.LstTranscript
+            If primaryListBox Is Nothing Then
+                Return False
+            End If
+
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                Dim handle = kvp.Value
+                If handle Is Nothing OrElse handle.SurfaceListBox Is Nothing Then
+                    Continue For
+                End If
+
+                If handle.IsPrimarySurface AndAlso ReferenceEquals(handle.SurfaceListBox, primaryListBox) Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Sub SchedulePrimaryTranscriptSurfaceResetIfDetached()
+            If _primaryTranscriptSurfaceResetScheduled Then
+                Return
+            End If
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            If AnyTranscriptTabOwnsPrimarySurface() Then
+                Return
+            End If
+
+            _primaryTranscriptSurfaceResetScheduled = True
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.ApplicationIdle,
+                New Action(AddressOf ResetPrimaryTranscriptSurfaceIfDetached))
+        End Sub
+
+        Private Sub ResetPrimaryTranscriptSurfaceIfDetached()
+            _primaryTranscriptSurfaceResetScheduled = False
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            If AnyTranscriptTabOwnsPrimarySurface() Then
+                Return
+            End If
+
+            If ReferenceEquals(_activeTranscriptSurfaceListBox, WorkspacePaneHost.LstTranscript) Then
+                Return
+            End If
+
+            Dim resetPerf = Stopwatch.StartNew()
+            Dim primaryListBox = WorkspacePaneHost.LstTranscript
+            primaryListBox.DataContext = _viewModel
+            If _viewModel IsNot Nothing AndAlso _viewModel.TranscriptPanel IsNot Nothing Then
+                primaryListBox.ItemsSource = _viewModel.TranscriptPanel.Items
+            Else
+                primaryListBox.ItemsSource = Nothing
+            End If
+
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=primary_surface_reset_if_detached elapsedMs={resetPerf.ElapsedMilliseconds} activeTab={If(_activeTranscriptSurfaceThreadId, String.Empty)}")
+        End Sub
 
         Private Function IsPendingNewThreadTranscriptTabActive() As Boolean
             Return StringComparer.Ordinal.Equals(_activeTranscriptSurfaceThreadId, PendingNewThreadTranscriptTabId)
