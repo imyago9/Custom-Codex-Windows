@@ -1416,23 +1416,7 @@ Namespace CodexNativeAgent.Ui
                 Return "New thread"
             End If
 
-            If StringComparer.Ordinal.Equals(normalizedThreadId, GetVisibleThreadId()) Then
-                Dim currentLabel = If(_viewModel, Nothing)?.CurrentThreadText
-                If Not String.IsNullOrWhiteSpace(currentLabel) AndAlso
-                   Not StringComparer.Ordinal.Equals(currentLabel, "New thread") Then
-                    Return CompactTranscriptTabCaption(currentLabel)
-                End If
-            End If
-
-            Dim entry = FindVisibleThreadListEntryById(normalizedThreadId)
-            If entry IsNot Nothing Then
-                Dim preview = If(entry.Preview, String.Empty).Trim()
-                If Not String.IsNullOrWhiteSpace(preview) Then
-                    Return CompactTranscriptTabCaption(preview)
-                End If
-            End If
-
-            Return CompactTranscriptTabCaption(normalizedThreadId)
+            Return ResolveThreadTitleForUi(normalizedThreadId, 32)
         End Function
         Private Shared Function CompactTranscriptTabCaption(value As String) As String
             Dim text = If(value, String.Empty).Replace(vbCr, " ").Replace(vbLf, " ").Trim()
@@ -1440,12 +1424,12 @@ Namespace CodexNativeAgent.Ui
                 Return "Thread"
             End If
 
-            Const maxLen As Integer = 26
+            Const maxLen As Integer = 32
             If text.Length <= maxLen Then
                 Return text
             End If
 
-            Return text.Substring(0, maxLen - 3).TrimEnd() & "..."
+            Return text.Substring(0, maxLen).TrimEnd() & "..."
         End Function
 
         Private Sub UpdateTranscriptTabButtonVisuals()

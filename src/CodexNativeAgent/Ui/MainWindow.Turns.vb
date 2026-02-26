@@ -325,6 +325,10 @@ Namespace CodexNativeAgent.Ui
                 Await RefreshThreadsCoreAsync(silent:=True)
                 If startedFromDraftNewThread Then
                     Await RetrySilentThreadRefreshUntilListedAsync(threadIdToRefreshAfterTurnStart)
+                    If Not String.IsNullOrWhiteSpace(threadIdToRefreshAfterTurnStart) AndAlso
+                       Not HasThreadEntry(threadIdToRefreshAfterTurnStart) Then
+                        SyncThreadListAfterUserPrompt(threadIdToRefreshAfterTurnStart, submittedInputText)
+                    End If
                 End If
                 FinalizePendingNewThreadFirstPromptSelection()
             End If
@@ -502,7 +506,7 @@ Namespace CodexNativeAgent.Ui
             Dim showDraftNewThreadTitle = _pendingNewThreadFirstPromptSelection OrElse String.IsNullOrWhiteSpace(visibleThreadId)
             _viewModel.CurrentThreadText = If(showDraftNewThreadTitle,
                                               "New thread",
-                                              visibleThreadId)
+                                              ResolveThreadTitleForUi(visibleThreadId, 32))
 
             _viewModel.CurrentTurnText = If(String.IsNullOrWhiteSpace(visibleTurnId),
                                             "Turn: 0",

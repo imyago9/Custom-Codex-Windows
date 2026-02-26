@@ -136,7 +136,8 @@ Namespace CodexNativeAgent.Ui
             Return True
         End Function
 
-        Private Function ActivateFreshTranscriptDocument(Optional reason As String = Nothing) As Boolean
+        Private Function ActivateFreshTranscriptDocument(Optional reason As String = Nothing,
+                                                        Optional activateBlankSurface As Boolean = True) As Boolean
             If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
                 Return False
             End If
@@ -164,10 +165,12 @@ Namespace CodexNativeAgent.Ui
             _activeTranscriptDocumentContentFingerprint = String.Empty
             _activeTranscriptDocumentUpdatedAtUnix = Long.MinValue
             TrimInactiveTranscriptDocuments()
-            EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
+            If activateBlankSurface Then
+                EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
+            End If
 
             AppendProtocol("debug",
-                           $"transcript_doc_swap_blank previous={previousThreadId} swapMs={swapMs} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count} reason={If(reason, String.Empty)}")
+                           $"transcript_doc_swap_blank previous={previousThreadId} swapMs={swapMs} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count} activateBlankSurface={activateBlankSurface} reason={If(reason, String.Empty)}")
             Return True
         End Function
 
@@ -715,6 +718,7 @@ Namespace CodexNativeAgent.Ui
             ActivateFreshTranscriptDocument("workspace_reset")
             ClearCachedTranscriptDocuments()
             ClearVisibleSelection()
+            SetPendingNewThreadFirstPromptSelectionActive(False, clearThreadSelection:=False)
             _notificationRuntimeThreadId = String.Empty
             _notificationRuntimeTurnId = String.Empty
             _currentThreadCwd = String.Empty
@@ -2032,6 +2036,7 @@ Namespace CodexNativeAgent.Ui
             Try
                 Await RefreshModelsAsync()
                 Await RefreshThreadsAsync()
+                InitializeStartupDraftNewThreadUi()
                 ShowStatus("Connected and authenticated.")
             Finally
                 EndWorkspaceBootstrapAfterAuthentication()

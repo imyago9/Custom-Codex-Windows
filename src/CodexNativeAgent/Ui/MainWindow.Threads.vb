@@ -1077,6 +1077,59 @@ Namespace CodexNativeAgent.Ui
             Return Nothing
         End Function
 
+        Private Function FindThreadListEntryById(threadId As String) As ThreadListEntry
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return Nothing
+            End If
+
+            For Each entry In _threadEntries
+                If entry IsNot Nothing AndAlso StringComparer.Ordinal.Equals(entry.Id, normalizedThreadId) Then
+                    Return entry
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Function ResolveThreadTitleForUi(threadId As String,
+                                                 Optional maxChars As Integer = 32) As String
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return "New thread"
+            End If
+
+            Dim entry = FindThreadListEntryById(normalizedThreadId)
+            Dim sourceText = If(entry, Nothing)?.ListLeftText
+            If String.IsNullOrWhiteSpace(sourceText) Then
+                sourceText = "(untitled)"
+            End If
+
+            Return NormalizeThreadTitleForUi(sourceText, maxChars)
+        End Function
+
+        Private Shared Function NormalizeThreadTitleForUi(text As String,
+                                                          maxChars As Integer) As String
+            Dim normalized = If(text, String.Empty).Replace(ControlChars.Cr, " "c).
+                                            Replace(ControlChars.Lf, " "c).
+                                            Replace(ControlChars.Tab, " "c).
+                                            Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                normalized = "(untitled)"
+            End If
+
+            Do While normalized.Contains("  ", StringComparison.Ordinal)
+                normalized = normalized.Replace("  ", " ", StringComparison.Ordinal)
+            Loop
+
+            Dim clampedMaxChars = Math.Max(1, maxChars)
+            If normalized.Length <= clampedMaxChars Then
+                Return normalized
+            End If
+
+            Return normalized.Substring(0, clampedMaxChars).TrimEnd() & "..."
+        End Function
+
         Private Sub FinalizePendingNewThreadFirstPromptSelection()
             If Not _pendingNewThreadFirstPromptSelection Then
                 Return
@@ -1103,6 +1156,12 @@ Namespace CodexNativeAgent.Ui
 
             Dim threadObject = Await _threadService.StartThreadAsync(options, CancellationToken.None).ConfigureAwait(True)
             ApplyCurrentThreadFromThreadObject(threadObject, clearPendingNewThreadSelection:=False)
+            Dim createdThreadId = GetVisibleThreadId()
+            If Not String.IsNullOrWhiteSpace(createdThreadId) Then
+                ' Promote the pending draft tab to the concrete thread id as soon as the thread exists.
+                EnsureTranscriptDocumentActivatedForThread(createdThreadId, "pending_draft_thread_created")
+                SyncThreadListAfterUserPrompt(createdThreadId, String.Empty)
+            End If
             ' Seed an empty historical baseline for brand-new threads before the first turn starts.
             ' This prevents the first re-open during an in-flight turn from using a partial snapshot
             ' as the baseline and duplicating prompt/output when overlay replay runs.
@@ -1585,12 +1644,13 @@ Namespace CodexNativeAgent.Ui
                 Return False
             End If
 
+            Dim normalizedThreadId = threadId.Trim()
             Dim normalizedPrompt = NormalizeThreadPreviewFromPrompt(promptText)
             Dim foundEntry = False
             Dim changed = False
 
             For Each entry In _threadEntries
-                If Not StringComparer.Ordinal.Equals(entry.Id, threadId) Then
+                If Not StringComparer.Ordinal.Equals(entry.Id, normalizedThreadId) Then
                     Continue For
                 End If
 
@@ -1605,12 +1665,42 @@ Namespace CodexNativeAgent.Ui
                 Exit For
             Next
 
+            If Not foundEntry Then
+                Dim provisionalUpdatedAtUnix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                Dim provisionalCwd = NormalizeProjectPath(_currentThreadCwd)
+                If String.IsNullOrWhiteSpace(provisionalCwd) Then
+                    provisionalCwd = NormalizeProjectPath(_newThreadTargetOverrideCwd)
+                End If
+
+                _threadEntries.Add(New ThreadListEntry() With {
+                    .Id = normalizedThreadId,
+                    .Preview = normalizedPrompt,
+                    .LastActiveAt = BuildThreadLastActiveLabel(provisionalUpdatedAtUnix),
+                    .LastActiveSortTimestamp = provisionalUpdatedAtUnix,
+                    .Cwd = provisionalCwd,
+                    .IsArchived = False
+                })
+                changed = True
+            End If
+
             If changed Then
                 ApplyThreadFiltersAndSort()
             End If
 
             ' If the thread is not yet present, the server likely didn't list it until after the first turn.
             Return Not foundEntry
+        End Function
+
+        Private Shared Function BuildThreadLastActiveLabel(unixMilliseconds As Long) As String
+            If unixMilliseconds <= 0 Then
+                unixMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            End If
+
+            Try
+                Return DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+            Catch
+                Return DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            End Try
         End Function
 
         Private Function HasThreadEntry(threadId As String) As Boolean
