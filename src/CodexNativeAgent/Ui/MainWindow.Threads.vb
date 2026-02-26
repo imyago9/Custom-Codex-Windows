@@ -65,7 +65,10 @@ Namespace CodexNativeAgent.Ui
             CancelActiveThreadSelectionLoad()
             ResetThreadSelectionLoadUiState(hideTranscriptLoader:=True)
             ClearPendingUserEchoTracking()
-            ActivateFreshTranscriptDocument("start_thread")
+            ActivateFreshTranscriptDocument("start_thread", activateBlankSurface:=False)
+            If Not EnsurePendingNewThreadTranscriptTabActivated() Then
+                EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
+            End If
             ClearVisibleSelection()
             SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
             UpdateThreadTurnLabels()

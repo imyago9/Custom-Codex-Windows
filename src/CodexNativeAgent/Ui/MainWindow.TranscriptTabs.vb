@@ -31,6 +31,7 @@ Namespace CodexNativeAgent.Ui
         Private ReadOnly _transcriptInteractionHandlersAttached As New List(Of ListBox)()
         Private ReadOnly _transcriptTabSurfaceRetireQueue As New Queue(Of TranscriptTabSurfaceRetireWorkItem)()
         Private ReadOnly _dormantTranscriptTabSurfaces As New Stack(Of ListBox)()
+        Private Const PendingNewThreadTranscriptTabId As String = "__pending_new_thread__"
         Private _transcriptSurfaceHostPanel As Panel
         Private _transcriptTabStripBorder As Border
         Private _transcriptTabStripScrollViewer As ScrollViewer
@@ -349,7 +350,7 @@ Namespace CodexNativeAgent.Ui
             Return chipBorder
         End Function
 
-        Private Sub OnTranscriptTabButtonClick(sender As Object, e As RoutedEventArgs)
+        Private Async Sub OnTranscriptTabButtonClick(sender As Object, e As RoutedEventArgs)
             Dim button = TryCast(sender, Button)
             If button Is Nothing Then
                 Return
@@ -358,6 +359,11 @@ Namespace CodexNativeAgent.Ui
             Dim threadId = TryCast(button.Tag, String)
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            If StringComparer.Ordinal.Equals(normalizedThreadId, PendingNewThreadTranscriptTabId) Then
+                Await StartThreadAsync().ConfigureAwait(True)
                 Return
             End If
 
@@ -614,6 +620,8 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            PromotePendingNewThreadTranscriptTabHandleIfActive(normalizedThreadId)
+
             Dim handle = EnsureTranscriptTabSurfaceHandle(normalizedThreadId)
             If handle Is Nothing OrElse handle.SurfaceListBox Is Nothing Then
                 Return
@@ -646,6 +654,101 @@ Namespace CodexNativeAgent.Ui
             UpdateTranscriptTabButtonVisuals()
             RefreshTranscriptTabStripVisibility()
             UpdateWorkspaceEmptyStateVisibility()
+        End Sub
+
+        Private Function EnsurePendingNewThreadTranscriptTabActivated() As Boolean
+            EnsureTranscriptTabsUiInitialized()
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return False
+            End If
+
+            Dim handle = EnsureTranscriptTabSurfaceHandle(PendingNewThreadTranscriptTabId)
+            If handle Is Nothing OrElse handle.SurfaceListBox Is Nothing Then
+                Return False
+            End If
+
+            handle.SurfaceListBox.DataContext = _viewModel
+            handle.SurfaceListBox.ItemsSource = _viewModel.TranscriptPanel.Items
+
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                Dim candidate = kvp.Value
+                If candidate Is Nothing OrElse candidate.SurfaceListBox Is Nothing Then
+                    Continue For
+                End If
+
+                Dim isVisible = StringComparer.Ordinal.Equals(candidate.ThreadId, PendingNewThreadTranscriptTabId)
+                candidate.SurfaceListBox.Visibility = If(isVisible, Visibility.Visible, Visibility.Collapsed)
+                candidate.SurfaceListBox.IsHitTestVisible = isVisible
+            Next
+
+            If Not HandleOwnsPrimaryTranscriptSurface(PendingNewThreadTranscriptTabId) Then
+                WorkspacePaneHost.LstTranscript.Visibility = Visibility.Collapsed
+                WorkspacePaneHost.LstTranscript.IsHitTestVisible = False
+            Else
+                WorkspacePaneHost.LstTranscript.Visibility = Visibility.Visible
+                WorkspacePaneHost.LstTranscript.IsHitTestVisible = True
+            End If
+
+            _activeTranscriptSurfaceListBox = handle.SurfaceListBox
+            _activeTranscriptSurfaceThreadId = PendingNewThreadTranscriptTabId
+            _transcriptScrollViewer = Nothing
+
+            UpdateTranscriptTabButtonCaption(handle)
+            UpdateTranscriptTabButtonCaptions()
+            UpdateTranscriptTabButtonVisuals()
+            RefreshTranscriptTabStripVisibility()
+            UpdateWorkspaceEmptyStateVisibility()
+
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=pending_new_thread_tab_activated activeSurfaceThread={_activeTranscriptSurfaceThreadId} openTabs={_transcriptTabSurfacesByThreadId.Count}")
+            Return True
+        End Function
+
+        Private Sub PromotePendingNewThreadTranscriptTabHandleIfActive(targetThreadId As String)
+            Dim normalizedTargetThreadId = If(targetThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedTargetThreadId) Then
+                Return
+            End If
+
+            If Not _pendingNewThreadFirstPromptSelection Then
+                Return
+            End If
+
+            If Not StringComparer.Ordinal.Equals(_activeTranscriptSurfaceThreadId, PendingNewThreadTranscriptTabId) Then
+                Return
+            End If
+
+            If _transcriptTabSurfacesByThreadId.ContainsKey(normalizedTargetThreadId) Then
+                Return
+            End If
+
+            Dim draftHandle As TranscriptTabSurfaceHandle = Nothing
+            If Not _transcriptTabSurfacesByThreadId.TryGetValue(PendingNewThreadTranscriptTabId, draftHandle) OrElse
+               draftHandle Is Nothing Then
+                Return
+            End If
+
+            _transcriptTabSurfacesByThreadId.Remove(PendingNewThreadTranscriptTabId)
+            draftHandle.ThreadId = normalizedTargetThreadId
+            If draftHandle.TabButton IsNot Nothing Then
+                draftHandle.TabButton.Tag = normalizedTargetThreadId
+            End If
+
+            If draftHandle.TabCloseButton IsNot Nothing Then
+                draftHandle.TabCloseButton.Tag = normalizedTargetThreadId
+            End If
+
+            If draftHandle.TabChipBorder IsNot Nothing Then
+                draftHandle.TabChipBorder.Tag = normalizedTargetThreadId
+            End If
+
+            _transcriptTabSurfacesByThreadId(normalizedTargetThreadId) = draftHandle
+            _activeTranscriptSurfaceThreadId = normalizedTargetThreadId
+
+            UpdateTranscriptTabButtonCaption(draftHandle)
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=pending_new_thread_tab_promoted thread={normalizedTargetThreadId}")
         End Sub
 
         Private Sub ActivateBlankTranscriptSurface()
@@ -976,6 +1079,15 @@ Namespace CodexNativeAgent.Ui
                 Return "New thread"
             End If
 
+            If StringComparer.Ordinal.Equals(normalizedThreadId, PendingNewThreadTranscriptTabId) Then
+                Dim pendingLabel = If(_viewModel, Nothing)?.SidebarNewThreadButtonText
+                If Not String.IsNullOrWhiteSpace(pendingLabel) Then
+                    Return CompactTranscriptTabCaption(pendingLabel)
+                End If
+
+                Return "New thread"
+            End If
+
             If StringComparer.Ordinal.Equals(normalizedThreadId, GetVisibleThreadId()) Then
                 Dim currentLabel = If(_viewModel, Nothing)?.CurrentThreadText
                 If Not String.IsNullOrWhiteSpace(currentLabel) AndAlso
@@ -994,7 +1106,6 @@ Namespace CodexNativeAgent.Ui
 
             Return CompactTranscriptTabCaption(normalizedThreadId)
         End Function
-
         Private Shared Function CompactTranscriptTabCaption(value As String) As String
             Dim text = If(value, String.Empty).Replace(vbCr, " ").Replace(vbLf, " ").Trim()
             If String.IsNullOrWhiteSpace(text) Then
