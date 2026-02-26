@@ -1011,7 +1011,36 @@
                                   Cursor="SizeNS">
                         <GridSplitter.Template>
                             <ControlTemplate TargetType="GridSplitter">
+                                <ControlTemplate.Resources>
+                                    <Storyboard x:Key="ActiveTranscriptComposerPulseStoryboard"
+                                                RepeatBehavior="Forever"
+                                                AutoReverse="True">
+                                        <DoubleAnimation Storyboard.TargetName="ActivePulseLine"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         From="0.16"
+                                                         To="0.7"
+                                                         Duration="0:0:1.15" />
+                                        <DoubleAnimation Storyboard.TargetName="ActivePulseScale"
+                                                         Storyboard.TargetProperty="ScaleX"
+                                                         From="0.985"
+                                                         To="1"
+                                                         Duration="0:0:1.15" />
+                                    </Storyboard>
+                                </ControlTemplate.Resources>
                                 <Grid Background="Transparent">
+                                    <Border x:Name="ActivePulseLine"
+                                            Height="3"
+                                            Margin="10,0,10,0"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource AccentBrush}"
+                                            CornerRadius="2"
+                                            Opacity="0"
+                                            IsHitTestVisible="False"
+                                            RenderTransformOrigin="0.5,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform x:Name="ActivePulseScale" ScaleX="0.985" ScaleY="1" />
+                                        </Border.RenderTransform>
+                                    </Border>
                                     <Border x:Name="SplitterLine"
                                             Height="1"
                                             VerticalAlignment="Center"
@@ -1027,6 +1056,16 @@
                                         <Setter TargetName="SplitterLine" Property="Background" Value="{DynamicResource AccentBrush}" />
                                         <Setter TargetName="SplitterLine" Property="Opacity" Value="1" />
                                     </Trigger>
+                                    <DataTrigger Binding="{Binding DataContext.TurnComposer.InterruptTurnVisibility, RelativeSource={RelativeSource TemplatedParent}}"
+                                                 Value="Visible">
+                                        <DataTrigger.EnterActions>
+                                            <BeginStoryboard x:Name="BeginActiveTranscriptComposerPulse"
+                                                             Storyboard="{StaticResource ActiveTranscriptComposerPulseStoryboard}" />
+                                        </DataTrigger.EnterActions>
+                                        <DataTrigger.ExitActions>
+                                            <StopStoryboard BeginStoryboardName="BeginActiveTranscriptComposerPulse" />
+                                        </DataTrigger.ExitActions>
+                                    </DataTrigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
                         </GridSplitter.Template>
