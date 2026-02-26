@@ -3912,11 +3912,17 @@ Namespace CodexNativeAgent.Ui
                 Case TranscriptVirtualizationRolloutMode.EnabledTestMode
                     ScrollViewer.SetCanContentScroll(transcriptList, True)
                     VirtualizingPanel.SetIsVirtualizing(transcriptList, True)
-                    VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Recycling)
+                    VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Standard)
+                    transcriptList.SetValue(VirtualizingPanel.ScrollUnitProperty, ScrollUnit.Pixel)
+                    transcriptList.SetValue(VirtualizingPanel.CacheLengthUnitProperty, VirtualizationCacheLengthUnit.Page)
+                    transcriptList.SetValue(VirtualizingPanel.CacheLengthProperty, New VirtualizationCacheLength(1.0R, 1.0R))
                 Case Else
                     ScrollViewer.SetCanContentScroll(transcriptList, False)
                     VirtualizingPanel.SetIsVirtualizing(transcriptList, False)
                     VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Standard)
+                    transcriptList.ClearValue(VirtualizingPanel.ScrollUnitProperty)
+                    transcriptList.ClearValue(VirtualizingPanel.CacheLengthUnitProperty)
+                    transcriptList.ClearValue(VirtualizingPanel.CacheLengthProperty)
             End Select
         End Sub
 
