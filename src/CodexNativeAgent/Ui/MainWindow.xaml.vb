@@ -3444,6 +3444,11 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            If Not IsTranscriptListRootScrollViewer(scroller) Then
+                DebugTranscriptScroll("scroll_changed", "skip=nested_scrollviewer", scroller, e)
+                Return
+            End If
+
             _transcriptScrollViewer = scroller
 
             If _transcriptScrollProgrammaticMoveInProgress Then
@@ -3516,8 +3521,19 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim source = TryCast(e.OriginalSource, DependencyObject)
-            If source Is Nothing OrElse FindVisualAncestor(Of ScrollBar)(source) Is Nothing Then
+            If source Is Nothing Then
+                DebugTranscriptScroll("mouse_left_down", "skip=no_source")
+                Return
+            End If
+
+            Dim scrollBar = FindVisualAncestor(Of ScrollBar)(source)
+            If scrollBar Is Nothing Then
                 DebugTranscriptScroll("mouse_left_down", "skip=not_scrollbar_click")
+                Return
+            End If
+
+            If Not IsTranscriptScrollbar(scrollBar) Then
+                DebugTranscriptScroll("mouse_left_down", "skip=non_transcript_scrollbar")
                 Return
             End If
 
@@ -3543,6 +3559,18 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            Dim thumb = TryCast(e.OriginalSource, DependencyObject)
+            If thumb Is Nothing Then
+                DebugTranscriptScroll("thumb_drag_started", "skip=no_source")
+                Return
+            End If
+
+            Dim scrollBar = FindVisualAncestor(Of ScrollBar)(thumb)
+            If scrollBar Is Nothing OrElse Not IsTranscriptScrollbar(scrollBar) Then
+                DebugTranscriptScroll("thumb_drag_started", "skip=non_transcript_scrollbar")
+                Return
+            End If
+
             _transcriptScrollThumbDragActive = True
             DebugTranscriptScroll("thumb_drag_started")
             BeginTranscriptUserScrollInteraction(detachFollow:=True)
@@ -3551,6 +3579,15 @@ Namespace CodexNativeAgent.Ui
         Private Sub OnTranscriptScrollThumbDragCompleted(sender As Object, e As DragCompletedEventArgs)
             If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
                 Return
+            End If
+
+            Dim thumb = TryCast(e.OriginalSource, DependencyObject)
+            If thumb IsNot Nothing Then
+                Dim scrollBar = FindVisualAncestor(Of ScrollBar)(thumb)
+                If scrollBar Is Nothing OrElse Not IsTranscriptScrollbar(scrollBar) Then
+                    DebugTranscriptScroll("thumb_drag_completed", "skip=non_transcript_scrollbar")
+                    Return
+                End If
             End If
 
             _transcriptScrollThumbDragActive = False
@@ -3938,11 +3975,40 @@ Namespace CodexNativeAgent.Ui
                 Return Nothing
             End If
 
+            If _transcriptScrollViewer IsNot Nothing AndAlso Not IsTranscriptListRootScrollViewer(_transcriptScrollViewer) Then
+                _transcriptScrollViewer = Nothing
+            End If
+
             If _transcriptScrollViewer Is Nothing Then
                 _transcriptScrollViewer = FindVisualDescendant(Of ScrollViewer)(WorkspacePaneHost.LstTranscript)
+                If _transcriptScrollViewer IsNot Nothing AndAlso Not IsTranscriptListRootScrollViewer(_transcriptScrollViewer) Then
+                    _transcriptScrollViewer = Nothing
+                End If
             End If
 
             Return _transcriptScrollViewer
+        End Function
+
+        Private Function IsTranscriptScrollbar(scrollBar As ScrollBar) As Boolean
+            If scrollBar Is Nothing Then
+                Return False
+            End If
+
+            Dim scroller = FindVisualAncestor(Of ScrollViewer)(scrollBar)
+            Return IsTranscriptListRootScrollViewer(scroller)
+        End Function
+
+        Private Function IsTranscriptListRootScrollViewer(scroller As ScrollViewer) As Boolean
+            If scroller Is Nothing OrElse WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return False
+            End If
+
+            If FindVisualAncestor(Of TextBox)(scroller) IsNot Nothing Then
+                Return False
+            End If
+
+            Dim owningList = FindVisualAncestor(Of ListBox)(scroller)
+            Return ReferenceEquals(owningList, WorkspacePaneHost.LstTranscript)
         End Function
 
         Private Sub QueueTranscriptScrollToBottom(policy As TranscriptScrollRequestPolicy,
