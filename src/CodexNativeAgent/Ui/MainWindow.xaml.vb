@@ -3446,6 +3446,9 @@ Namespace CodexNativeAgent.Ui
                                            _transcriptUserScrollInteractionArmed OrElse
                                            Not extentOrViewportChanged
             If isUserDrivenOffsetChange Then
+                If Not atBottom Then
+                    CancelPendingTranscriptScrollRequests()
+                End If
                 _transcriptAutoScrollEnabled = atBottom
                 If Not _transcriptScrollThumbDragActive Then
                     _transcriptUserScrollInteractionArmed = False
@@ -3459,6 +3462,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _transcriptUserScrollInteractionArmed = True
+            CancelPendingTranscriptScrollRequests()
 
             If e.Delta > 0 Then
                 _transcriptAutoScrollEnabled = False
@@ -3471,6 +3475,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _transcriptUserScrollInteractionArmed = True
+            CancelPendingTranscriptScrollRequests()
         End Sub
 
         Private Sub OnTranscriptPreviewKeyDown(sender As Object, e As KeyEventArgs)
@@ -3481,6 +3486,7 @@ Namespace CodexNativeAgent.Ui
             Select Case e.Key
                 Case Key.Up, Key.PageUp, Key.Home, Key.Down, Key.PageDown, Key.End
                     _transcriptUserScrollInteractionArmed = True
+                    CancelPendingTranscriptScrollRequests()
                     If e.Key = Key.Up OrElse e.Key = Key.PageUp OrElse e.Key = Key.Home Then
                         _transcriptAutoScrollEnabled = False
                     End If
@@ -3494,6 +3500,7 @@ Namespace CodexNativeAgent.Ui
 
             _transcriptScrollThumbDragActive = True
             _transcriptUserScrollInteractionArmed = True
+            CancelPendingTranscriptScrollRequests()
 
             _transcriptAutoScrollEnabled = False
         End Sub
@@ -3747,6 +3754,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            If Not force AndAlso reason = TranscriptScrollRequestReason.None Then
+                Return
+            End If
+
             _transcriptScrollQueuedForce = _transcriptScrollQueuedForce Or force
             _transcriptScrollQueuedReasons = _transcriptScrollQueuedReasons Or reason
             _transcriptScrollRequestGeneration += 1
@@ -3775,6 +3786,10 @@ Namespace CodexNativeAgent.Ui
             _transcriptScrollQueuedForce = False
             _transcriptScrollQueuedReasons = TranscriptScrollRequestReason.None
 
+            If Not queuedForce AndAlso queuedReasons = TranscriptScrollRequestReason.None Then
+                Return
+            End If
+
             ApplyTranscriptScrollRequest(queuedForce, queuedReasons, requestGeneration)
         End Sub
 
@@ -3790,19 +3805,24 @@ Namespace CodexNativeAgent.Ui
             Dim transcriptList = WorkspacePaneHost.LstTranscript
             If transcriptList IsNot Nothing Then
                 Dim scroller = ResolveTranscriptScrollViewer()
+                Dim runtimeFollowOnly = IsRuntimeOnlyTranscriptScrollRequest(reasons)
                 If force Then
                     _transcriptAutoScrollEnabled = True
                 ElseIf Not _transcriptAutoScrollEnabled Then
                     If scroller IsNot Nothing AndAlso IsScrollViewerAtBottomExtreme(scroller) Then
                         _transcriptAutoScrollEnabled = True
                     Else
-                        ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+                        If Not runtimeFollowOnly Then
+                            ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+                        End If
                         Return
                     End If
                 End If
 
                 If _transcriptScrollThumbDragActive AndAlso Not force Then
-                    ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+                    If Not runtimeFollowOnly Then
+                        ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+                    End If
                     Return
                 End If
 
@@ -3813,7 +3833,9 @@ Namespace CodexNativeAgent.Ui
                 End If
             End If
 
-            ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+            If Not IsRuntimeOnlyTranscriptScrollRequest(reasons) OrElse force Then
+                ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+            End If
         End Sub
 
         Private Function ResolveTranscriptScrollViewer() As ScrollViewer
@@ -3862,6 +3884,40 @@ Namespace CodexNativeAgent.Ui
                         End Try
                     End Sub))
         End Sub
+
+        Private Sub CancelPendingTranscriptScrollRequests()
+            _transcriptScrollQueuedForce = False
+            _transcriptScrollQueuedReasons = TranscriptScrollRequestReason.None
+            _transcriptScrollRequestGeneration += 1
+        End Sub
+
+        Private Shared Function IsRuntimeOnlyTranscriptScrollRequest(reasons As TranscriptScrollRequestReason) As Boolean
+            If reasons = TranscriptScrollRequestReason.None Then
+                Return False
+            End If
+
+            If Not TranscriptScrollRequestHasReason(reasons, TranscriptScrollRequestReason.RuntimeStream) Then
+                Return False
+            End If
+
+            If TranscriptScrollRequestHasReason(reasons, TranscriptScrollRequestReason.LegacyCallsite) Then
+                Return False
+            End If
+
+            If TranscriptScrollRequestHasReason(reasons, TranscriptScrollRequestReason.ThreadSelection) OrElse
+               TranscriptScrollRequestHasReason(reasons, TranscriptScrollRequestReason.ThreadRebuild) OrElse
+               TranscriptScrollRequestHasReason(reasons, TranscriptScrollRequestReason.SystemMessage) OrElse
+               TranscriptScrollRequestHasReason(reasons, TranscriptScrollRequestReason.UserMessage) Then
+                Return False
+            End If
+
+            Return True
+        End Function
+
+        Private Shared Function TranscriptScrollRequestHasReason(reasons As TranscriptScrollRequestReason,
+                                                                 expected As TranscriptScrollRequestReason) As Boolean
+            Return (reasons And expected) = expected
+        End Function
 
         Private Shared Function FindVisualDescendant(Of T As DependencyObject)(root As DependencyObject) As T
             If root Is Nothing Then

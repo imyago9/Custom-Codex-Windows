@@ -383,7 +383,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _viewModel.TranscriptPanel.AppendRoleMessage(role, text)
-            ScrollTranscriptToBottom()
+            ScrollTranscriptToBottom(reason:=TranscriptScrollRequestReason.UserMessage)
         End Sub
 
         Private Sub AppendSystemMessage(message As String)
@@ -392,7 +392,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _viewModel.TranscriptPanel.AppendSystemMessage(message)
-            ScrollTranscriptToBottom()
+            ScrollTranscriptToBottom(reason:=TranscriptScrollRequestReason.SystemMessage)
             ShowStatus(message)
         End Sub
 

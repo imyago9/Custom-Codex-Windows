@@ -1304,7 +1304,7 @@ Namespace CodexNativeAgent.Ui
             End If
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
             _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(snapshot.DisplayEntries)
-            ScrollTranscriptToBottom(force:=True)
+            ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadSelection)
         End Sub
 
         Private Sub PersistThreadSelectionSnapshotToLiveRegistry(threadId As String, transcriptSnapshot As ThreadTranscriptSnapshot)
@@ -1361,7 +1361,7 @@ Namespace CodexNativeAgent.Ui
             _threadLiveSessionRegistry.MarkBound(normalizedThreadId, GetVisibleTurnId())
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
             RefreshThreadRuntimeIndicatorsIfNeeded()
-            ScrollTranscriptToBottom(force:=True)
+            ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
         End Sub
 
         Private Sub ApplyOverlayRuntimeOrderMetadataToProjection(threadId As String,

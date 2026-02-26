@@ -996,7 +996,7 @@ Namespace CodexNativeAgent.Ui
 
             If (dispatch.ShouldScrollTranscriptToBottom AndAlso didMutateVisibleTranscript) OrElse
                visibleRuntimeItemsRendered > 0 Then
-                ScrollTranscriptToBottom()
+                ScrollTranscriptToBottom(reason:=TranscriptScrollRequestReason.RuntimeStream)
             End If
         End Sub
 
@@ -1086,7 +1086,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If visibleRuntimeItemsRendered > 0 Then
-                ScrollTranscriptToBottom()
+                ScrollTranscriptToBottom(reason:=TranscriptScrollRequestReason.RuntimeStream)
             End If
 
             RefreshThreadRuntimeIndicatorsIfNeeded()
@@ -1140,7 +1140,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If visibleRuntimeItemsRendered > 0 Then
-                ScrollTranscriptToBottom()
+                ScrollTranscriptToBottom(reason:=TranscriptScrollRequestReason.RuntimeStream)
             End If
 
             RefreshThreadRuntimeIndicatorsIfNeeded()
