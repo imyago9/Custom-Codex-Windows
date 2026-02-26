@@ -615,13 +615,29 @@ Namespace CodexNativeAgent.Ui
             End If
             Dim blankSurfaceMs = blankSurfacePerf.ElapsedMilliseconds
 
-            Dim deferredFinalizePerf = Stopwatch.StartNew()
-            Dim deferredFinalizeVersion = QueueDeferredBlankCloseFinalize(normalizedThreadId)
-            Dim deferQueueMs = deferredFinalizePerf.ElapsedMilliseconds
+            Dim deferQueueMs As Long = 0
+            Dim deferredFinalizeVersion As Integer = 0
+            Dim finalizeMode = "queued_blank_placeholder"
+            If transitionedToPendingDraft Then
+                Dim immediateFinalizePerf = Stopwatch.StartNew()
+                ClearPendingUserEchoTracking()
+                ClearVisibleSelection()
+                SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
+                RefreshControlStates()
+                ShowStatus("New thread ready. Send your first instruction.")
+                deferQueueMs = immediateFinalizePerf.ElapsedMilliseconds
+                finalizeMode = "immediate_pending_draft"
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=close_start_blank_finalize_immediate thread={normalizedThreadId} totalMs={deferQueueMs} pendingDraft=True")
+            Else
+                Dim deferredFinalizePerf = Stopwatch.StartNew()
+                deferredFinalizeVersion = QueueDeferredBlankCloseFinalize(normalizedThreadId)
+                deferQueueMs = deferredFinalizePerf.ElapsedMilliseconds
+            End If
 
             _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
             AppendProtocol("debug",
-                           $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=start_blank_deferred elapsedMs={closePerf.ElapsedMilliseconds} removeMs={removeMs} cancelLoadMs={cancelLoadMs} resetLoadUiMs={resetLoadUiMs} blankSurfaceMs={blankSurfaceMs} nextSurfaceMode={If(transitionedToPendingDraft, "pending_draft", "blank_placeholder")} queueFinalizeMs={deferQueueMs} finalizeVersion={deferredFinalizeVersion} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
+                           $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=start_blank_deferred elapsedMs={closePerf.ElapsedMilliseconds} removeMs={removeMs} cancelLoadMs={cancelLoadMs} resetLoadUiMs={resetLoadUiMs} blankSurfaceMs={blankSurfaceMs} nextSurfaceMode={If(transitionedToPendingDraft, "pending_draft", "blank_placeholder")} finalizeMode={finalizeMode} queueFinalizeMs={deferQueueMs} finalizeVersion={deferredFinalizeVersion} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
         End Sub
 
         Private Sub ActivateBlankTranscriptSurfacePlaceholder()
