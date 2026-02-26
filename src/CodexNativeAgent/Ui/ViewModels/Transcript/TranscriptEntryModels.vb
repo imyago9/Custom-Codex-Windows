@@ -325,7 +325,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _detailsVisibility As Visibility = Visibility.Collapsed
         Private _timestampVisibility As Visibility = Visibility.Collapsed
         Private _streamingIndicatorVisibility As Visibility = Visibility.Collapsed
-        Private _streamingIndicatorText As String = "in progress"
+        Private _streamingIndicatorText As String = String.Empty
         Private _changeStatsVisibility As Visibility = Visibility.Collapsed
         Private _fileChangeListVisibility As Visibility = Visibility.Collapsed
         Private _activityBodyChipVisibility As Visibility = Visibility.Visible

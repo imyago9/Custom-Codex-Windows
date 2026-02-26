@@ -424,8 +424,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .IsReasoning = renderAsReasoningChainStep,
                 .IsStreaming = True
             })
-            entry.StreamingIndicatorVisibility = Visibility.Visible
-            entry.StreamingIndicatorText = If(renderAsReasoningChainStep, "updating", "streaming")
+            entry.StreamingIndicatorVisibility = Visibility.Collapsed
+            entry.StreamingIndicatorText = String.Empty
 
             _activeAssistantStreams(streamId) = entry
             _activeAssistantStreamBuffers(streamId) = String.Empty
@@ -572,8 +572,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .IsMuted = True,
                 .IsStreaming = True
             })
-            entry.StreamingIndicatorVisibility = Visibility.Visible
-            entry.StreamingIndicatorText = "thinking"
+            entry.StreamingIndicatorVisibility = Visibility.Collapsed
+            entry.StreamingIndicatorText = String.Empty
 
             _activeReasoningStreams(streamId) = entry
             _activeReasoningStreamBuffers(streamId) = String.Empty
@@ -2849,7 +2849,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             entry.RoleText = "Reasoning"
             entry.RowOpacity = 0.82R
             If entry.StreamingIndicatorVisibility = Visibility.Visible Then
-                entry.StreamingIndicatorText = "updating"
+                entry.StreamingIndicatorText = String.Empty
             End If
         End Sub
 
@@ -2950,8 +2950,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             entry.AllowDetailsCollapse = ShouldAllowDetailsCollapse(entry.Kind)
             entry.IsDetailsExpanded = Not (entry.AllowDetailsCollapse AndAlso ShouldCollapseDetailsByDefault(entry.Kind))
-            entry.StreamingIndicatorVisibility = If(descriptor.IsStreaming, Visibility.Visible, Visibility.Collapsed)
-            entry.StreamingIndicatorText = ResolveStreamingIndicatorText(entry.Kind)
+            entry.StreamingIndicatorVisibility = Visibility.Collapsed
+            entry.StreamingIndicatorText = String.Empty
 
             Select Case entry.Kind
                 Case "assistant"
@@ -3057,17 +3057,6 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     Return True
                 Case Else
                     Return False
-            End Select
-        End Function
-
-        Private Shared Function ResolveStreamingIndicatorText(kind As String) As String
-            Select Case If(kind, String.Empty).Trim().ToLowerInvariant()
-                Case "reasoning", "reasoningcard"
-                    Return "thinking"
-                Case "assistantcommentary"
-                    Return "updating"
-                Case Else
-                    Return "streaming"
             End Select
         End Function
 
