@@ -438,14 +438,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            ClearPendingUserEchoTracking()
-            _viewModel.TranscriptPanel.ClearTranscript()
-            _viewModel.TranscriptPanel.SetTranscriptSnapshot(loadSnapshot.Projection.RawText)
-            _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(chunkPlan.DisplayEntries)
-
-            ApplyLiveRuntimeOverlayForThread(threadId,
-                                            _sessionNotificationCoordinator.RuntimeStore,
-                                            loadSnapshot.CompletedOverlayTurnsForFullReplay)
+            Dim prependDescriptors = BuildTranscriptPrependDescriptorSlice(loadSnapshot.Projection.DisplayEntries,
+                                                                           chunkPlan.LoadedRangeStart,
+                                                                           loadSnapshot.CurrentLoadedRangeStart)
+            Dim prependedVisibleCount = _viewModel.TranscriptPanel.PrependTranscriptDisplayChunk(prependDescriptors)
 
             _threadLiveSessionRegistry.MarkBound(threadId, GetVisibleTurnId())
             _threadLiveSessionRegistry.SetPendingRebuild(threadId, False)
@@ -459,13 +455,36 @@ Namespace CodexNativeAgent.Ui
                                                                               "older_chunk_apply_complete")
             SetTranscriptChunkTriggerCooldown("older_chunk_apply_complete")
 
-            QueueRestoreTranscriptOffsetAfterChunkPrepend(threadId,
-                                                          generationId,
-                                                          loadSnapshot.Anchor)
+            If prependedVisibleCount > 0 Then
+                QueueRestoreTranscriptOffsetAfterChunkPrepend(threadId,
+                                                              generationId,
+                                                              loadSnapshot.Anchor)
+            End If
 
             TraceTranscriptChunkSession("older_chunk_load_complete",
-                                        $"thread={threadId}; generation={generationId}; total={chunkPlan.TotalEntryCount}; selected={chunkPlan.SelectedEntryCount}; rangeStart={chunkPlan.LoadedRangeStart}; rangeEnd={chunkPlan.LoadedRangeEnd}; hasMoreOlder={chunkPlan.HasMoreOlderEntries}; weight={chunkPlan.TotalSelectedRenderWeight}")
+                                        $"thread={threadId}; generation={generationId}; total={chunkPlan.TotalEntryCount}; selected={chunkPlan.SelectedEntryCount}; prependedVisible={prependedVisibleCount}; rangeStart={chunkPlan.LoadedRangeStart}; rangeEnd={chunkPlan.LoadedRangeEnd}; hasMoreOlder={chunkPlan.HasMoreOlderEntries}; weight={chunkPlan.TotalSelectedRenderWeight}")
         End Sub
+
+        Private Shared Function BuildTranscriptPrependDescriptorSlice(allEntries As IReadOnlyList(Of TranscriptEntryDescriptor),
+                                                                      newLoadedRangeStart As Integer,
+                                                                      previousLoadedRangeStart As Integer) As IReadOnlyList(Of TranscriptEntryDescriptor)
+            Dim results As New List(Of TranscriptEntryDescriptor)()
+            If allEntries Is Nothing OrElse allEntries.Count = 0 Then
+                Return results
+            End If
+
+            Dim normalizedNewStart = Math.Max(0, Math.Min(newLoadedRangeStart, allEntries.Count - 1))
+            Dim normalizedPreviousStartExclusive = Math.Max(0, Math.Min(previousLoadedRangeStart, allEntries.Count))
+            If normalizedPreviousStartExclusive <= normalizedNewStart Then
+                Return results
+            End If
+
+            For i = normalizedNewStart To normalizedPreviousStartExclusive - 1
+                results.Add(allEntries(i))
+            Next
+
+            Return results
+        End Function
 
         Private Function ShouldDeferOlderTranscriptChunkApplyForRuntimeState(threadId As String,
                                                                              generationId As Integer,
