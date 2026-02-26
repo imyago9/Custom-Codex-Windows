@@ -242,6 +242,68 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         End Sub
 
+        Public Function PrependTranscriptDisplayChunk(entries As IEnumerable(Of TranscriptEntryDescriptor)) As Integer
+            If entries Is Nothing Then
+                Return 0
+            End If
+
+            Dim preparedEntries As New List(Of TranscriptEntryViewModel)()
+            Dim preparedRuntimeKeys As New List(Of String)()
+
+            For Each descriptor In entries
+                If descriptor Is Nothing OrElse Not ShouldDisplayDescriptor(descriptor) Then
+                    Continue For
+                End If
+
+                Dim runtimeKey = If(descriptor.RuntimeKey, String.Empty).Trim()
+                If Not String.IsNullOrWhiteSpace(runtimeKey) Then
+                    If _runtimeEntriesByKey.ContainsKey(runtimeKey) Then
+                        Continue For
+                    End If
+
+                    Dim duplicatePrepared = False
+                    For Each existingPreparedKey In preparedRuntimeKeys
+                        If StringComparer.Ordinal.Equals(existingPreparedKey, runtimeKey) Then
+                            duplicatePrepared = True
+                            Exit For
+                        End If
+                    Next
+
+                    If duplicatePrepared Then
+                        Continue For
+                    End If
+                End If
+
+                Dim entry = CreateEntryFromDescriptor(descriptor)
+                If entry Is Nothing Then
+                    Continue For
+                End If
+
+                preparedEntries.Add(entry)
+                preparedRuntimeKeys.Add(runtimeKey)
+            Next
+
+            If preparedEntries.Count = 0 Then
+                Return 0
+            End If
+
+            For i = preparedEntries.Count - 1 To 0 Step -1
+                _items.Insert(0, preparedEntries(i))
+            Next
+
+            For i = 0 To preparedEntries.Count - 1
+                Dim runtimeKey = preparedRuntimeKeys(i)
+                If String.IsNullOrWhiteSpace(runtimeKey) Then
+                    Continue For
+                End If
+
+                _runtimeEntriesByKey(runtimeKey) = preparedEntries(i)
+            Next
+
+            TrimEntriesIfNeeded()
+            Return preparedEntries.Count
+        End Function
+
         Public Sub AppendTranscriptChunk(value As String)
             If String.IsNullOrEmpty(value) Then
                 Return
