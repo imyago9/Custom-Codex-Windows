@@ -770,12 +770,15 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub HandleNotification(methodName As String, paramsNode As JsonNode)
             MarkRpcActivity()
+            Dim visibleThreadIdBeforeDispatch = If(_currentThreadId, String.Empty).Trim()
             Dim dispatch = _sessionNotificationCoordinator.DispatchNotification(methodName,
                                                                                 paramsNode,
                                                                                 _notificationRuntimeThreadId,
                                                                                 _notificationRuntimeTurnId)
             ApplyNotificationDispatchResult(dispatch)
-            AppendHandledNotificationMethodEvent(dispatch)
+            If ShouldAppendNotificationTranscriptAuxiliary(dispatch, visibleThreadIdBeforeDispatch) Then
+                AppendHandledNotificationMethodEvent(dispatch)
+            End If
 
             SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
             UpdateThreadTurnLabels()
@@ -790,15 +793,19 @@ Namespace CodexNativeAgent.Ui
             UpdateNotificationRuntimeContextFromDispatch(dispatch)
             Dim visibleThreadIdBeforeDispatch = If(_currentThreadId, String.Empty).Trim()
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
-            ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
+            If ShouldAppendNotificationTranscriptAuxiliary(dispatch, visibleThreadIdBeforeDispatch) Then
+                ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
+            End If
 
             For Each threadId In dispatch.ThreadIdsToMarkLastActive
                 MarkThreadLastActive(threadId)
             Next
 
-            For Each message In dispatch.SystemMessages
-                AppendSystemMessage(message)
-            Next
+            If ShouldAppendNotificationTranscriptAuxiliary(dispatch, visibleThreadIdBeforeDispatch) Then
+                For Each message In dispatch.SystemMessages
+                    AppendSystemMessage(message)
+                Next
+            End If
 
             Dim visibleThreadIdForRuntimeRouting = If(String.IsNullOrWhiteSpace(visibleThreadIdBeforeDispatch),
                                                       If(_currentThreadId, String.Empty).Trim(),
@@ -992,14 +999,15 @@ Namespace CodexNativeAgent.Ui
             End If
 
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
-            ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
 
             Dim visibleThreadIdForRuntimeRouting = If(_currentThreadId, String.Empty).Trim()
             Dim visibleRuntimeItemsRendered = 0
+            Dim anyRuntimeItemsObserved = False
             For Each item In dispatch.RuntimeItems
                 If item Is Nothing Then
                     Continue For
                 End If
+                anyRuntimeItemsObserved = True
 
                 Dim resolvedThreadId As String = Nothing
                 Dim resolvedTurnId As String = Nothing
@@ -1028,6 +1036,10 @@ Namespace CodexNativeAgent.Ui
                 visibleRuntimeItemsRendered += 1
             Next
 
+            If visibleRuntimeItemsRendered > 0 OrElse Not anyRuntimeItemsObserved Then
+                ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
+            End If
+
             If visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
             End If
@@ -1039,14 +1051,15 @@ Namespace CodexNativeAgent.Ui
             End If
 
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
-            ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
 
             Dim visibleThreadIdForRuntimeRouting = If(_currentThreadId, String.Empty).Trim()
             Dim visibleRuntimeItemsRendered = 0
+            Dim anyRuntimeItemsObserved = False
             For Each item In dispatch.RuntimeItems
                 If item Is Nothing Then
                     Continue For
                 End If
+                anyRuntimeItemsObserved = True
 
                 Dim resolvedThreadId As String = Nothing
                 Dim resolvedTurnId As String = Nothing
@@ -1074,6 +1087,10 @@ Namespace CodexNativeAgent.Ui
                 RenderItem(item)
                 visibleRuntimeItemsRendered += 1
             Next
+
+            If visibleRuntimeItemsRendered > 0 OrElse Not anyRuntimeItemsObserved Then
+                ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
+            End If
 
             If visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
@@ -1293,6 +1310,30 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Return StringComparer.Ordinal.Equals(normalizedThreadId, baselineVisibleThreadId)
+        End Function
+
+        Private Function ShouldAppendNotificationTranscriptAuxiliary(dispatch As SessionNotificationCoordinator.NotificationDispatchResult,
+                                                                    baselineVisibleThreadId As String) As Boolean
+            If dispatch Is Nothing Then
+                Return False
+            End If
+
+            Dim normalizedVisibleThreadId = If(baselineVisibleThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedVisibleThreadId) Then
+                Return True
+            End If
+
+            Dim scopedThreadId = If(_notificationRuntimeThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(scopedThreadId) Then
+                scopedThreadId = If(dispatch.CurrentThreadId, String.Empty).Trim()
+            End If
+
+            ' Keep global/unscoped notifications visible (for example auth/rate-limit/system notices).
+            If String.IsNullOrWhiteSpace(scopedThreadId) Then
+                Return True
+            End If
+
+            Return StringComparer.Ordinal.Equals(scopedThreadId, normalizedVisibleThreadId)
         End Function
 
         Private Sub ApplyProtocolDispatchMessages(messages As List(Of SessionNotificationCoordinator.ProtocolDispatchMessage))
