@@ -742,6 +742,7 @@ Namespace CodexNativeAgent.Ui
             ApplyApprovalResolutionDispatchResult(dispatch)
             SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
             UpdateThreadTurnLabels()
+            RefreshThreadRuntimeIndicatorsIfNeeded()
             RefreshControlStates()
         End Sub
 
@@ -1043,6 +1044,8 @@ Namespace CodexNativeAgent.Ui
             If visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
             End If
+
+            RefreshThreadRuntimeIndicatorsIfNeeded()
         End Sub
 
         Private Sub ApplyApprovalResolutionDispatchResult(dispatch As SessionNotificationCoordinator.ApprovalResolutionDispatchResult)
@@ -1095,6 +1098,8 @@ Namespace CodexNativeAgent.Ui
             If visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom()
             End If
+
+            RefreshThreadRuntimeIndicatorsIfNeeded()
         End Sub
 
         Private Function TryResolveRuntimeEventUiScope(threadId As String,

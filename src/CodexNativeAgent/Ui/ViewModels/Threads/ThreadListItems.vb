@@ -10,6 +10,8 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
         Public Property LastActiveSortTimestamp As Long
         Public Property Cwd As String = String.Empty
         Public Property IsArchived As Boolean
+        Public Property HasActiveRuntimeTurn As Boolean
+        Public Property HasPendingRuntimeUpdates As Boolean
 
         Public ReadOnly Property ListLeftText As String
             Get
@@ -32,6 +34,34 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
         Public ReadOnly Property ListLeftFontWeight As FontWeight
             Get
                 Return FontWeights.Normal
+            End Get
+        End Property
+
+        Public ReadOnly Property StatusIndicatorsVisibility As Visibility
+            Get
+                If HasActiveRuntimeTurn OrElse HasPendingRuntimeUpdates Then
+                    Return Visibility.Visible
+                End If
+
+                Return Visibility.Collapsed
+            End Get
+        End Property
+
+        Public ReadOnly Property ActiveBadgeVisibility As Visibility
+            Get
+                Return If(HasActiveRuntimeTurn, Visibility.Visible, Visibility.Collapsed)
+            End Get
+        End Property
+
+        Public ReadOnly Property DirtyBadgeVisibility As Visibility
+            Get
+                Return If(HasPendingRuntimeUpdates, Visibility.Visible, Visibility.Collapsed)
+            End Get
+        End Property
+
+        Public ReadOnly Property DirtyBadgeToolTip As String
+            Get
+                Return "Hidden updates pending"
             End Get
         End Property
 
@@ -135,6 +165,30 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
         Public ReadOnly Property ListLeftFontWeight As FontWeight
             Get
                 Return FontWeights.SemiBold
+            End Get
+        End Property
+
+        Public ReadOnly Property StatusIndicatorsVisibility As Visibility
+            Get
+                Return Visibility.Collapsed
+            End Get
+        End Property
+
+        Public ReadOnly Property ActiveBadgeVisibility As Visibility
+            Get
+                Return Visibility.Collapsed
+            End Get
+        End Property
+
+        Public ReadOnly Property DirtyBadgeVisibility As Visibility
+            Get
+                Return Visibility.Collapsed
+            End Get
+        End Property
+
+        Public ReadOnly Property DirtyBadgeToolTip As String
+            Get
+                Return String.Empty
             End Get
         End Property
 

@@ -764,6 +764,8 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub ApplyThreadFiltersAndSort()
+            UpdateThreadEntryRuntimeIndicatorsFromSessionState()
+
             Dim searchText = _viewModel.ThreadsPanel.SearchText.Trim()
             Dim forceExpandMatchingGroups = Not String.IsNullOrWhiteSpace(searchText)
             Dim filtered As New List(Of ThreadListEntry)()
@@ -848,6 +850,68 @@ Namespace CodexNativeAgent.Ui
             UpdateThreadsStateLabel(VisibleThreadCount())
             RefreshControlStates()
         End Sub
+
+        Private Sub RefreshThreadRuntimeIndicatorsIfNeeded()
+            If _threadEntries.Count = 0 Then
+                Return
+            End If
+
+            If UpdateThreadEntryRuntimeIndicatorsFromSessionState() Then
+                ApplyThreadFiltersAndSort()
+            End If
+        End Sub
+
+        Private Function UpdateThreadEntryRuntimeIndicatorsFromSessionState() As Boolean
+            If _threadEntries.Count = 0 Then
+                Return False
+            End If
+
+            Dim runtimeStore = If(_sessionNotificationCoordinator Is Nothing,
+                                  Nothing,
+                                  _sessionNotificationCoordinator.RuntimeStore)
+            Dim visibleThreadId = If(_currentThreadId, String.Empty).Trim()
+            Dim changed = False
+
+            For Each entry In _threadEntries
+                If entry Is Nothing OrElse String.IsNullOrWhiteSpace(entry.Id) Then
+                    Continue For
+                End If
+
+                Dim threadId = entry.Id.Trim()
+                Dim hasActiveRuntimeTurn = False
+                If runtimeStore IsNot Nothing Then
+                    hasActiveRuntimeTurn = runtimeStore.HasActiveTurn(threadId)
+                End If
+
+                Dim hasPendingRuntimeUpdates = False
+                Dim liveState As ThreadLiveSessionState = Nothing
+                If _threadLiveSessionRegistry.TryGet(threadId, liveState) AndAlso liveState IsNot Nothing Then
+                    hasPendingRuntimeUpdates = liveState.PendingRebuild
+                    If Not hasActiveRuntimeTurn Then
+                        hasActiveRuntimeTurn = liveState.IsTurnActive AndAlso
+                                               Not String.IsNullOrWhiteSpace(If(liveState.ActiveTurnId, String.Empty).Trim())
+                    End If
+                End If
+
+                If Not String.IsNullOrWhiteSpace(visibleThreadId) AndAlso
+                   StringComparer.Ordinal.Equals(threadId, visibleThreadId) Then
+                    ' "Dirty" means hidden-thread updates pending a rebind; hide it for the visible thread.
+                    hasPendingRuntimeUpdates = False
+                End If
+
+                If entry.HasActiveRuntimeTurn <> hasActiveRuntimeTurn Then
+                    entry.HasActiveRuntimeTurn = hasActiveRuntimeTurn
+                    changed = True
+                End If
+
+                If entry.HasPendingRuntimeUpdates <> hasPendingRuntimeUpdates Then
+                    entry.HasPendingRuntimeUpdates = hasPendingRuntimeUpdates
+                    changed = True
+                End If
+            Next
+
+            Return changed
+        End Function
 
         Private Sub ToggleThreadProjectGroupExpansion(groupKey As String)
             If String.IsNullOrWhiteSpace(groupKey) Then
@@ -1299,6 +1363,7 @@ Namespace CodexNativeAgent.Ui
 
             _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
+            RefreshThreadRuntimeIndicatorsIfNeeded()
             ScrollTranscriptToBottom()
         End Sub
 

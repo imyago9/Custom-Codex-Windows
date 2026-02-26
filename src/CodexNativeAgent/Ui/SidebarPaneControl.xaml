@@ -539,6 +539,7 @@
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
                                                 <TextBlock Grid.Column="0"
@@ -549,7 +550,38 @@
                                                            TextTrimming="CharacterEllipsis"
                                                            VerticalAlignment="Center" />
 
-                                                <TextBlock Grid.Column="1"
+                                                <StackPanel Grid.Column="1"
+                                                            Orientation="Horizontal"
+                                                            Margin="10,0,0,0"
+                                                            VerticalAlignment="Center"
+                                                            Visibility="{Binding StatusIndicatorsVisibility}">
+                                                    <Border Visibility="{Binding ActiveBadgeVisibility}"
+                                                            Background="{DynamicResource AccentSubtleBrush}"
+                                                            BorderBrush="{DynamicResource AccentBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8"
+                                                            Padding="6,1"
+                                                            Margin="0,0,6,0">
+                                                        <TextBlock Text="Active"
+                                                                   Foreground="{DynamicResource AccentBrush}"
+                                                                   FontSize="{DynamicResource CaptionTextSize}"
+                                                                   FontWeight="SemiBold"
+                                                                   TextWrapping="NoWrap" />
+                                                    </Border>
+
+                                                    <Border Visibility="{Binding DirtyBadgeVisibility}"
+                                                            Width="8"
+                                                            Height="8"
+                                                            Margin="0,0,4,0"
+                                                            CornerRadius="4"
+                                                            Background="{DynamicResource WarningBrush}"
+                                                            BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                            BorderThickness="1"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip="{Binding DirtyBadgeToolTip}" />
+                                                </StackPanel>
+
+                                                <TextBlock Grid.Column="2"
                                                            Text="{Binding ListRightText}"
                                                            Margin="10,0,0,0"
                                                            VerticalAlignment="Center"
