@@ -790,7 +790,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub HandleNotification(methodName As String, paramsNode As JsonNode)
             MarkRpcActivity()
-            Dim visibleThreadIdBeforeDispatch = If(_currentThreadId, String.Empty).Trim()
+            Dim visibleThreadIdBeforeDispatch = GetVisibleThreadId()
             Dim dispatch = _sessionNotificationCoordinator.DispatchNotification(methodName,
                                                                                 paramsNode,
                                                                                 _notificationRuntimeThreadId,
@@ -811,7 +811,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             UpdateNotificationRuntimeContextFromDispatch(dispatch)
-            Dim visibleThreadIdBeforeDispatch = If(_currentThreadId, String.Empty).Trim()
+            Dim visibleThreadIdBeforeDispatch = GetVisibleThreadId()
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
             If ShouldAppendNotificationTranscriptAuxiliary(dispatch, visibleThreadIdBeforeDispatch) Then
                 ApplyRuntimeDiagnosticMessages(dispatch.Diagnostics)
@@ -828,7 +828,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim visibleThreadIdForRuntimeRouting = If(String.IsNullOrWhiteSpace(visibleThreadIdBeforeDispatch),
-                                                      If(_currentThreadId, String.Empty).Trim(),
+                                                      GetVisibleThreadId(),
                                                       visibleThreadIdBeforeDispatch)
             Dim visibleRuntimeItemsRendered = 0
             Dim didMutateVisibleTranscript = False
@@ -1020,7 +1020,7 @@ Namespace CodexNativeAgent.Ui
 
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
 
-            Dim visibleThreadIdForRuntimeRouting = If(_currentThreadId, String.Empty).Trim()
+            Dim visibleThreadIdForRuntimeRouting = GetVisibleThreadId()
             Dim visibleRuntimeItemsRendered = 0
             Dim anyRuntimeItemsObserved = False
             For Each item In dispatch.RuntimeItems
@@ -1074,7 +1074,7 @@ Namespace CodexNativeAgent.Ui
 
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
 
-            Dim visibleThreadIdForRuntimeRouting = If(_currentThreadId, String.Empty).Trim()
+            Dim visibleThreadIdForRuntimeRouting = GetVisibleThreadId()
             Dim visibleRuntimeItemsRendered = 0
             Dim anyRuntimeItemsObserved = False
             For Each item In dispatch.RuntimeItems
@@ -1230,7 +1230,7 @@ Namespace CodexNativeAgent.Ui
                     TryMarkThreadOverlayTurn(normalizedThreadId, normalizedTurnId, allowCompletedTurnFallback:=False)
                 End If
                 _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
-                _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
+                _threadLiveSessionRegistry.MarkBound(normalizedThreadId, GetVisibleTurnId())
                 Return True
             End If
 
@@ -1326,7 +1326,7 @@ Namespace CodexNativeAgent.Ui
 
             Dim baselineVisibleThreadId = If(visibleThreadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(baselineVisibleThreadId) Then
-                baselineVisibleThreadId = If(_currentThreadId, String.Empty).Trim()
+                baselineVisibleThreadId = GetVisibleThreadId()
             End If
 
             If String.IsNullOrWhiteSpace(baselineVisibleThreadId) Then

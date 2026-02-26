@@ -3133,8 +3133,9 @@ Namespace CodexNativeAgent.Ui
             _viewModel.IsQuickOpenVscEnabled = True
             _viewModel.IsQuickOpenTerminalEnabled = True
             Dim hasLiveOverlayHistoryForCurrentThread = False
-            If Not String.IsNullOrWhiteSpace(_currentThreadId) Then
-                hasLiveOverlayHistoryForCurrentThread = _threadLiveSessionRegistry.GetOverlayTurnIds(_currentThreadId).Count > 0
+            Dim visibleThreadId = GetVisibleThreadId()
+            If Not String.IsNullOrWhiteSpace(visibleThreadId) Then
+                hasLiveOverlayHistoryForCurrentThread = _threadLiveSessionRegistry.GetOverlayTurnIds(visibleThreadId).Count > 0
             End If
 
             _viewModel.TranscriptPanel.CollapseCommandDetailsByDefault = hasActiveTurn OrElse hasLiveOverlayHistoryForCurrentThread
