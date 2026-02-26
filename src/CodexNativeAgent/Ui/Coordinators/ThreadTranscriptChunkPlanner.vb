@@ -64,6 +64,65 @@ Namespace CodexNativeAgent.Ui.Coordinators
             Return plan
         End Function
 
+        Public Shared Function PrependPreviousDisplayChunk(entries As IReadOnlyList(Of TranscriptEntryDescriptor),
+                                                           loadedRangeStart As Integer,
+                                                           loadedRangeEnd As Integer,
+                                                           Optional maxRowsPerChunk As Integer = 140,
+                                                           Optional maxRenderWeightPerChunk As Integer = 280) As ThreadTranscriptDisplayChunkPlan
+            Dim plan As New ThreadTranscriptDisplayChunkPlan()
+            If entries Is Nothing OrElse entries.Count = 0 Then
+                Return plan
+            End If
+
+            Dim totalCount = entries.Count
+            Dim normalizedLoadedStart = Math.Max(0, Math.Min(loadedRangeStart, totalCount - 1))
+            Dim normalizedLoadedEnd = Math.Max(normalizedLoadedStart, Math.Min(loadedRangeEnd, totalCount - 1))
+
+            If normalizedLoadedStart <= 0 Then
+                plan.TotalEntryCount = totalCount
+                plan.LoadedRangeStart = 0
+                plan.LoadedRangeEnd = normalizedLoadedEnd
+                plan.HasMoreOlderEntries = False
+                For i = 0 To normalizedLoadedEnd
+                    plan.DisplayEntries.Add(entries(i))
+                Next
+
+                plan.TotalSelectedRenderWeight = CalculateTotalRenderWeight(plan.DisplayEntries)
+                Return plan
+            End If
+
+            Dim normalizedMaxRows = Math.Max(1, maxRowsPerChunk)
+            Dim normalizedMaxRenderWeight = Math.Max(1, maxRenderWeightPerChunk)
+
+            Dim prependStartIndex = normalizedLoadedStart - 1
+            Dim prependedCount = 0
+            Dim prependedWeight = 0
+
+            For i = normalizedLoadedStart - 1 To 0 Step -1
+                prependedCount += 1
+                prependedWeight += EstimateRenderWeight(entries(i))
+                prependStartIndex = i
+
+                Dim hitRowCap = prependedCount >= normalizedMaxRows
+                Dim hitWeightCap = prependedWeight >= normalizedMaxRenderWeight
+                If i > 0 AndAlso (hitRowCap OrElse hitWeightCap) Then
+                    Exit For
+                End If
+            Next
+
+            plan.TotalEntryCount = totalCount
+            plan.LoadedRangeStart = prependStartIndex
+            plan.LoadedRangeEnd = normalizedLoadedEnd
+            plan.HasMoreOlderEntries = prependStartIndex > 0
+
+            For i = prependStartIndex To normalizedLoadedEnd
+                plan.DisplayEntries.Add(entries(i))
+            Next
+
+            plan.TotalSelectedRenderWeight = CalculateTotalRenderWeight(plan.DisplayEntries)
+            Return plan
+        End Function
+
         Private Shared Function EstimateRenderWeight(descriptor As TranscriptEntryDescriptor) As Integer
             If descriptor Is Nothing Then
                 Return 1
@@ -122,6 +181,19 @@ Namespace CodexNativeAgent.Ui.Coordinators
             End If
 
             Return Math.Max(1, weight)
+        End Function
+
+        Private Shared Function CalculateTotalRenderWeight(entries As IEnumerable(Of TranscriptEntryDescriptor)) As Integer
+            If entries Is Nothing Then
+                Return 0
+            End If
+
+            Dim total = 0
+            For Each entry In entries
+                total += EstimateRenderWeight(entry)
+            Next
+
+            Return total
         End Function
     End Class
 End Namespace
