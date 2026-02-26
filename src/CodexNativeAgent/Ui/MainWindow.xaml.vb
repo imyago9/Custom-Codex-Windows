@@ -365,6 +365,7 @@ Namespace CodexNativeAgent.Ui
             Public Property EncryptedApiKey As String = String.Empty
             Public Property ThemeMode As String = AppAppearanceManager.LightTheme
             Public Property DensityMode As String = AppAppearanceManager.ComfortableDensity
+            Public Property TranscriptScaleIndex As Integer = 2
             Public Property TurnComposerPickersCollapsed As Boolean
         End Class
 
@@ -423,6 +424,7 @@ Namespace CodexNativeAgent.Ui
         Private _currentTheme As String = AppAppearanceManager.LightTheme
         Private _currentDensity As String = AppAppearanceManager.ComfortableDensity
         Private _suppressAppearanceUiChange As Boolean
+        Private _suppressTranscriptScaleUiChange As Boolean
         Private _turnComposerPickersCollapsed As Boolean
         Private _turnComposerPickersExpandedWidth As Double = 434.0R
         Private _transcriptAutoScrollEnabled As Boolean = True
@@ -637,6 +639,7 @@ Namespace CodexNativeAgent.Ui
             AddHandler SidebarPaneHost.BtnSidebarSettings.Click, Sub(sender, e) ShowSettingsView()
             AddHandler SidebarPaneHost.BtnSettingsBack.Click, Sub(sender, e) ShowWorkspaceView()
             AddHandler SidebarPaneHost.CmbDensity.SelectionChanged, Sub(sender, e) OnDensitySelectionChanged()
+            AddHandler SidebarPaneHost.CmbTranscriptScale.SelectionChanged, Sub(sender, e) OnTranscriptScaleSelectionChanged()
             AddHandler SidebarPaneHost.TxtWorkingDir.TextChanged, Sub(sender, e) SyncNewThreadTargetChip()
 
             AddHandler SidebarPaneHost.ChkAutoReconnect.Checked, Sub(sender, e) SaveSettings()

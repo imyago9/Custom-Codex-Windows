@@ -309,10 +309,14 @@
                                         <Grid Margin="0,0,0,10"
                                               Opacity="{Binding RowOpacity}"
                                               Visibility="{Binding RowVisibility}">
+                                            <Grid.LayoutTransform>
+                                                <ScaleTransform ScaleX="{Binding DataContext.TranscriptPanel.TranscriptContentScale, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                ScaleY="{Binding DataContext.TranscriptPanel.TranscriptContentScale, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                                            </Grid.LayoutTransform>
                                             <Grid x:Name="BubbleRow">
                                                 <Border x:Name="BubbleChrome"
                                                         HorizontalAlignment="Left"
-                                                        MaxWidth="760"
+                                                        MaxWidth="{Binding DataContext.TranscriptPanel.TranscriptBubbleMaxWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                         Padding="12,10"
                                                         CornerRadius="14"
                                                         Background="{DynamicResource SurfaceMutedBrush}"
@@ -405,7 +409,7 @@
                                                         Background="Transparent"
                                                         BorderBrush="Transparent"
                                                         BorderThickness="1"
-                                                        MaxWidth="860"
+                                                        MaxWidth="{Binding DataContext.TranscriptPanel.TranscriptActivityMaxWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                         HorizontalAlignment="Left">
                                                     <StackPanel>
                                                         <DockPanel LastChildFill="True" Margin="0,0,0,4">

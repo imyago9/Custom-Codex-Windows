@@ -8,6 +8,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _themeStateText As String = "Current: Light"
         Private _themeToggleButtonText As String = "Switch to Dark Mode"
         Private _densityIndex As Integer
+        Private _transcriptScaleIndex As Integer = 2
 
         Private _codexPath As String = String.Empty
         Private _serverArgs As String = String.Empty
@@ -70,6 +71,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Integer)
                 SetProperty(_densityIndex, Math.Max(0, value))
+            End Set
+        End Property
+
+        Public Property TranscriptScaleIndex As Integer
+            Get
+                Return _transcriptScaleIndex
+            End Get
+            Set(value As Integer)
+                SetProperty(_transcriptScaleIndex, Math.Max(0, value))
             End Set
         End Property
 

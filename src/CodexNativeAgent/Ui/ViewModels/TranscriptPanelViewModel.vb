@@ -31,6 +31,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _collapseCommandDetailsByDefault As Boolean
         Private _showEventDotsInTranscript As Boolean
         Private _showSystemDotsInTranscript As Boolean
+        Private _transcriptContentScale As Double = 1.0R
         Private _tokenUsageText As String = String.Empty
         Private _tokenUsageVisibility As Visibility = Visibility.Collapsed
         Private ReadOnly _items As New ObservableCollection(Of TranscriptEntryViewModel)()
@@ -129,6 +130,36 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     RefreshTimelineDotRowVisibility()
                 End If
             End Set
+        End Property
+
+        Public Property TranscriptContentScale As Double
+            Get
+                Return _transcriptContentScale
+            End Get
+            Set(value As Double)
+                Dim normalized = value
+                If Double.IsNaN(normalized) OrElse Double.IsInfinity(normalized) Then
+                    normalized = 1.0R
+                End If
+
+                normalized = Math.Max(0.8R, Math.Min(1.35R, normalized))
+                If SetProperty(_transcriptContentScale, normalized) Then
+                    RaisePropertyChanged(NameOf(TranscriptBubbleMaxWidth))
+                    RaisePropertyChanged(NameOf(TranscriptActivityMaxWidth))
+                End If
+            End Set
+        End Property
+
+        Public ReadOnly Property TranscriptBubbleMaxWidth As Double
+            Get
+                Return 760.0R / Math.Max(0.8R, _transcriptContentScale)
+            End Get
+        End Property
+
+        Public ReadOnly Property TranscriptActivityMaxWidth As Double
+            Get
+                Return 860.0R / Math.Max(0.8R, _transcriptContentScale)
+            End Get
         End Property
 
         Public Property TokenUsageText As String

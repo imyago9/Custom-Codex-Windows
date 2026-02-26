@@ -3,6 +3,8 @@ Imports System.Windows.Controls
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
+        Private Shared ReadOnly TranscriptScalePresetValues As Double() = {0.85R, 0.95R, 1.0R, 1.1R, 1.2R}
+
         Private Sub ToggleTheme()
             Dim nextTheme = AppAppearanceManager.ToggleTheme(_currentTheme)
             ApplyAppearance(nextTheme, _currentDensity, persist:=True)
@@ -25,6 +27,31 @@ Namespace CodexNativeAgent.Ui
                                   "Compact",
                                   "Comfortable")
             ShowStatus($"Density set to {densityLabel}.", displayToast:=True)
+        End Sub
+
+        Private Sub OnTranscriptScaleSelectionChanged()
+            If _suppressTranscriptScaleUiChange Then
+                Return
+            End If
+
+            Dim selectedIndex = NormalizeTranscriptScaleIndex(_viewModel.SettingsPanel.TranscriptScaleIndex)
+            If selectedIndex <> _viewModel.SettingsPanel.TranscriptScaleIndex Then
+                _suppressTranscriptScaleUiChange = True
+                Try
+                    _viewModel.SettingsPanel.TranscriptScaleIndex = selectedIndex
+                Finally
+                    _suppressTranscriptScaleUiChange = False
+                End Try
+            End If
+
+            Dim selectedScale = TranscriptScaleValueFromIndex(selectedIndex)
+            If Math.Abs(_viewModel.TranscriptPanel.TranscriptContentScale - selectedScale) < 0.0001R Then
+                Return
+            End If
+
+            ApplyTranscriptScaleSetting()
+            SaveSettings()
+            ShowStatus($"Transcript scale set to {TranscriptScaleDisplayLabel(selectedIndex)}.", displayToast:=True)
         End Sub
 
         Private Sub ApplyAppearance(themeMode As String, densityMode As String, persist As Boolean)
@@ -85,6 +112,7 @@ Namespace CodexNativeAgent.Ui
             _settings.DisableThreadsPanelHints = _viewModel.SettingsPanel.DisableThreadsPanelHints
             _settings.ShowEventDotsInTranscript = _viewModel.SettingsPanel.ShowEventDotsInTranscript
             _settings.ShowSystemDotsInTranscript = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
+            _settings.TranscriptScaleIndex = NormalizeTranscriptScaleIndex(_viewModel.SettingsPanel.TranscriptScaleIndex)
             _settings.FilterThreadsByWorkingDir = _viewModel.ThreadsPanel.FilterByWorkingDir
             _settings.ThemeMode = _currentTheme
             _settings.DensityMode = _currentDensity
@@ -139,9 +167,16 @@ Namespace CodexNativeAgent.Ui
             _viewModel.SettingsPanel.DisableThreadsPanelHints = _settings.DisableThreadsPanelHints
             _viewModel.SettingsPanel.ShowEventDotsInTranscript = _settings.ShowEventDotsInTranscript
             _viewModel.SettingsPanel.ShowSystemDotsInTranscript = _settings.ShowSystemDotsInTranscript
+            _suppressTranscriptScaleUiChange = True
+            Try
+                _viewModel.SettingsPanel.TranscriptScaleIndex = NormalizeTranscriptScaleIndex(_settings.TranscriptScaleIndex)
+            Finally
+                _suppressTranscriptScaleUiChange = False
+            End Try
             _viewModel.ThreadsPanel.FilterByWorkingDir = _settings.FilterThreadsByWorkingDir
             _turnComposerPickersCollapsed = _settings.TurnComposerPickersCollapsed
             ApplyAppearance(_settings.ThemeMode, _settings.DensityMode, persist:=False)
+            ApplyTranscriptScaleSetting()
             ApplyTranscriptTimelineDotVisibilitySettings()
 
             If _viewModel.SettingsPanel.RememberApiKey Then
@@ -168,6 +203,43 @@ Namespace CodexNativeAgent.Ui
             _viewModel.TranscriptPanel.ShowSystemDotsInTranscript = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
             UpdateWorkspaceEmptyStateVisibility()
         End Sub
+
+        Private Sub ApplyTranscriptScaleSetting()
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing OrElse _viewModel.SettingsPanel Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedIndex = NormalizeTranscriptScaleIndex(_viewModel.SettingsPanel.TranscriptScaleIndex)
+            If normalizedIndex <> _viewModel.SettingsPanel.TranscriptScaleIndex Then
+                _suppressTranscriptScaleUiChange = True
+                Try
+                    _viewModel.SettingsPanel.TranscriptScaleIndex = normalizedIndex
+                Finally
+                    _suppressTranscriptScaleUiChange = False
+                End Try
+            End If
+
+            _viewModel.TranscriptPanel.TranscriptContentScale = TranscriptScaleValueFromIndex(normalizedIndex)
+        End Sub
+
+        Private Shared Function NormalizeTranscriptScaleIndex(index As Integer) As Integer
+            If TranscriptScalePresetValues Is Nothing OrElse TranscriptScalePresetValues.Length = 0 Then
+                Return 0
+            End If
+
+            Return Math.Max(0, Math.Min(TranscriptScalePresetValues.Length - 1, index))
+        End Function
+
+        Private Shared Function TranscriptScaleValueFromIndex(index As Integer) As Double
+            Dim normalizedIndex = NormalizeTranscriptScaleIndex(index)
+            Return TranscriptScalePresetValues(normalizedIndex)
+        End Function
+
+        Private Shared Function TranscriptScaleDisplayLabel(index As Integer) As String
+            Dim normalizedIndex = NormalizeTranscriptScaleIndex(index)
+            Dim percentage = CInt(Math.Round(TranscriptScalePresetValues(normalizedIndex) * 100.0R, MidpointRounding.AwayFromZero))
+            Return $"{percentage}%"
+        End Function
 
         Private Shared Function IsPathLike(value As String) As Boolean
             If String.IsNullOrWhiteSpace(value) Then

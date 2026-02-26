@@ -689,6 +689,7 @@
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
 
                                             <TextBlock Grid.Row="0"
@@ -729,11 +730,29 @@
 
                                             <TextBlock Grid.Row="2"
                                                        Grid.Column="0"
+                                                       Text="Transcript scale"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,8,8,0"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                            <ComboBox x:Name="CmbTranscriptScale"
+                                                      Grid.Row="2"
+                                                      Grid.Column="1"
+                                                      Margin="0,8,0,0"
+                                                      SelectedIndex="{Binding SettingsPanel.TranscriptScaleIndex, Mode=TwoWay}">
+                                                <ComboBoxItem Content="Smallest (85%)" />
+                                                <ComboBoxItem Content="Smaller (95%)" />
+                                                <ComboBoxItem Content="Default (100%)" />
+                                                <ComboBoxItem Content="Larger (110%)" />
+                                                <ComboBoxItem Content="Largest (120%)" />
+                                            </ComboBox>
+
+                                            <TextBlock Grid.Row="3"
+                                                       Grid.Column="0"
                                                        Text="Hints"
                                                        VerticalAlignment="Center"
                                                        Margin="0,8,8,0"
                                                        Style="{StaticResource CaptionTextStyle}" />
-                                            <StackPanel Grid.Row="2"
+                                            <StackPanel Grid.Row="3"
                                                         Grid.Column="1"
                                                         Margin="0,8,0,0">
                                                 <CheckBox x:Name="ChkDisableWorkspaceHintOverlay"
