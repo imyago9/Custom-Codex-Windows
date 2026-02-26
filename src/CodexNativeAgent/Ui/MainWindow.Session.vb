@@ -1372,6 +1372,106 @@ Namespace CodexNativeAgent.Ui
                 Return True
             End If
 
+            Dim sawScopedPayload = False
+            Dim sawVisibleScopedPayload = False
+
+            Dim resolvedThreadId As String = Nothing
+            Dim resolvedTurnId As String = Nothing
+
+            For Each item In dispatch.RuntimeItems
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If Not TryResolveRuntimeEventUiScope(item.ThreadId,
+                                                    item.TurnId,
+                                                    _notificationRuntimeThreadId,
+                                                    _notificationRuntimeTurnId,
+                                                    resolvedThreadId,
+                                                    resolvedTurnId) Then
+                    Continue For
+                End If
+
+                sawScopedPayload = True
+                If IsVisibleThread(resolvedThreadId, normalizedVisibleThreadId) Then
+                    sawVisibleScopedPayload = True
+                    Exit For
+                End If
+            Next
+
+            If Not sawVisibleScopedPayload Then
+                For Each lifecycleMessage In dispatch.TurnLifecycleMessages
+                    If lifecycleMessage Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not TryResolveRuntimeEventUiScope(lifecycleMessage.ThreadId,
+                                                        lifecycleMessage.TurnId,
+                                                        _notificationRuntimeThreadId,
+                                                        _notificationRuntimeTurnId,
+                                                        resolvedThreadId,
+                                                        resolvedTurnId) Then
+                        Continue For
+                    End If
+
+                    sawScopedPayload = True
+                    If IsVisibleThread(resolvedThreadId, normalizedVisibleThreadId) Then
+                        sawVisibleScopedPayload = True
+                        Exit For
+                    End If
+                Next
+            End If
+
+            If Not sawVisibleScopedPayload Then
+                For Each metadataMessage In dispatch.TurnMetadataMessages
+                    If metadataMessage Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not TryResolveRuntimeEventUiScope(metadataMessage.ThreadId,
+                                                        metadataMessage.TurnId,
+                                                        _notificationRuntimeThreadId,
+                                                        _notificationRuntimeTurnId,
+                                                        resolvedThreadId,
+                                                        resolvedTurnId) Then
+                        Continue For
+                    End If
+
+                    sawScopedPayload = True
+                    If IsVisibleThread(resolvedThreadId, normalizedVisibleThreadId) Then
+                        sawVisibleScopedPayload = True
+                        Exit For
+                    End If
+                Next
+            End If
+
+            If Not sawVisibleScopedPayload Then
+                For Each tokenUsageMessage In dispatch.TokenUsageMessages
+                    If tokenUsageMessage Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not TryResolveRuntimeEventUiScope(tokenUsageMessage.ThreadId,
+                                                        tokenUsageMessage.TurnId,
+                                                        _notificationRuntimeThreadId,
+                                                        _notificationRuntimeTurnId,
+                                                        resolvedThreadId,
+                                                        resolvedTurnId) Then
+                        Continue For
+                    End If
+
+                    sawScopedPayload = True
+                    If IsVisibleThread(resolvedThreadId, normalizedVisibleThreadId) Then
+                        sawVisibleScopedPayload = True
+                        Exit For
+                    End If
+                Next
+            End If
+
+            If sawScopedPayload AndAlso Not sawVisibleScopedPayload Then
+                Return False
+            End If
+
             Dim scopedThreadId = If(_notificationRuntimeThreadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(scopedThreadId) Then
                 scopedThreadId = If(dispatch.CurrentThreadId, String.Empty).Trim()
