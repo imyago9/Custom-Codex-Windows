@@ -1,5 +1,6 @@
 Imports System.Collections.Generic
 Imports System.IO
+Imports System.Linq
 Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports System.Threading.Tasks
@@ -9,10 +10,13 @@ Imports System.Windows.Input
 Imports System.Windows.Media
 Imports CodexNativeAgent.Services
 Imports CodexNativeAgent.Ui.Coordinators
+Imports CodexNativeAgent.Ui.ViewModels.Transcript
 Imports CodexNativeAgent.Ui.ViewModels.Threads
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
+        Private Const EnableTranscriptOrderingProtocolDebug As Boolean = True
+
         Private NotInheritable Class ThreadSelectionLoadRequest
             Public Property ThreadId As String = String.Empty
             Public Property LoadVersion As Integer
@@ -1252,6 +1256,9 @@ Namespace CodexNativeAgent.Ui
 
             Dim snapshot = If(transcriptSnapshot, New ThreadTranscriptSnapshot())
             MergeSnapshotAssistantPhaseHints(snapshot.AssistantPhaseHintsByItemKey)
+            AppendTranscriptOrderingProjectionDebug("selection_snapshot_capture",
+                                                   normalizedThreadId,
+                                                   snapshot.DisplayEntries)
 
             Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
             If runtimeStore IsNot Nothing AndAlso runtimeStore.HasActiveTurn(normalizedThreadId) Then
@@ -1278,7 +1285,13 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim projection = _threadLiveSessionRegistry.GetProjectionSnapshot(normalizedThreadId)
+            AppendTranscriptOrderingProjectionDebug("rebuild_projection_pre_stamp",
+                                                   normalizedThreadId,
+                                                   projection.DisplayEntries)
             ApplyOverlayRuntimeOrderMetadataToProjection(normalizedThreadId, projection, _sessionNotificationCoordinator.RuntimeStore)
+            AppendTranscriptOrderingProjectionDebug("rebuild_projection_post_stamp",
+                                                   normalizedThreadId,
+                                                   projection.DisplayEntries)
 
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
@@ -1305,6 +1318,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            AppendTranscriptOrderingProtocolDebug(
+                "projection_stamp_begin",
+                $"threadId={FormatTranscriptOrderingDebugToken(normalizedThreadId)} overlay_turn_ids={FormatTranscriptOrderingTurnIdSet(overlayTurnIds)} projection_entries={projection.DisplayEntries.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)}")
+
             Dim runtimeItemsByKey As New Dictionary(Of String, TurnItemRuntimeState)(StringComparer.Ordinal)
             For Each turnId In overlayTurnIds
                 Dim normalizedTurnId = If(turnId, String.Empty).Trim()
@@ -1314,6 +1331,10 @@ Namespace CodexNativeAgent.Ui
 
                 Dim orderedTurnItems = runtimeStore.GetOrderedRuntimeItemsForTurn(normalizedThreadId, normalizedTurnId)
                 AssignTurnItemOrderIndexes(orderedTurnItems)
+                AppendTranscriptOrderingRuntimeItemsDebug("projection_stamp_runtime_items",
+                                                         normalizedThreadId,
+                                                         normalizedTurnId,
+                                                         orderedTurnItems)
 
                 For Each item In orderedTurnItems
                     If item Is Nothing OrElse item.IsScopeInferred Then
@@ -1348,6 +1369,10 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
+                Dim priorSeq = descriptor.TurnItemStreamSequence
+                Dim priorOrd = descriptor.TurnItemOrderIndex
+                Dim priorTs = descriptor.TurnItemSortTimestampUtc
+
                 descriptor.ThreadId = If(String.IsNullOrWhiteSpace(descriptor.ThreadId),
                                          If(runtimeItem.ThreadId, String.Empty).Trim(),
                                          descriptor.ThreadId)
@@ -1357,6 +1382,10 @@ Namespace CodexNativeAgent.Ui
                 descriptor.TurnItemStreamSequence = runtimeItem.TurnItemStreamSequence
                 descriptor.TurnItemOrderIndex = runtimeItem.TurnItemOrderIndex
                 descriptor.TurnItemSortTimestampUtc = If(runtimeItem.StartedAt, runtimeItem.CompletedAt)
+
+                AppendTranscriptOrderingProtocolDebug(
+                    "projection_stamp_row",
+                    $"threadId={FormatTranscriptOrderingDebugToken(normalizedThreadId)} turnId={FormatTranscriptOrderingDebugToken(descriptor.TurnId)} kind={FormatTranscriptOrderingDebugToken(descriptor.Kind)} runtimeKey={FormatTranscriptOrderingDebugToken(runtimeKey)} snapshot_seq={FormatTranscriptOrderingNullableLong(priorSeq)} runtime_seq={FormatTranscriptOrderingNullableLong(runtimeItem.TurnItemStreamSequence)} snapshot_ord={FormatTranscriptOrderingNullableInt(priorOrd)} runtime_ord={FormatTranscriptOrderingNullableInt(runtimeItem.TurnItemOrderIndex)} snapshot_ts={FormatTranscriptOrderingTimestamp(priorTs)} runtime_ts={FormatTranscriptOrderingTimestamp(If(runtimeItem.StartedAt, runtimeItem.CompletedAt))}")
             Next
         End Sub
 
@@ -1394,8 +1423,16 @@ Namespace CodexNativeAgent.Ui
                 Dim replayCompletedTurnRuntimeOnly = turn.IsCompleted
                 Dim orderedTurnItems As IReadOnlyList(Of TurnItemRuntimeState) = runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
                 AssignTurnItemOrderIndexes(orderedTurnItems)
+                AppendTranscriptOrderingRuntimeItemsDebug("overlay_replay_turn_items_preorder",
+                                                         turnThreadId,
+                                                         turnId,
+                                                         orderedTurnItems)
                 If replayCompletedTurnRuntimeOnly Then
                     orderedTurnItems = OrderCompletedTurnRuntimeOnlyReplayItems(orderedTurnItems)
+                    AppendTranscriptOrderingRuntimeItemsDebug("overlay_replay_turn_items_postorder",
+                                                             turnThreadId,
+                                                             turnId,
+                                                             orderedTurnItems)
                 End If
 
                 If Not replayCompletedTurnRuntimeOnly Then
@@ -1418,6 +1455,10 @@ Namespace CodexNativeAgent.Ui
                             Continue For
                         End If
 
+                        AppendTranscriptOrderingRuntimeReplayRenderDebug("overlay_replay_user",
+                                                                         turnThreadId,
+                                                                         turnId,
+                                                                         item)
                         RenderItem(item)
                     Next
 
@@ -1455,6 +1496,10 @@ Namespace CodexNativeAgent.Ui
                         Continue For
                     End If
 
+                    AppendTranscriptOrderingRuntimeReplayRenderDebug("overlay_replay_item",
+                                                                     turnThreadId,
+                                                                     turnId,
+                                                                     item)
                     RenderItem(item)
                 Next
 
@@ -1486,6 +1531,10 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
+                AppendTranscriptOrderingRuntimeReplayRenderDebug("overlay_replay_fallback_item",
+                                                                 normalizedThreadId,
+                                                                 If(item.TurnId, String.Empty).Trim(),
+                                                                 item)
                 RenderItem(item)
             Next
 
@@ -1676,6 +1725,169 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Return _sessionNotificationCoordinator.RuntimeStore.GetOrderedRuntimeItemsForThread(normalizedThreadId)
+        End Function
+
+        Private Sub AppendTranscriptOrderingProjectionDebug(stage As String,
+                                                            threadId As String,
+                                                            entries As IEnumerable(Of TranscriptEntryDescriptor))
+            If Not EnableTranscriptOrderingProtocolDebug Then
+                Return
+            End If
+
+            Dim list = If(entries, Enumerable.Empty(Of TranscriptEntryDescriptor)())
+            Dim index = 0
+            For Each entry In list
+                If entry Is Nothing Then
+                    index += 1
+                    Continue For
+                End If
+
+                Dim runtimeKey = If(entry.RuntimeKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(runtimeKey) Then
+                    index += 1
+                    Continue For
+                End If
+
+                AppendTranscriptOrderingProtocolDebug(
+                    stage,
+                    $"threadId={FormatTranscriptOrderingDebugToken(threadId)} idx={index.ToString(System.Globalization.CultureInfo.InvariantCulture)} kind={FormatTranscriptOrderingDebugToken(entry.Kind)} turnId={FormatTranscriptOrderingDebugToken(entry.TurnId)} runtimeKey={FormatTranscriptOrderingDebugToken(runtimeKey)} seq={FormatTranscriptOrderingNullableLong(entry.TurnItemStreamSequence)} ord={FormatTranscriptOrderingNullableInt(entry.TurnItemOrderIndex)} ts={FormatTranscriptOrderingTimestamp(entry.TurnItemSortTimestampUtc)}")
+                index += 1
+            Next
+        End Sub
+
+        Private Sub AppendTranscriptOrderingRuntimeItemsDebug(stage As String,
+                                                              threadId As String,
+                                                              turnId As String,
+                                                              items As IEnumerable(Of TurnItemRuntimeState))
+            If Not EnableTranscriptOrderingProtocolDebug OrElse items Is Nothing Then
+                Return
+            End If
+
+            Dim index = 0
+            For Each item In items
+                If item Is Nothing Then
+                    index += 1
+                    Continue For
+                End If
+
+                AppendTranscriptOrderingProtocolDebug(
+                    stage,
+                    $"threadId={FormatTranscriptOrderingDebugToken(threadId)} turnId={FormatTranscriptOrderingDebugToken(turnId)} idx={index.ToString(System.Globalization.CultureInfo.InvariantCulture)} itemType={FormatTranscriptOrderingDebugToken(item.ItemType)} runtimeKey={FormatTranscriptOrderingDebugToken(BuildTranscriptOrderingRuntimeKey(item))} seq={FormatTranscriptOrderingNullableLong(item.TurnItemStreamSequence)} ord={FormatTranscriptOrderingNullableInt(item.TurnItemOrderIndex)} ts={FormatTranscriptOrderingTimestamp(If(item.StartedAt, item.CompletedAt))} inferred={If(item.IsScopeInferred, "1", "0")}")
+                index += 1
+            Next
+        End Sub
+
+        Private Sub AppendTranscriptOrderingRuntimeReplayRenderDebug(stage As String,
+                                                                     threadId As String,
+                                                                     turnId As String,
+                                                                     item As TurnItemRuntimeState)
+            If Not EnableTranscriptOrderingProtocolDebug OrElse item Is Nothing Then
+                Return
+            End If
+
+            AppendTranscriptOrderingProtocolDebug(
+                stage,
+                $"threadId={FormatTranscriptOrderingDebugToken(threadId)} turnId={FormatTranscriptOrderingDebugToken(turnId)} itemType={FormatTranscriptOrderingDebugToken(item.ItemType)} runtimeKey={FormatTranscriptOrderingDebugToken(BuildTranscriptOrderingRuntimeKey(item))} seq={FormatTranscriptOrderingNullableLong(item.TurnItemStreamSequence)} ord={FormatTranscriptOrderingNullableInt(item.TurnItemOrderIndex)} ts={FormatTranscriptOrderingTimestamp(If(item.StartedAt, item.CompletedAt))}")
+        End Sub
+
+        Private Shared Function BuildTranscriptOrderingRuntimeKey(item As TurnItemRuntimeState) As String
+            If item Is Nothing Then
+                Return String.Empty
+            End If
+
+            Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(scopedKey) Then
+                Dim threadId = If(item.ThreadId, String.Empty).Trim()
+                Dim turnId = If(item.TurnId, String.Empty).Trim()
+                Dim itemId = If(item.ItemId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(threadId) OrElse String.IsNullOrWhiteSpace(turnId) OrElse String.IsNullOrWhiteSpace(itemId) Then
+                    Return String.Empty
+                End If
+
+                scopedKey = $"{threadId}:{turnId}:{itemId}"
+            End If
+
+            Return $"item:{scopedKey}"
+        End Function
+
+        Private Sub AppendTranscriptOrderingProtocolDebug(stage As String, details As String)
+            If Not EnableTranscriptOrderingProtocolDebug Then
+                Return
+            End If
+
+            Dim safeStage = If(stage, String.Empty).Trim()
+            Dim safeDetails = If(details, String.Empty).Trim()
+            AppendProtocol("debug", $"transcript_ordering stage={safeStage} {safeDetails}")
+        End Sub
+
+        Private Shared Function FormatTranscriptOrderingNullableInt(value As Integer?) As String
+            If Not value.HasValue Then
+                Return "_"
+            End If
+
+            Return value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        End Function
+
+        Private Shared Function FormatTranscriptOrderingNullableLong(value As Long?) As String
+            If Not value.HasValue Then
+                Return "_"
+            End If
+
+            Return value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        End Function
+
+        Private Shared Function FormatTranscriptOrderingTimestamp(value As DateTimeOffset?) As String
+            If Not value.HasValue Then
+                Return "_"
+            End If
+
+            Return value.Value.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture)
+        End Function
+
+        Private Shared Function FormatTranscriptOrderingDebugToken(value As String) As String
+            Dim text = If(value, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return "_"
+            End If
+
+            text = text.Replace(ControlChars.Cr, " "c).
+                        Replace(ControlChars.Lf, " "c).
+                        Replace(ControlChars.Tab, " "c)
+            Do While text.Contains("  ", StringComparison.Ordinal)
+                text = text.Replace("  ", " ", StringComparison.Ordinal)
+            Loop
+
+            If text.Length > 120 Then
+                text = text.Substring(0, 117) & "..."
+            End If
+
+            If text.IndexOfAny(New Char() {" "c, ";"c, "="c}) >= 0 Then
+                Return """" & text.Replace("""", "'"c) & """"
+            End If
+
+            Return text
+        End Function
+
+        Private Shared Function FormatTranscriptOrderingTurnIdSet(turnIds As IEnumerable(Of String)) As String
+            If turnIds Is Nothing Then
+                Return "_"
+            End If
+
+            Dim values As New List(Of String)()
+            For Each turnId In turnIds
+                Dim normalized = If(turnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalized) Then
+                    Continue For
+                End If
+
+                values.Add(normalized)
+            Next
+
+            If values.Count = 0 Then
+                Return "_"
+            End If
+
+            Return FormatTranscriptOrderingDebugToken(String.Join(";", values))
         End Function
 
         Private Shared Function ThreadObjectHasTurns(threadObject As JsonObject) As Boolean

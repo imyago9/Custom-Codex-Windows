@@ -17,6 +17,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private Const MaxLogChars As Integer = 500000
         Private Const MaxTranscriptEntries As Integer = 2000
         Private Const EnableFileChangeTurnDiffMergeProtocolDebug As Boolean = True
+        Private Const EnableTranscriptOrderingProtocolDebug As Boolean = True
         Private Shared ReadOnly TurnDiffAddedCountRegex As New Regex("(?<!\w)\+(?<n>\d+)\b", RegexOptions.Compiled Or RegexOptions.CultureInvariant)
         Private Shared ReadOnly TurnDiffRemovedCountRegex As New Regex("(?<!\w)-(?<n>\d+)\b", RegexOptions.Compiled Or RegexOptions.CultureInvariant)
         Private Shared ReadOnly TurnDiffInsertionsRegex As New Regex("(?<n>\d+)\s+insertions?\(\+\)", RegexOptions.Compiled Or RegexOptions.CultureInvariant Or RegexOptions.IgnoreCase)
@@ -208,6 +209,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
                 _runtimeEntriesByKey(runtimeKey) = entry
             Next
+
+            AppendTranscriptOrderingSnapshotDump("set_snapshot")
         End Sub
 
         Public Sub AppendTranscriptChunk(value As String)
@@ -707,6 +710,10 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return
             End If
 
+            AppendTranscriptOrderingProtocolDebug(
+                "runtime_item_prepare",
+                $"runtimeKey={FormatProtocolDebugToken(runtimeKey)} threadId={FormatProtocolDebugToken(itemState.ThreadId)} turnId={FormatProtocolDebugToken(itemState.TurnId)} itemType={FormatProtocolDebugToken(itemState.ItemType)} seq={FormatOrderingDebugNullableLong(itemState.TurnItemStreamSequence)} ord={FormatOrderingDebugNullableInt(itemState.TurnItemOrderIndex)} ts={FormatOrderingDebugTimestamp(If(itemState.StartedAt, itemState.CompletedAt))}")
+
             RegisterRuntimeItemAssociations(itemState, runtimeKey)
             UpsertRuntimeDescriptor(runtimeKey, descriptor)
 
@@ -863,10 +870,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             Dim replacement = CreateEntryFromDescriptor(descriptor)
+            Dim existingIndexBefore = -1
 
             Dim existing As TranscriptEntryViewModel = Nothing
             If _runtimeEntriesByKey.TryGetValue(normalizedKey, existing) AndAlso existing IsNot Nothing Then
                 Dim index = _items.IndexOf(existing)
+                existingIndexBefore = index
                 Dim shouldReposition = normalizedKey.StartsWith("item:", StringComparison.Ordinal) AndAlso
                                        (descriptor.TurnItemStreamSequence.HasValue OrElse
                                         descriptor.TurnItemSortTimestampUtc.HasValue OrElse
@@ -879,10 +888,20 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     Else
                         _items.Add(replacement)
                     End If
+
+                    AppendTranscriptOrderingProtocolDebug(
+                        "upsert_reposition",
+                        BuildOrderingUpsertDebugMessage(normalizedKey, descriptor, existingIndexBefore, _items.IndexOf(replacement), "reposition"))
                 ElseIf index >= 0 Then
                     _items(index) = replacement
+                    AppendTranscriptOrderingProtocolDebug(
+                        "upsert_replace_in_place",
+                        BuildOrderingUpsertDebugMessage(normalizedKey, descriptor, existingIndexBefore, index, "replace_in_place"))
                 Else
                     _items.Add(replacement)
+                    AppendTranscriptOrderingProtocolDebug(
+                        "upsert_replace_missing_index",
+                        BuildOrderingUpsertDebugMessage(normalizedKey, descriptor, existingIndexBefore, _items.Count - 1, "replace_missing_index"))
                 End If
 
                 _runtimeEntriesByKey(normalizedKey) = replacement
@@ -897,6 +916,9 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Else
                 _items.Add(replacement)
             End If
+            AppendTranscriptOrderingProtocolDebug(
+                "upsert_insert",
+                BuildOrderingUpsertDebugMessage(normalizedKey, descriptor, existingIndexBefore, _items.IndexOf(replacement), "insert"))
             TrimEntriesIfNeeded()
         End Sub
 
@@ -934,6 +956,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
                     Dim candidateStreamSequence = candidate.TurnItemStreamSequence.Value
                     If candidateStreamSequence > targetStreamSequence Then
+                        AppendTranscriptOrderingResolveDecisionDebug(
+                            "stream_seq_gt",
+                            normalizedRuntimeKey,
+                            descriptor,
+                            i,
+                            candidate)
                         Return i
                     End If
 
@@ -941,6 +969,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
                        targetOrderIndex.HasValue AndAlso
                        candidate.TurnItemOrderIndex.HasValue AndAlso
                        candidate.TurnItemOrderIndex.Value > targetOrderIndex.Value Then
+                        AppendTranscriptOrderingResolveDecisionDebug(
+                            "stream_seq_eq_order_gt",
+                            normalizedRuntimeKey,
+                            descriptor,
+                            i,
+                            candidate)
                         Return i
                     End If
                 Next
@@ -965,6 +999,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
                     Dim candidateTimestamp = candidate.TurnItemSortTimestampUtc.Value
                     If candidateTimestamp > targetTimestamp Then
+                        AppendTranscriptOrderingResolveDecisionDebug(
+                            "timestamp_gt",
+                            normalizedRuntimeKey,
+                            descriptor,
+                            i,
+                            candidate)
                         Return i
                     End If
 
@@ -972,6 +1012,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
                        targetOrderIndex.HasValue AndAlso
                        candidate.TurnItemOrderIndex.HasValue AndAlso
                        candidate.TurnItemOrderIndex.Value > targetOrderIndex.Value Then
+                        AppendTranscriptOrderingResolveDecisionDebug(
+                            "timestamp_eq_order_gt",
+                            normalizedRuntimeKey,
+                            descriptor,
+                            i,
+                            candidate)
                         Return i
                     End If
                 Next
@@ -994,6 +1040,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     End If
 
                     If candidate.TurnItemOrderIndex.Value > targetOrderIndex Then
+                        AppendTranscriptOrderingResolveDecisionDebug(
+                            "order_gt",
+                            normalizedRuntimeKey,
+                            descriptor,
+                            i,
+                            candidate)
                         Return i
                     End If
                 Next
@@ -1017,9 +1069,21 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     Continue For
                 End If
 
+                AppendTranscriptOrderingResolveDecisionDebug(
+                    "before_turn_completion",
+                    normalizedRuntimeKey,
+                    descriptor,
+                    i,
+                    candidate)
                 Return i
             Next
 
+            AppendTranscriptOrderingResolveDecisionDebug(
+                "append_end",
+                normalizedRuntimeKey,
+                descriptor,
+                -1,
+                Nothing)
             Return -1
         End Function
 
@@ -2325,6 +2389,132 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             Return SanitizeOptionalLineCount(parsed)
+        End Function
+
+        Private Sub AppendTranscriptOrderingSnapshotDump(stage As String)
+            If Not EnableTranscriptOrderingProtocolDebug Then
+                Return
+            End If
+
+            Try
+                Dim normalizedStage = If(stage, String.Empty).Trim()
+                AppendTranscriptOrderingProtocolDebug(
+                    "snapshot_dump_begin",
+                    $"stage={FormatProtocolDebugToken(normalizedStage)} item_count={_items.Count.ToString(CultureInfo.InvariantCulture)} runtime_key_count={_runtimeEntriesByKey.Count.ToString(CultureInfo.InvariantCulture)}")
+
+                Const maxLoggedRows As Integer = 400
+                Dim logged = 0
+                For i = 0 To _items.Count - 1
+                    If logged >= maxLoggedRows Then
+                        Exit For
+                    End If
+
+                    Dim entry = _items(i)
+                    If entry Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim runtimeKey = If(entry.RuntimeKey, String.Empty).Trim()
+                    If String.IsNullOrWhiteSpace(runtimeKey) Then
+                        Continue For
+                    End If
+
+                    AppendTranscriptOrderingProtocolDebug(
+                        "snapshot_row",
+                        $"stage={FormatProtocolDebugToken(normalizedStage)} idx={i.ToString(CultureInfo.InvariantCulture)} kind={FormatProtocolDebugToken(entry.Kind)} turnId={FormatProtocolDebugToken(entry.TurnId)} runtimeKey={FormatProtocolDebugToken(runtimeKey)} seq={FormatOrderingDebugNullableLong(entry.TurnItemStreamSequence)} ord={FormatOrderingDebugNullableInt(entry.TurnItemOrderIndex)} ts={FormatOrderingDebugTimestamp(entry.TurnItemSortTimestampUtc)}")
+                    logged += 1
+                Next
+
+                If _items.Count > logged Then
+                    AppendTranscriptOrderingProtocolDebug(
+                        "snapshot_dump_truncated",
+                        $"stage={FormatProtocolDebugToken(normalizedStage)} logged={logged.ToString(CultureInfo.InvariantCulture)} total={_items.Count.ToString(CultureInfo.InvariantCulture)}")
+                End If
+            Catch ex As Exception
+                Dim safeMessage = If(ex.Message, ex.GetType().Name)
+                AppendTranscriptOrderingProtocolDebug("snapshot_dump_error", $"message={FormatProtocolDebugToken(safeMessage)}")
+            End Try
+        End Sub
+
+        Private Sub AppendTranscriptOrderingResolveDecisionDebug(reason As String,
+                                                                 runtimeKey As String,
+                                                                 descriptor As TranscriptEntryDescriptor,
+                                                                 insertIndex As Integer,
+                                                                 candidate As TranscriptEntryViewModel)
+            If Not EnableTranscriptOrderingProtocolDebug Then
+                Return
+            End If
+
+            Dim candidateSummary As String = "candidate=_"
+            If candidate IsNot Nothing Then
+                candidateSummary =
+                    $"candidate_kind={FormatProtocolDebugToken(candidate.Kind)} candidate_turnId={FormatProtocolDebugToken(candidate.TurnId)} candidate_runtimeKey={FormatProtocolDebugToken(candidate.RuntimeKey)} candidate_seq={FormatOrderingDebugNullableLong(candidate.TurnItemStreamSequence)} candidate_ord={FormatOrderingDebugNullableInt(candidate.TurnItemOrderIndex)} candidate_ts={FormatOrderingDebugTimestamp(candidate.TurnItemSortTimestampUtc)}"
+            End If
+
+            AppendTranscriptOrderingProtocolDebug(
+                "resolve_insert_index",
+                $"reason={FormatProtocolDebugToken(reason)} insert_index={insertIndex.ToString(CultureInfo.InvariantCulture)} target_kind={FormatProtocolDebugToken(descriptor?.Kind)} target_turnId={FormatProtocolDebugToken(descriptor?.TurnId)} target_runtimeKey={FormatProtocolDebugToken(runtimeKey)} target_seq={FormatOrderingDebugNullableLong(descriptor?.TurnItemStreamSequence)} target_ord={FormatOrderingDebugNullableInt(descriptor?.TurnItemOrderIndex)} target_ts={FormatOrderingDebugTimestamp(descriptor?.TurnItemSortTimestampUtc)} {candidateSummary}")
+        End Sub
+
+        Private Function BuildOrderingUpsertDebugMessage(runtimeKey As String,
+                                                         descriptor As TranscriptEntryDescriptor,
+                                                         oldIndex As Integer,
+                                                         newIndex As Integer,
+                                                         action As String) As String
+            Dim beforeNeighbor As String = "_"
+            Dim afterNeighbor As String = "_"
+
+            If newIndex > 0 AndAlso newIndex - 1 < _items.Count Then
+                beforeNeighbor = DescribeOrderingEntryCompact(_items(newIndex - 1))
+            End If
+
+            If newIndex >= 0 AndAlso newIndex + 1 < _items.Count Then
+                afterNeighbor = DescribeOrderingEntryCompact(_items(newIndex + 1))
+            End If
+
+            Return $"action={FormatProtocolDebugToken(action)} old_index={oldIndex.ToString(CultureInfo.InvariantCulture)} new_index={newIndex.ToString(CultureInfo.InvariantCulture)} target_kind={FormatProtocolDebugToken(descriptor?.Kind)} target_turnId={FormatProtocolDebugToken(descriptor?.TurnId)} runtimeKey={FormatProtocolDebugToken(runtimeKey)} seq={FormatOrderingDebugNullableLong(descriptor?.TurnItemStreamSequence)} ord={FormatOrderingDebugNullableInt(descriptor?.TurnItemOrderIndex)} ts={FormatOrderingDebugTimestamp(descriptor?.TurnItemSortTimestampUtc)} before={FormatProtocolDebugToken(beforeNeighbor)} after={FormatProtocolDebugToken(afterNeighbor)}"
+        End Function
+
+        Private Shared Function DescribeOrderingEntryCompact(entry As TranscriptEntryViewModel) As String
+            If entry Is Nothing Then
+                Return "_"
+            End If
+
+            Return $"kind={If(entry.Kind, String.Empty).Trim()}|turn={If(entry.TurnId, String.Empty).Trim()}|key={If(entry.RuntimeKey, String.Empty).Trim()}|seq={FormatOrderingDebugNullableLong(entry.TurnItemStreamSequence)}|ord={FormatOrderingDebugNullableInt(entry.TurnItemOrderIndex)}"
+        End Function
+
+        Private Sub AppendTranscriptOrderingProtocolDebug(stage As String, details As String)
+            If Not EnableTranscriptOrderingProtocolDebug Then
+                Return
+            End If
+
+            Dim safeStage = If(stage, String.Empty).Trim()
+            Dim safeDetails = If(details, String.Empty).Trim()
+            AppendProtocolChunk($"[{Date.Now:HH:mm:ss}] debug: transcript_ordering stage={safeStage} {safeDetails}{Environment.NewLine}")
+        End Sub
+
+        Private Shared Function FormatOrderingDebugNullableInt(value As Integer?) As String
+            If Not value.HasValue Then
+                Return "_"
+            End If
+
+            Return value.Value.ToString(CultureInfo.InvariantCulture)
+        End Function
+
+        Private Shared Function FormatOrderingDebugNullableLong(value As Long?) As String
+            If Not value.HasValue Then
+                Return "_"
+            End If
+
+            Return value.Value.ToString(CultureInfo.InvariantCulture)
+        End Function
+
+        Private Shared Function FormatOrderingDebugTimestamp(value As DateTimeOffset?) As String
+            If Not value.HasValue Then
+                Return "_"
+            End If
+
+            Return value.Value.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)
         End Function
 
         Private Sub AppendFileChangeTurnDiffMergeProtocolDebug(stage As String,
