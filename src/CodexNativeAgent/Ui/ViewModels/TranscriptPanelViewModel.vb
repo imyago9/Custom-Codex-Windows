@@ -1243,7 +1243,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         End Function
 
         Private Function BuildRuntimeItemDescriptor(itemState As TurnItemRuntimeState) As TranscriptEntryDescriptor
-            Dim descriptor = BuildRuntimeItemDescriptorForSnapshot(itemState, FormatLiveTimestamp())
+            Dim descriptor = BuildRuntimeItemDescriptorForSnapshot(itemState, FormatRuntimeItemTimestamp(itemState))
             If descriptor Is Nothing OrElse itemState Is Nothing Then
                 Return descriptor
             End If
@@ -3547,6 +3547,19 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Private Shared Function FormatLiveTimestamp() As String
             Return Date.Now.ToString("HH:mm")
+        End Function
+
+        Private Shared Function FormatRuntimeItemTimestamp(itemState As TurnItemRuntimeState) As String
+            If itemState Is Nothing Then
+                Return FormatLiveTimestamp()
+            End If
+
+            Dim timestamp = If(itemState.StartedAt, itemState.CompletedAt)
+            If Not timestamp.HasValue Then
+                Return FormatLiveTimestamp()
+            End If
+
+            Return timestamp.Value.ToLocalTime().ToString("HH:mm")
         End Function
 
         Private Shared Function SanitizeOptionalLineCount(value As Integer?) As Integer?

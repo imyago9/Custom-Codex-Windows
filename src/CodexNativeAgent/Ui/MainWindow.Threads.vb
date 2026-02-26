@@ -1295,6 +1295,9 @@ Namespace CodexNativeAgent.Ui
             Dim completedOverlayTurnsForFullReplay = RemoveProjectionSnapshotItemRowsForCompletedOverlayTurns(normalizedThreadId,
                                                                                                               projection,
                                                                                                               _sessionNotificationCoordinator.RuntimeStore)
+            RemoveProjectionOverlayReplaySupersededMarkers(normalizedThreadId,
+                                                           projection,
+                                                           _sessionNotificationCoordinator.RuntimeStore)
             AppendTranscriptOrderingProjectionDebug("rebuild_projection_post_completed_strip",
                                                    normalizedThreadId,
                                                    projection.DisplayEntries)
@@ -1800,6 +1803,62 @@ Namespace CodexNativeAgent.Ui
 
             Return completedTurnIds
         End Function
+
+        Private Sub RemoveProjectionOverlayReplaySupersededMarkers(threadId As String,
+                                                                   projection As ThreadTranscriptProjectionSnapshot,
+                                                                   runtimeStore As TurnFlowRuntimeStore)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse projection Is Nothing OrElse runtimeStore Is Nothing OrElse
+               projection.DisplayEntries Is Nothing OrElse projection.DisplayEntries.Count = 0 Then
+                Return
+            End If
+
+            Dim overlayTurnIds = ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore)
+            If overlayTurnIds.Count = 0 Then
+                Return
+            End If
+
+            Dim removedCount = 0
+            For i = projection.DisplayEntries.Count - 1 To 0 Step -1
+                Dim descriptor = projection.DisplayEntries(i)
+                If descriptor Is Nothing Then
+                    Continue For
+                End If
+
+                Dim descriptorTurnId = If(descriptor.TurnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(descriptorTurnId) OrElse Not overlayTurnIds.Contains(descriptorTurnId) Then
+                    Continue For
+                End If
+
+                Dim runtimeKey = If(descriptor.RuntimeKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(runtimeKey) Then
+                    Continue For
+                End If
+
+                Dim isTurnStartMarker = StringComparer.Ordinal.Equals(runtimeKey, $"turn:lifecycle:start:{descriptorTurnId}")
+                Dim isTurnPlanMarker = runtimeKey.StartsWith("turn:meta:plan:", StringComparison.Ordinal) AndAlso
+                                       runtimeKey.EndsWith(":" & descriptorTurnId, StringComparison.Ordinal)
+                Dim isTurnDiffMarker = runtimeKey.StartsWith("turn:meta:diff:", StringComparison.Ordinal) AndAlso
+                                       runtimeKey.EndsWith(":" & descriptorTurnId, StringComparison.Ordinal)
+
+                If Not isTurnStartMarker AndAlso Not isTurnPlanMarker AndAlso Not isTurnDiffMarker Then
+                    Continue For
+                End If
+
+                AppendTranscriptOrderingProtocolDebug(
+                    "projection_strip_overlay_marker",
+                    $"threadId={FormatTranscriptOrderingDebugToken(normalizedThreadId)} turnId={FormatTranscriptOrderingDebugToken(descriptorTurnId)} idx={i.ToString(System.Globalization.CultureInfo.InvariantCulture)} kind={FormatTranscriptOrderingDebugToken(descriptor.Kind)} runtimeKey={FormatTranscriptOrderingDebugToken(runtimeKey)}")
+
+                projection.DisplayEntries.RemoveAt(i)
+                removedCount += 1
+            Next
+
+            If removedCount > 0 Then
+                AppendTranscriptOrderingProtocolDebug(
+                    "projection_strip_overlay_marker_summary",
+                    $"threadId={FormatTranscriptOrderingDebugToken(normalizedThreadId)} overlay_turns={FormatTranscriptOrderingTurnIdSet(overlayTurnIds)} removed={removedCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}")
+            End If
+        End Sub
 
         Private Sub AppendTranscriptOrderingProjectionDebug(stage As String,
                                                             threadId As String,
