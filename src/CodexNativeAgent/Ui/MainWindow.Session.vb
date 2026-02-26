@@ -12,6 +12,9 @@ Imports CodexNativeAgent.Ui.Coordinators
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
+        Private Const TranscriptChunkSessionDebugInstrumentationEnabled As Boolean = True
+        Private ReadOnly _threadTranscriptChunkSessionCoordinator As New ThreadTranscriptChunkSessionCoordinator()
+
         ' Visible selection helpers (Phase 7 scaffold):
         ' `_currentThreadId` / `_currentTurnId` represent the currently selected thread/turn in the UI.
         ' They are not the global source of truth for active runtime state across all threads.
@@ -22,11 +25,32 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub SetVisibleThreadId(value As String)
-            _currentThreadId = If(value, String.Empty).Trim()
+            Dim normalizedValue = If(value, String.Empty).Trim()
+            Dim previousThreadId = GetVisibleThreadId()
+
+            _currentThreadId = normalizedValue
+
+            If StringComparer.Ordinal.Equals(previousThreadId, normalizedValue) Then
+                If Not String.IsNullOrWhiteSpace(normalizedValue) Then
+                    _threadTranscriptChunkSessionCoordinator.ActivateVisibleThread(normalizedValue, "visible_thread_reaffirmed")
+                    TraceTranscriptChunkSession("visible_thread_reaffirmed")
+                End If
+
+                Return
+            End If
+
+            If String.IsNullOrWhiteSpace(normalizedValue) Then
+                Dim removedSession = _threadTranscriptChunkSessionCoordinator.ResetActiveSession("visible_thread_cleared")
+                TraceTranscriptChunkSession("visible_thread_cleared", $"previous={previousThreadId}", removedSession)
+                Return
+            End If
+
+            _threadTranscriptChunkSessionCoordinator.ActivateVisibleThread(normalizedValue, "visible_thread_changed")
+            TraceTranscriptChunkSession("visible_thread_changed", $"previous={previousThreadId}")
         End Sub
 
         Private Sub ClearVisibleThreadId()
-            _currentThreadId = String.Empty
+            SetVisibleThreadId(String.Empty)
         End Sub
 
         Private Function GetVisibleTurnId() As String
@@ -44,6 +68,54 @@ Namespace CodexNativeAgent.Ui
         Private Sub ClearVisibleSelection()
             ClearVisibleThreadId()
             ClearVisibleTurnId()
+        End Sub
+
+        Private Sub TraceTranscriptChunkSession(eventName As String,
+                                                Optional details As String = Nothing,
+                                                Optional sessionOverride As ThreadTranscriptChunkSession = Nothing)
+            If Not TranscriptChunkSessionDebugInstrumentationEnabled Then
+                Return
+            End If
+
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
+                Return
+            End If
+
+            Dim session = If(sessionOverride, _threadTranscriptChunkSessionCoordinator.ActiveSession)
+            Dim sb As New StringBuilder()
+            sb.Append("transcript_chunk_session event=").Append(If(eventName, String.Empty))
+
+            If Not String.IsNullOrWhiteSpace(details) Then
+                sb.Append(" details=""").Append(details.Replace("""", "'")).Append(""""c)
+            End If
+
+            sb.Append(" visibleThread=").Append(GetVisibleThreadId())
+
+            If session Is Nothing Then
+                sb.Append(" active=false")
+                AppendProtocol("debug", sb.ToString())
+                Return
+            End If
+
+            sb.Append(" active=true")
+            sb.Append(" thread=").Append(If(session.ThreadId, String.Empty))
+            sb.Append(" gen=").Append(session.GenerationId)
+            sb.Append(" loadingOlder=").Append(session.IsLoadingOlderChunk)
+            sb.Append(" hasMoreOlder=").Append(session.HasMoreOlderChunks)
+            sb.Append(" pendingPrepend=").Append(session.PendingPrependRequest)
+            sb.Append(" loadsReq=").Append(session.OlderChunkLoadsRequested)
+            sb.Append(" loadsDone=").Append(session.OlderChunkLoadsCompleted)
+            sb.Append(" loadsCanceled=").Append(session.OlderChunkLoadsCanceled)
+
+            If session.LoadedRangeStart.HasValue Then
+                sb.Append(" rangeStart=").Append(session.LoadedRangeStart.Value)
+            End If
+
+            If session.LoadedRangeEnd.HasValue Then
+                sb.Append(" rangeEnd=").Append(session.LoadedRangeEnd.Value)
+            End If
+
+            AppendProtocol("debug", sb.ToString())
         End Sub
 
         Private Function GetActiveTurnIdForThread(threadId As String,
@@ -500,18 +572,29 @@ Namespace CodexNativeAgent.Ui
 
         Private Function BeginThreadSelectionLoadUiState(threadId As String) As Integer
             Dim loadVersion = _viewModel.ThreadsPanel.BeginThreadSelectionLoad(threadId)
+            Dim registration = _threadTranscriptChunkSessionCoordinator.RegisterThreadSelectionLoad(loadVersion,
+                                                                                                    threadId,
+                                                                                                    "thread_selection_load_begin")
+            TraceTranscriptChunkSession("selection_load_begin",
+                                        $"loadVersion={registration.UiLoadVersion}; target={registration.ThreadId}; selectionGen={registration.SelectionGenerationId}")
             SyncThreadContentLoadingFromThreadsPanel()
             Return loadVersion
         End Function
 
         Private Function IsCurrentThreadSelectionLoadUiState(loadVersion As Integer,
                                                              threadId As String) As Boolean
-            Return _viewModel.ThreadsPanel.IsCurrentThreadSelectionLoad(loadVersion, threadId)
+            If Not _viewModel.ThreadsPanel.IsCurrentThreadSelectionLoad(loadVersion, threadId) Then
+                Return False
+            End If
+
+            Return _threadTranscriptChunkSessionCoordinator.IsCurrentThreadSelectionLoad(loadVersion, threadId)
         End Function
 
         Private Function TryCompleteThreadSelectionLoadUiState(loadVersion As Integer) As Boolean
+            _threadTranscriptChunkSessionCoordinator.CompleteThreadSelectionLoad(loadVersion)
             Dim completed = _viewModel.ThreadsPanel.TryCompleteThreadSelectionLoad(loadVersion)
             If completed Then
+                TraceTranscriptChunkSession("selection_load_complete", $"loadVersion={loadVersion}")
                 SyncThreadContentLoadingFromThreadsPanel()
             End If
 
@@ -520,6 +603,8 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub ResetThreadSelectionLoadUiState(Optional hideTranscriptLoader As Boolean = False)
             _viewModel.ThreadsPanel.CancelThreadSelectionLoadState()
+            _threadTranscriptChunkSessionCoordinator.CancelPendingThreadSelectionLoads("thread_selection_load_ui_reset")
+            TraceTranscriptChunkSession("selection_load_reset")
             SyncThreadContentLoadingFromThreadsPanel()
             If hideTranscriptLoader Then
                 SetTranscriptLoadingState(False)
