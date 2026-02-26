@@ -709,6 +709,46 @@ Namespace CodexNativeAgent.Ui
             Return StringComparer.Ordinal.Equals(_activeTranscriptSurfaceThreadId, PendingNewThreadTranscriptTabId)
         End Function
 
+        Private Sub TryRemoveEmptyPendingNewThreadDraftTabOnExistingSelection(selectedThreadId As String)
+            Dim normalizedSelectedThreadId = If(selectedThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedSelectedThreadId) Then
+                Return
+            End If
+
+            If Not _pendingNewThreadFirstPromptSelection Then
+                Return
+            End If
+
+            If Not String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
+                Return
+            End If
+
+            If Not HasRetainedTranscriptTabSurface(PendingNewThreadTranscriptTabId) Then
+                Return
+            End If
+
+            Dim transcriptItemsCount = 0
+            If _viewModel IsNot Nothing AndAlso _viewModel.TranscriptPanel IsNot Nothing Then
+                transcriptItemsCount = _viewModel.TranscriptPanel.Items.Count
+            End If
+
+            If transcriptItemsCount > 0 Then
+                Return
+            End If
+
+            Dim composerHasDraftText = _viewModel IsNot Nothing AndAlso
+                                       _viewModel.TurnComposer IsNot Nothing AndAlso
+                                       Not String.IsNullOrWhiteSpace(_viewModel.TurnComposer.InputText)
+            If composerHasDraftText Then
+                Return
+            End If
+
+            RemoveRetainedTranscriptTabSurface(PendingNewThreadTranscriptTabId)
+            SetPendingNewThreadFirstPromptSelectionActive(False, clearThreadSelection:=False)
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=pending_new_thread_tab_removed_on_select thread={normalizedSelectedThreadId}")
+        End Sub
+
         Private Sub PromotePendingNewThreadTranscriptTabHandleIfActive(targetThreadId As String)
             Dim normalizedTargetThreadId = If(targetThreadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedTargetThreadId) Then

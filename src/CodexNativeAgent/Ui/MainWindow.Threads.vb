@@ -217,6 +217,8 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Function BeginThreadSelectionLoadRequest(selectedThreadId As String) As ThreadSelectionLoadRequest
+            TryRemoveEmptyPendingNewThreadDraftTabOnExistingSelection(selectedThreadId)
+
             Dim request As New ThreadSelectionLoadRequest() With {
                 .ThreadId = If(selectedThreadId, String.Empty).Trim()
             }
