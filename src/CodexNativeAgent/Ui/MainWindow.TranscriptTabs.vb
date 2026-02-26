@@ -897,10 +897,6 @@ Namespace CodexNativeAgent.Ui
                 transcriptItemsCount = _viewModel.TranscriptPanel.Items.Count
             End If
 
-            If transcriptItemsCount > 0 Then
-                Return
-            End If
-
             Dim composerHasDraftText = _viewModel IsNot Nothing AndAlso
                                        _viewModel.TurnComposer IsNot Nothing AndAlso
                                        Not String.IsNullOrWhiteSpace(_viewModel.TurnComposer.InputText)
@@ -911,9 +907,9 @@ Namespace CodexNativeAgent.Ui
             RemoveRetainedTranscriptTabSurface(PendingNewThreadTranscriptTabId)
             SetPendingNewThreadFirstPromptSelectionActive(False, clearThreadSelection:=False)
             TraceTranscriptTabStateSnapshot("pending_removed_on_existing_selection",
-                                           $"selected={normalizedSelectedThreadId}")
+                                           $"selected={normalizedSelectedThreadId}; transcriptItems={transcriptItemsCount}")
             AppendProtocol("debug",
-                           $"transcript_tab_perf event=pending_new_thread_tab_removed_on_select thread={normalizedSelectedThreadId}")
+                           $"transcript_tab_perf event=pending_new_thread_tab_removed_on_select thread={normalizedSelectedThreadId} transcriptItems={transcriptItemsCount}")
         End Sub
 
         Private Sub PromotePendingNewThreadTranscriptTabHandleIfActive(targetThreadId As String)
