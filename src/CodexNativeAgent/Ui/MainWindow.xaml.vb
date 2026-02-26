@@ -51,7 +51,14 @@ Namespace CodexNativeAgent.Ui
             ForceJump = 2
         End Enum
 
+        Private Enum TranscriptVirtualizationRolloutMode
+            DisabledStableBaseline = 0
+            EnabledTestMode = 1
+        End Enum
+
         Private Const TranscriptScrollDebugInstrumentationEnabled As Boolean = True
+        Private Const TranscriptVirtualizationRollout As TranscriptVirtualizationRolloutMode =
+            TranscriptVirtualizationRolloutMode.DisabledStableBaseline
 
         Private NotInheritable Class ModelListEntry
             Public Property Id As String = String.Empty
@@ -815,6 +822,7 @@ Namespace CodexNativeAgent.Ui
                 WorkspacePaneHost.LstTranscript.AddHandler(Thumb.DragCompletedEvent,
                                                           New DragCompletedEventHandler(AddressOf OnTranscriptScrollThumbDragCompleted),
                                                           True)
+                ApplyTranscriptVirtualizationRolloutConfiguration()
             End If
             AddHandler WorkspacePaneHost.BtnDismissWorkspaceHintOverlay.Click,
                 Sub(sender, e)
@@ -3893,6 +3901,24 @@ Namespace CodexNativeAgent.Ui
             ' Require a tighter equality check before treating this as an intentional user reattach.
             Return Math.Abs(scroller.VerticalOffset - scroller.ScrollableHeight) <= 0.5R
         End Function
+
+        Private Sub ApplyTranscriptVirtualizationRolloutConfiguration()
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            Dim transcriptList = WorkspacePaneHost.LstTranscript
+            Select Case TranscriptVirtualizationRollout
+                Case TranscriptVirtualizationRolloutMode.EnabledTestMode
+                    ScrollViewer.SetCanContentScroll(transcriptList, True)
+                    VirtualizingPanel.SetIsVirtualizing(transcriptList, True)
+                    VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Recycling)
+                Case Else
+                    ScrollViewer.SetCanContentScroll(transcriptList, False)
+                    VirtualizingPanel.SetIsVirtualizing(transcriptList, False)
+                    VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Standard)
+            End Select
+        End Sub
 
         Private Sub ScrollTranscriptToBottom(Optional force As Boolean = False,
                                             Optional reason As TranscriptScrollRequestReason = TranscriptScrollRequestReason.LegacyCallsite)
