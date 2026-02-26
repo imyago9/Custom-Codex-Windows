@@ -43,7 +43,7 @@ Namespace CodexNativeAgent.Ui
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
             _currentThreadId = String.Empty
-            _currentTurnId = String.Empty
+            ClearVisibleTurnId()
             SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
             UpdateThreadTurnLabels()
             RefreshControlStates()
@@ -1331,7 +1331,7 @@ Namespace CodexNativeAgent.Ui
             _threadLiveSessionRegistry.UpsertSnapshot(normalizedThreadId,
                                                       snapshot.RawText,
                                                       snapshot.DisplayEntries,
-                                                      _currentTurnId)
+                                                      GetVisibleTurnId())
         End Sub
 
         Private Sub RebuildVisibleTranscriptForThread(threadId As String)
@@ -1358,7 +1358,7 @@ Namespace CodexNativeAgent.Ui
                                             _sessionNotificationCoordinator.RuntimeStore,
                                             completedOverlayTurnsForFullReplay)
 
-            _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
+            _threadLiveSessionRegistry.MarkBound(normalizedThreadId, GetVisibleTurnId())
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
             RefreshThreadRuntimeIndicatorsIfNeeded()
             ScrollTranscriptToBottom()
@@ -1933,7 +1933,7 @@ Namespace CodexNativeAgent.Ui
                 _currentThreadCwd = String.Empty
             End If
 
-            _currentTurnId = String.Empty
+            ClearVisibleTurnId()
             SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=False)
             UpdateThreadTurnLabels()
             RefreshControlStates()

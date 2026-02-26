@@ -313,7 +313,7 @@ Namespace CodexNativeAgent.Ui
                 End Sub,
                 Sub(returnedTurnId)
                     If Not String.IsNullOrWhiteSpace(returnedTurnId) Then
-                        _currentTurnId = returnedTurnId
+                        SetVisibleTurnId(returnedTurnId)
                     End If
 
                     SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
@@ -352,7 +352,7 @@ Namespace CodexNativeAgent.Ui
                 End Sub,
                 Sub(returnedTurnId)
                     If Not String.IsNullOrWhiteSpace(returnedTurnId) Then
-                        _currentTurnId = returnedTurnId
+                        SetVisibleTurnId(returnedTurnId)
                     End If
 
                     SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)

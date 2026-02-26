@@ -20,6 +20,14 @@ Namespace CodexNativeAgent.Ui
             Return If(_currentTurnId, String.Empty).Trim()
         End Function
 
+        Private Sub SetVisibleTurnId(value As String)
+            _currentTurnId = If(value, String.Empty).Trim()
+        End Sub
+
+        Private Sub ClearVisibleTurnId()
+            _currentTurnId = String.Empty
+        End Sub
+
         Private Function GetActiveTurnIdForThread(threadId As String,
                                                   Optional fallbackTurnId As String = Nothing) As String
             If _sessionNotificationCoordinator Is Nothing Then
@@ -79,7 +87,7 @@ Namespace CodexNativeAgent.Ui
             Dim normalizedThreadId = GetVisibleThreadId()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
                 If Not keepExistingWhenRuntimeIsIdle Then
-                    _currentTurnId = String.Empty
+                    ClearVisibleTurnId()
                 End If
                 Return
             End If
@@ -87,7 +95,7 @@ Namespace CodexNativeAgent.Ui
             Dim runtimeStore = _sessionNotificationCoordinator.RuntimeStore
             Dim activeTurnId = GetActiveTurnIdForThread(normalizedThreadId, GetVisibleTurnId())
             If Not String.IsNullOrWhiteSpace(activeTurnId) Then
-                _currentTurnId = activeTurnId
+                SetVisibleTurnId(activeTurnId)
                 Return
             End If
 
@@ -98,7 +106,7 @@ Namespace CodexNativeAgent.Ui
                 End If
             End If
 
-            _currentTurnId = String.Empty
+            ClearVisibleTurnId()
         End Sub
 
         Private Function HasActiveRuntimeTurnForCurrentThread() As Boolean
@@ -357,7 +365,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub ResetWorkspaceTransientStateCore(clearModelPicker As Boolean)
             _currentThreadId = String.Empty
-            _currentTurnId = String.Empty
+            ClearVisibleTurnId()
             _notificationRuntimeThreadId = String.Empty
             _notificationRuntimeTurnId = String.Empty
             _currentThreadCwd = String.Empty
