@@ -555,19 +555,32 @@
                                                             Margin="10,0,0,0"
                                                             VerticalAlignment="Center"
                                                             Visibility="{Binding StatusIndicatorsVisibility}">
-                                                    <Border Visibility="{Binding ActiveBadgeVisibility}"
-                                                            Background="{DynamicResource AccentSubtleBrush}"
-                                                            BorderBrush="{DynamicResource AccentBrush}"
-                                                            BorderThickness="1"
-                                                            CornerRadius="8"
-                                                            Padding="6,1"
-                                                            Margin="0,0,6,0">
-                                                        <TextBlock Text="Active"
-                                                                   Foreground="{DynamicResource AccentBrush}"
-                                                                   FontSize="{DynamicResource CaptionTextSize}"
-                                                                   FontWeight="SemiBold"
-                                                                   TextWrapping="NoWrap" />
-                                                    </Border>
+                                                    <Grid Width="12"
+                                                          Height="12"
+                                                          Margin="0,0,6,0"
+                                                          VerticalAlignment="Center"
+                                                          Visibility="{Binding ActiveBadgeVisibility}"
+                                                          ToolTip="Thread is actively running">
+                                                        <Ellipse x:Name="ActivePulseHalo"
+                                                                 Fill="{DynamicResource AccentGlowBrush}"
+                                                                 Opacity="0"
+                                                                 IsHitTestVisible="False"
+                                                                 RenderTransformOrigin="0.5,0.5">
+                                                            <Ellipse.RenderTransform>
+                                                                <ScaleTransform x:Name="ActivePulseHaloScale" ScaleX="0.75" ScaleY="0.75" />
+                                                            </Ellipse.RenderTransform>
+                                                        </Ellipse>
+
+                                                        <Ellipse x:Name="ActivePulseCore"
+                                                                 Width="8"
+                                                                 Height="8"
+                                                                 HorizontalAlignment="Center"
+                                                                 VerticalAlignment="Center"
+                                                                 Fill="{DynamicResource AccentBrush}"
+                                                                 Stroke="{DynamicResource SurfaceBrush}"
+                                                                 StrokeThickness="1"
+                                                                 IsHitTestVisible="False" />
+                                                    </Grid>
 
                                                     <Border Visibility="{Binding DirtyBadgeVisibility}"
                                                             Width="8"
@@ -591,6 +604,41 @@
                                                            Opacity="0.9"
                                                            TextWrapping="NoWrap" />
                                             </Grid>
+
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding ActiveBadgeVisibility}" Value="Visible">
+                                                    <DataTrigger.EnterActions>
+                                                        <BeginStoryboard x:Name="BeginThreadActivePulse">
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation Storyboard.TargetName="ActivePulseHalo"
+                                                                                 Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.55"
+                                                                                 To="0.0"
+                                                                                 Duration="0:0:1.2" />
+                                                                <DoubleAnimation Storyboard.TargetName="ActivePulseHaloScale"
+                                                                                 Storyboard.TargetProperty="ScaleX"
+                                                                                 From="0.75"
+                                                                                 To="1.75"
+                                                                                 Duration="0:0:1.2" />
+                                                                <DoubleAnimation Storyboard.TargetName="ActivePulseHaloScale"
+                                                                                 Storyboard.TargetProperty="ScaleY"
+                                                                                 From="0.75"
+                                                                                 To="1.75"
+                                                                                 Duration="0:0:1.2" />
+                                                                <DoubleAnimation Storyboard.TargetName="ActivePulseCore"
+                                                                                 Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.82"
+                                                                                 To="1"
+                                                                                 Duration="0:0:0.55"
+                                                                                 AutoReverse="True" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </DataTrigger.EnterActions>
+                                                    <DataTrigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="BeginThreadActivePulse" />
+                                                    </DataTrigger.ExitActions>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
