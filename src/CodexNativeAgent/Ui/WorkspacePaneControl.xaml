@@ -1008,7 +1008,7 @@
                                   ResizeBehavior="PreviousAndNext"
                                   ShowsPreview="False"
                                   Background="Transparent"
-                                  Tag="{Binding TurnComposer.CanInterruptTurn}"
+                                  Tag="{Binding TurnComposer.InterruptTurnVisibility}"
                                   Cursor="SizeNS">
                         <GridSplitter.Template>
                             <ControlTemplate TargetType="GridSplitter">
@@ -1057,7 +1057,7 @@
                                         <Setter TargetName="SplitterLine" Property="Background" Value="{DynamicResource AccentBrush}" />
                                         <Setter TargetName="SplitterLine" Property="Opacity" Value="1" />
                                     </Trigger>
-                                    <Trigger Property="Tag" Value="True">
+                                    <Trigger Property="Tag" Value="{x:Static Visibility.Visible}">
                                         <Setter TargetName="SplitterLine" Property="Opacity" Value="0.2" />
                                         <Trigger.EnterActions>
                                             <BeginStoryboard x:Name="BeginActiveTranscriptComposerPulse"
