@@ -432,6 +432,8 @@ Namespace CodexNativeAgent.Ui
         Private _suppressTranscriptScrollTracking As Boolean
         Private _transcriptScrollToBottomPending As Boolean
         Private _transcriptScrollViewer As ScrollViewer
+        Private _transcriptScrollThumbDragActive As Boolean
+        Private _transcriptUserScrollInteractionArmed As Boolean
         Private _pendingNewThreadFirstPromptSelection As Boolean
         Private _threadsPanelHintBubbleHintKey As String = String.Empty
         Private _threadsPanelHintBubbleDismissedForCurrentHint As Boolean
@@ -768,10 +770,15 @@ Namespace CodexNativeAgent.Ui
                                                           New ScrollChangedEventHandler(AddressOf OnTranscriptScrollChanged))
                 AddHandler WorkspacePaneHost.LstTranscript.PreviewMouseWheel,
                     New MouseWheelEventHandler(AddressOf OnTranscriptPreviewMouseWheel)
+                AddHandler WorkspacePaneHost.LstTranscript.PreviewMouseLeftButtonDown,
+                    New MouseButtonEventHandler(AddressOf OnTranscriptPreviewMouseLeftButtonDown)
                 AddHandler WorkspacePaneHost.LstTranscript.PreviewKeyDown,
                     New KeyEventHandler(AddressOf OnTranscriptPreviewKeyDown)
                 WorkspacePaneHost.LstTranscript.AddHandler(Thumb.DragStartedEvent,
                                                           New DragStartedEventHandler(AddressOf OnTranscriptScrollThumbDragStarted),
+                                                          True)
+                WorkspacePaneHost.LstTranscript.AddHandler(Thumb.DragCompletedEvent,
+                                                          New DragCompletedEventHandler(AddressOf OnTranscriptScrollThumbDragCompleted),
                                                           True)
             End If
             AddHandler WorkspacePaneHost.BtnDismissWorkspaceHintOverlay.Click,
@@ -3405,19 +3412,13 @@ Namespace CodexNativeAgent.Ui
 
             _transcriptScrollViewer = scroller
 
-            If Not IsTurnInProgressForTranscriptAutoScroll() Then
-                _transcriptAutoScrollEnabled = True
-                Return
-            End If
-
             Dim atBottom = IsScrollViewerAtBottomExtreme(scroller)
-            If atBottom Then
-                _transcriptAutoScrollEnabled = True
-                Return
-            End If
 
             Dim verticalOffsetChanged = Math.Abs(e.VerticalChange) > 0.01R
             If Not verticalOffsetChanged Then
+                If atBottom AndAlso _transcriptScrollThumbDragActive Then
+                    _transcriptAutoScrollEnabled = True
+                End If
                 Return
             End If
 
@@ -3426,8 +3427,14 @@ Namespace CodexNativeAgent.Ui
             ' extent/viewport growth in the same event).
             Dim extentOrViewportChanged = Math.Abs(e.ExtentHeightChange) > 0.01R OrElse
                                          Math.Abs(e.ViewportHeightChange) > 0.01R
-            If Not extentOrViewportChanged Then
-                _transcriptAutoScrollEnabled = False
+            Dim isUserDrivenOffsetChange = _transcriptScrollThumbDragActive OrElse
+                                           _transcriptUserScrollInteractionArmed OrElse
+                                           Not extentOrViewportChanged
+            If isUserDrivenOffsetChange Then
+                _transcriptAutoScrollEnabled = atBottom
+                If Not _transcriptScrollThumbDragActive Then
+                    _transcriptUserScrollInteractionArmed = False
+                End If
             End If
         End Sub
 
@@ -3436,13 +3443,19 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If Not IsTurnInProgressForTranscriptAutoScroll() Then
-                Return
-            End If
+            _transcriptUserScrollInteractionArmed = True
 
             If e.Delta > 0 Then
                 _transcriptAutoScrollEnabled = False
             End If
+        End Sub
+
+        Private Sub OnTranscriptPreviewMouseLeftButtonDown(sender As Object, e As MouseButtonEventArgs)
+            If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
+                Return
+            End If
+
+            _transcriptUserScrollInteractionArmed = True
         End Sub
 
         Private Sub OnTranscriptPreviewKeyDown(sender As Object, e As KeyEventArgs)
@@ -3450,13 +3463,12 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If Not IsTurnInProgressForTranscriptAutoScroll() Then
-                Return
-            End If
-
             Select Case e.Key
-                Case Key.Up, Key.PageUp, Key.Home
-                    _transcriptAutoScrollEnabled = False
+                Case Key.Up, Key.PageUp, Key.Home, Key.Down, Key.PageDown, Key.End
+                    _transcriptUserScrollInteractionArmed = True
+                    If e.Key = Key.Up OrElse e.Key = Key.PageUp OrElse e.Key = Key.Home Then
+                        _transcriptAutoScrollEnabled = False
+                    End If
             End Select
         End Sub
 
@@ -3465,16 +3477,26 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If Not IsTurnInProgressForTranscriptAutoScroll() Then
-                Return
-            End If
+            _transcriptScrollThumbDragActive = True
+            _transcriptUserScrollInteractionArmed = True
 
             _transcriptAutoScrollEnabled = False
         End Sub
 
-        Private Function IsTurnInProgressForTranscriptAutoScroll() As Boolean
-            Return HasActiveRuntimeTurnForCurrentThread()
-        End Function
+        Private Sub OnTranscriptScrollThumbDragCompleted(sender As Object, e As DragCompletedEventArgs)
+            If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
+                Return
+            End If
+
+            _transcriptScrollThumbDragActive = False
+
+            Dim scroller = ResolveTranscriptScrollViewer()
+            If scroller IsNot Nothing Then
+                _transcriptAutoScrollEnabled = IsScrollViewerAtBottomExtreme(scroller)
+            End If
+
+            _transcriptUserScrollInteractionArmed = False
+        End Sub
 
         Private Function IsWorkspaceHintOverlayContext() As Boolean
             If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.WorkspaceHintOverlay Is Nothing Then
@@ -3699,28 +3721,30 @@ Namespace CodexNativeAgent.Ui
             Return scroller.VerticalOffset >= scroller.ScrollableHeight
         End Function
 
-        Private Sub ScrollTranscriptToBottom()
+        Private Sub ScrollTranscriptToBottom(Optional force As Boolean = False)
             If WorkspacePaneHost Is Nothing Then
                 Return
             End If
 
             UpdateWorkspaceEmptyStateVisibility()
 
-            Dim turnInProgress = IsTurnInProgressForTranscriptAutoScroll()
-            If Not turnInProgress Then
-                _transcriptAutoScrollEnabled = True
-            End If
-
             Dim transcriptList = WorkspacePaneHost.LstTranscript
             If transcriptList IsNot Nothing Then
                 Dim scroller = ResolveTranscriptScrollViewer()
-                If turnInProgress AndAlso Not _transcriptAutoScrollEnabled Then
+                If force Then
+                    _transcriptAutoScrollEnabled = True
+                ElseIf Not _transcriptAutoScrollEnabled Then
                     If scroller IsNot Nothing AndAlso IsScrollViewerAtBottomExtreme(scroller) Then
                         _transcriptAutoScrollEnabled = True
                     Else
                         ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
                         Return
                     End If
+                End If
+
+                If _transcriptScrollThumbDragActive AndAlso Not force Then
+                    ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+                    Return
                 End If
 
                 If scroller IsNot Nothing Then
@@ -3763,7 +3787,7 @@ Namespace CodexNativeAgent.Ui
                             Return
                         End If
 
-                        If IsTurnInProgressForTranscriptAutoScroll() AndAlso Not _transcriptAutoScrollEnabled Then
+                        If _transcriptScrollThumbDragActive OrElse Not _transcriptAutoScrollEnabled Then
                             Return
                         End If
 
