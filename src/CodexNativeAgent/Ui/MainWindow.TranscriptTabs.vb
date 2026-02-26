@@ -37,6 +37,7 @@ Namespace CodexNativeAgent.Ui
         Private _activeTranscriptSurfaceListBox As ListBox
         Private _activeTranscriptSurfaceThreadId As String = String.Empty
         Private _transcriptTabSurfaceRetireDrainScheduled As Boolean
+        Private _deferredBlankCloseFinalizeVersion As Integer
 
         Private Function CurrentTranscriptListControl() As ListBox
             If _activeTranscriptSurfaceListBox IsNot Nothing Then
@@ -382,7 +383,7 @@ Namespace CodexNativeAgent.Ui
                                             StringComparer.Ordinal.Equals(handle.ThreadId, _activeTranscriptSurfaceThreadId))
         End Sub
 
-        Private Async Sub OnTranscriptTabCloseButtonClick(sender As Object, e As RoutedEventArgs)
+        Private Sub OnTranscriptTabCloseButtonClick(sender As Object, e As RoutedEventArgs)
             e.Handled = True
             Dim closePerf = Stopwatch.StartNew()
 
@@ -405,26 +406,115 @@ Namespace CodexNativeAgent.Ui
                 fallbackEntry = FindFirstVisibleTranscriptTabEntryExcluding(normalizedThreadId)
             End If
 
+            Dim removePerf = Stopwatch.StartNew()
             RemoveRetainedTranscriptTabSurface(normalizedThreadId)
             _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
+            Dim removeMs = removePerf.ElapsedMilliseconds
 
             If Not isActiveTab Then
                 AppendProtocol("debug",
-                               $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=inactive_tab elapsedMs={closePerf.ElapsedMilliseconds} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
+                               $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=inactive_tab elapsedMs={closePerf.ElapsedMilliseconds} removeMs={removeMs} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
                 Return
             End If
 
             If fallbackEntry IsNot Nothing Then
                 SelectThreadEntry(fallbackEntry, suppressAutoLoad:=False)
                 AppendProtocol("debug",
-                               $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=switch_to_fallback elapsedMs={closePerf.ElapsedMilliseconds} fallback={fallbackEntry.Id} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
+                               $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=switch_to_fallback elapsedMs={closePerf.ElapsedMilliseconds} removeMs={removeMs} fallback={fallbackEntry.Id} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
                 Return
             End If
 
-            Await StartThreadAsync().ConfigureAwait(True)
+            Dim cancelLoadPerf = Stopwatch.StartNew()
+            CancelActiveThreadSelectionLoad()
+            Dim cancelLoadMs = cancelLoadPerf.ElapsedMilliseconds
+
+            Dim resetLoadUiPerf = Stopwatch.StartNew()
+            ResetThreadSelectionLoadUiState(hideTranscriptLoader:=True)
+            Dim resetLoadUiMs = resetLoadUiPerf.ElapsedMilliseconds
+
+            Dim blankSurfacePerf = Stopwatch.StartNew()
+            ActivateFreshTranscriptDocument("tab_close_last_tab", activateBlankSurface:=True)
+            Dim blankSurfaceMs = blankSurfacePerf.ElapsedMilliseconds
+
+            Dim deferredFinalizePerf = Stopwatch.StartNew()
+            Dim deferredFinalizeVersion = QueueDeferredBlankCloseFinalize(normalizedThreadId)
+            Dim deferQueueMs = deferredFinalizePerf.ElapsedMilliseconds
+
             _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
             AppendProtocol("debug",
-                           $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=start_blank elapsedMs={closePerf.ElapsedMilliseconds} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
+                           $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=start_blank_deferred elapsedMs={closePerf.ElapsedMilliseconds} removeMs={removeMs} cancelLoadMs={cancelLoadMs} resetLoadUiMs={resetLoadUiMs} blankSurfaceMs={blankSurfaceMs} queueFinalizeMs={deferQueueMs} finalizeVersion={deferredFinalizeVersion} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
+        End Sub
+
+        Private Function QueueDeferredBlankCloseFinalize(closedThreadId As String) As Integer
+            _deferredBlankCloseFinalizeVersion += 1
+            Dim version = _deferredBlankCloseFinalizeVersion
+            Dim normalizedClosedThreadId = If(closedThreadId, String.Empty).Trim()
+            Dim queuedUtc = DateTimeOffset.UtcNow
+
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=close_start_blank_finalize_queued thread={normalizedClosedThreadId} version={version}")
+
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.ApplicationIdle,
+                New Action(
+                    Sub()
+                        RunDeferredBlankCloseFinalize(version, normalizedClosedThreadId, queuedUtc)
+                    End Sub))
+
+            Return version
+        End Function
+
+        Private Sub RunDeferredBlankCloseFinalize(version As Integer,
+                                                  closedThreadId As String,
+                                                  queuedUtc As DateTimeOffset)
+            If version <> _deferredBlankCloseFinalizeVersion Then
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=close_start_blank_finalize_skip reason=stale version={version} currentVersion={_deferredBlankCloseFinalizeVersion}")
+                Return
+            End If
+
+            If Not String.IsNullOrWhiteSpace(_activeTranscriptSurfaceThreadId) Then
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=close_start_blank_finalize_skip reason=active_surface_changed version={version} activeSurfaceThread={_activeTranscriptSurfaceThreadId}")
+                Return
+            End If
+
+            Dim visibleThreadIdAtFinalize = GetVisibleThreadId()
+            If Not String.IsNullOrWhiteSpace(visibleThreadIdAtFinalize) AndAlso
+               Not StringComparer.Ordinal.Equals(visibleThreadIdAtFinalize, closedThreadId) Then
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=close_start_blank_finalize_skip reason=visible_thread_changed version={version} visibleThread={visibleThreadIdAtFinalize} closedThread={closedThreadId}")
+                Return
+            End If
+
+            Dim finalizePerf = Stopwatch.StartNew()
+
+            Dim clearPendingUserEchoPerf = Stopwatch.StartNew()
+            ClearPendingUserEchoTracking()
+            Dim clearPendingUserEchoMs = clearPendingUserEchoPerf.ElapsedMilliseconds
+
+            Dim clearSelectionPerf = Stopwatch.StartNew()
+            ClearVisibleSelection()
+            Dim clearSelectionMs = clearSelectionPerf.ElapsedMilliseconds
+
+            Dim pendingFirstPromptPerf = Stopwatch.StartNew()
+            SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
+            Dim pendingFirstPromptMs = pendingFirstPromptPerf.ElapsedMilliseconds
+
+            Dim updateLabelsPerf = Stopwatch.StartNew()
+            UpdateThreadTurnLabels()
+            Dim updateLabelsMs = updateLabelsPerf.ElapsedMilliseconds
+
+            Dim refreshControlsPerf = Stopwatch.StartNew()
+            RefreshControlStates()
+            Dim refreshControlsMs = refreshControlsPerf.ElapsedMilliseconds
+
+            Dim statusPerf = Stopwatch.StartNew()
+            ShowStatus("New thread ready. Send your first instruction.")
+            Dim statusMs = statusPerf.ElapsedMilliseconds
+
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=close_start_blank_finalize_complete thread={closedThreadId} version={version} queuedMs={CLng((DateTimeOffset.UtcNow - queuedUtc).TotalMilliseconds)} totalMs={finalizePerf.ElapsedMilliseconds} clearPendingUserEchoMs={clearPendingUserEchoMs} clearSelectionMs={clearSelectionMs} pendingFirstPromptMs={pendingFirstPromptMs} updateLabelsMs={updateLabelsMs} refreshControlsMs={refreshControlsMs} statusMs={statusMs}")
         End Sub
 
         Private Function FindFirstVisibleTranscriptTabEntryExcluding(threadId As String) As ThreadListEntry
@@ -613,12 +703,14 @@ Namespace CodexNativeAgent.Ui
                     Continue Do
                 End If
 
+                Dim disposePerf = Stopwatch.StartNew()
                 DisposeRetiredTranscriptSurfaceWorkItem(workItem)
+                Dim disposeMs = disposePerf.ElapsedMilliseconds
 
                 processed += 1
 
                 AppendProtocol("debug",
-                               $"transcript_tab_perf event=surface_retire_disposed thread={If(workItem.ThreadId, String.Empty)} queuedMs={CLng((DateTimeOffset.UtcNow - workItem.QueuedUtc).TotalMilliseconds)} remaining={_transcriptTabSurfaceRetireQueue.Count}")
+                               $"transcript_tab_perf event=surface_retire_disposed thread={If(workItem.ThreadId, String.Empty)} queuedMs={CLng((DateTimeOffset.UtcNow - workItem.QueuedUtc).TotalMilliseconds)} disposeMs={disposeMs} remaining={_transcriptTabSurfaceRetireQueue.Count}")
             Loop
 
             If _transcriptTabSurfaceRetireQueue.Count > 0 Then
