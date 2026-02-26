@@ -13,6 +13,8 @@ Namespace CodexNativeAgent.Ui
             Public Property ThreadId As String = String.Empty
             Public Property SurfaceListBox As ListBox
             Public Property TabButton As Button
+            Public Property TabChipBorder As Border
+            Public Property TabCloseButton As Button
             Public Property IsPrimarySurface As Boolean
         End Class
 
@@ -83,26 +85,55 @@ Namespace CodexNativeAgent.Ui
             AttachTranscriptInteractionHandlers(WorkspacePaneHost.LstTranscript)
 
             If _transcriptTabStripPanel Is Nothing Then
-                Dim titleStack = TryCast(WorkspacePaneHost.LblCurrentThread.Parent, StackPanel)
-                If titleStack IsNot Nothing Then
-                    _transcriptTabStripPanel = New StackPanel() With {
-                        .Orientation = Orientation.Horizontal
-                    }
+                _transcriptTabStripPanel = New StackPanel() With {
+                    .Orientation = Orientation.Horizontal
+                }
 
-                    _transcriptTabStripScrollViewer = New ScrollViewer() With {
-                        .HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
-                        .VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                        .Content = _transcriptTabStripPanel,
-                        .CanContentScroll = False
-                    }
+                _transcriptTabStripScrollViewer = New ScrollViewer() With {
+                    .HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                    .VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    .Content = _transcriptTabStripPanel,
+                    .CanContentScroll = False
+                }
 
-                    _transcriptTabStripBorder = New Border() With {
-                        .Margin = New Thickness(0, 0, 0, 7),
-                        .Visibility = Visibility.Collapsed,
-                        .Child = _transcriptTabStripScrollViewer
-                    }
+                _transcriptTabStripBorder = New Border() With {
+                    .Visibility = Visibility.Collapsed,
+                    .Child = _transcriptTabStripScrollViewer
+                }
 
-                    titleStack.Children.Insert(0, _transcriptTabStripBorder)
+                Dim headerDockPanel = FindVisualAncestor(Of DockPanel)(WorkspacePaneHost.LblCurrentThread)
+                Dim headerHostGrid = TryCast(If(headerDockPanel, Nothing)?.Parent, Grid)
+                If headerDockPanel IsNot Nothing AndAlso headerHostGrid IsNot Nothing Then
+                    Dim headerRow = Grid.GetRow(headerDockPanel)
+                    If headerRow < 0 Then
+                        headerRow = 0
+                    End If
+
+                    headerHostGrid.RowDefinitions.Insert(headerRow, New RowDefinition() With {.Height = GridLength.Auto})
+
+                    For Each child As UIElement In headerHostGrid.Children
+                        If child Is Nothing OrElse ReferenceEquals(child, _transcriptTabStripBorder) Then
+                            Continue For
+                        End If
+
+                        Dim childRow = Grid.GetRow(child)
+                        If childRow >= headerRow Then
+                            Grid.SetRow(child, childRow + 1)
+                        End If
+                    Next
+
+                    Dim headerMargin = headerDockPanel.Margin
+                    _transcriptTabStripBorder.Margin = New Thickness(headerMargin.Left, headerMargin.Top, headerMargin.Right, 6)
+                    headerDockPanel.Margin = New Thickness(headerMargin.Left, 0, headerMargin.Right, headerMargin.Bottom)
+
+                    Grid.SetRow(_transcriptTabStripBorder, headerRow)
+                    headerHostGrid.Children.Add(_transcriptTabStripBorder)
+                Else
+                    Dim titleStack = TryCast(WorkspacePaneHost.LblCurrentThread.Parent, StackPanel)
+                    If titleStack IsNot Nothing Then
+                        _transcriptTabStripBorder.Margin = New Thickness(0, 0, 0, 7)
+                        titleStack.Children.Insert(0, _transcriptTabStripBorder)
+                    End If
                 End If
             End If
         End Sub
@@ -141,18 +172,22 @@ Namespace CodexNativeAgent.Ui
             listBox.DataContext = _viewModel
             listBox.Visibility = Visibility.Collapsed
 
-            Dim tabButton = CreateTranscriptTabButton(normalizedThreadId)
+            Dim tabButton As Button = Nothing
+            Dim tabCloseButton As Button = Nothing
+            Dim tabChipBorder = CreateTranscriptTabChip(normalizedThreadId, tabButton, tabCloseButton)
 
             Dim handle As New TranscriptTabSurfaceHandle() With {
                 .ThreadId = normalizedThreadId,
                 .SurfaceListBox = listBox,
                 .TabButton = tabButton,
+                .TabChipBorder = tabChipBorder,
+                .TabCloseButton = tabCloseButton,
                 .IsPrimarySurface = usePrimarySurface
             }
 
             _transcriptTabSurfacesByThreadId(normalizedThreadId) = handle
-            If _transcriptTabStripPanel IsNot Nothing Then
-                _transcriptTabStripPanel.Children.Add(tabButton)
+            If _transcriptTabStripPanel IsNot Nothing AndAlso tabChipBorder IsNot Nothing Then
+                _transcriptTabStripPanel.Children.Add(tabChipBorder)
             End If
 
             AttachTranscriptInteractionHandlers(listBox)
@@ -214,24 +249,75 @@ Namespace CodexNativeAgent.Ui
             Return clone
         End Function
 
-        Private Function CreateTranscriptTabButton(threadId As String) As Button
-            Dim button As New Button() With {
+        Private Function CreateTranscriptTabChip(threadId As String,
+                                                 ByRef tabButton As Button,
+                                                 ByRef closeButton As Button) As Border
+            tabButton = New Button() With {
                 .Tag = threadId,
-                .Padding = New Thickness(10, 3, 10, 3),
-                .Margin = New Thickness(0, 0, 6, 0),
+                .Padding = New Thickness(10, 3, 6, 3),
                 .MinHeight = 26,
                 .FontSize = 12.5R,
                 .Cursor = Cursors.Hand,
-                .FocusVisualStyle = Nothing
+                .FocusVisualStyle = Nothing,
+                .Background = Brushes.Transparent,
+                .BorderBrush = Brushes.Transparent,
+                .BorderThickness = New Thickness(0),
+                .HorizontalContentAlignment = HorizontalAlignment.Left
             }
 
             Dim buttonBaseStyle = TryCast(TryFindResource("ButtonBaseStyle"), Style)
             If buttonBaseStyle IsNot Nothing Then
-                button.Style = buttonBaseStyle
+                tabButton.Style = buttonBaseStyle
             End If
 
-            AddHandler button.Click, AddressOf OnTranscriptTabButtonClick
-            Return button
+            AddHandler tabButton.Click, AddressOf OnTranscriptTabButtonClick
+
+            closeButton = New Button() With {
+                .Tag = threadId,
+                .Width = 18,
+                .Height = 18,
+                .MinWidth = 18,
+                .MinHeight = 18,
+                .Margin = New Thickness(0, 0, 6, 0),
+                .Padding = New Thickness(0),
+                .Cursor = Cursors.Hand,
+                .FocusVisualStyle = Nothing,
+                .Background = Brushes.Transparent,
+                .BorderBrush = Brushes.Transparent,
+                .BorderThickness = New Thickness(0),
+                .Opacity = 0.0R,
+                .IsHitTestVisible = False,
+                .ToolTip = "Close tab",
+                .Content = New TextBlock() With {
+                    .Text = "x",
+                    .FontSize = 11,
+                    .HorizontalAlignment = HorizontalAlignment.Center,
+                    .VerticalAlignment = VerticalAlignment.Center
+                }
+            }
+
+            AddHandler closeButton.Click, AddressOf OnTranscriptTabCloseButtonClick
+
+            Dim contentGrid As New Grid()
+            contentGrid.ColumnDefinitions.Add(New ColumnDefinition() With {.Width = New GridLength(1, GridUnitType.Star)})
+            contentGrid.ColumnDefinitions.Add(New ColumnDefinition() With {.Width = GridLength.Auto})
+            Grid.SetColumn(tabButton, 0)
+            Grid.SetColumn(closeButton, 1)
+            contentGrid.Children.Add(tabButton)
+            contentGrid.Children.Add(closeButton)
+
+            Dim chipBorder As New Border() With {
+                .Tag = threadId,
+                .CornerRadius = New CornerRadius(8),
+                .BorderThickness = New Thickness(1),
+                .Margin = New Thickness(0, 0, 6, 0),
+                .Child = contentGrid
+            }
+
+            AddHandler chipBorder.MouseEnter, AddressOf OnTranscriptTabChipMouseEnter
+            AddHandler chipBorder.MouseLeave, AddressOf OnTranscriptTabChipMouseLeave
+
+            Return chipBorder
         End Function
 
         Private Sub OnTranscriptTabButtonClick(sender As Object, e As RoutedEventArgs)
@@ -254,6 +340,107 @@ Namespace CodexNativeAgent.Ui
 
             SelectThreadEntry(entry, suppressAutoLoad:=False)
         End Sub
+
+        Private Sub OnTranscriptTabChipMouseEnter(sender As Object, e As MouseEventArgs)
+            Dim chipBorder = TryCast(sender, Border)
+            If chipBorder Is Nothing Then
+                Return
+            End If
+
+            Dim handle = FindTranscriptTabSurfaceHandleByThreadId(TryCast(chipBorder.Tag, String))
+            If handle Is Nothing Then
+                Return
+            End If
+
+            UpdateTranscriptTabButtonVisual(handle,
+                                            StringComparer.Ordinal.Equals(handle.ThreadId, _activeTranscriptSurfaceThreadId))
+        End Sub
+
+        Private Sub OnTranscriptTabChipMouseLeave(sender As Object, e As MouseEventArgs)
+            Dim chipBorder = TryCast(sender, Border)
+            If chipBorder Is Nothing Then
+                Return
+            End If
+
+            Dim handle = FindTranscriptTabSurfaceHandleByThreadId(TryCast(chipBorder.Tag, String))
+            If handle Is Nothing Then
+                Return
+            End If
+
+            UpdateTranscriptTabButtonVisual(handle,
+                                            StringComparer.Ordinal.Equals(handle.ThreadId, _activeTranscriptSurfaceThreadId))
+        End Sub
+
+        Private Async Sub OnTranscriptTabCloseButtonClick(sender As Object, e As RoutedEventArgs)
+            e.Handled = True
+
+            Dim button = TryCast(sender, Button)
+            If button Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedThreadId = If(TryCast(button.Tag, String), String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim isActiveTab = StringComparer.Ordinal.Equals(normalizedThreadId, _activeTranscriptSurfaceThreadId)
+            Dim fallbackEntry As ThreadListEntry = Nothing
+            If isActiveTab Then
+                fallbackEntry = FindFirstVisibleTranscriptTabEntryExcluding(normalizedThreadId)
+            End If
+
+            RemoveRetainedTranscriptTabSurface(normalizedThreadId)
+            _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
+
+            If Not isActiveTab Then
+                Return
+            End If
+
+            If fallbackEntry IsNot Nothing Then
+                SelectThreadEntry(fallbackEntry, suppressAutoLoad:=False)
+                Return
+            End If
+
+            Await StartThreadAsync().ConfigureAwait(True)
+            _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
+        End Sub
+
+        Private Function FindFirstVisibleTranscriptTabEntryExcluding(threadId As String) As ThreadListEntry
+            Dim excludedThreadId = If(threadId, String.Empty).Trim()
+
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                Dim candidateHandle = kvp.Value
+                If candidateHandle Is Nothing OrElse String.IsNullOrWhiteSpace(candidateHandle.ThreadId) Then
+                    Continue For
+                End If
+
+                If StringComparer.Ordinal.Equals(candidateHandle.ThreadId, excludedThreadId) Then
+                    Continue For
+                End If
+
+                Dim entry = FindVisibleThreadListEntryById(candidateHandle.ThreadId)
+                If entry IsNot Nothing Then
+                    Return entry
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Function FindTranscriptTabSurfaceHandleByThreadId(threadId As String) As TranscriptTabSurfaceHandle
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return Nothing
+            End If
+
+            Dim handle As TranscriptTabSurfaceHandle = Nothing
+            If _transcriptTabSurfacesByThreadId.TryGetValue(normalizedThreadId, handle) Then
+                Return handle
+            End If
+
+            Return Nothing
+        End Function
 
         Private Sub EnsureTranscriptTabSurfaceActivatedForThread(threadId As String)
             EnsureTranscriptTabsUiInitialized()
@@ -352,8 +539,8 @@ Namespace CodexNativeAgent.Ui
 
             _transcriptTabSurfacesByThreadId.Remove(normalizedThreadId)
 
-            If handle.TabButton IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
-                _transcriptTabStripPanel.Children.Remove(handle.TabButton)
+            If handle.TabChipBorder IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
+                _transcriptTabStripPanel.Children.Remove(handle.TabChipBorder)
             End If
 
             If handle.SurfaceListBox IsNot Nothing Then
@@ -396,8 +583,8 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If handle.TabButton IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
-                    _transcriptTabStripPanel.Children.Remove(handle.TabButton)
+                If handle.TabChipBorder IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
+                    _transcriptTabStripPanel.Children.Remove(handle.TabChipBorder)
                 End If
 
                 If handle.SurfaceListBox Is Nothing Then
@@ -519,16 +706,49 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim button = handle.TabButton
+            Dim chipBorder = handle.TabChipBorder
             Dim background = TryCast(TryFindResource(If(isActive, "SurfaceMutedBrush", "SurfaceBrush")), Brush)
             Dim border = TryCast(TryFindResource(If(isActive, "AccentGlowBrush", "BorderBrush")), Brush)
             Dim foreground = TryCast(TryFindResource(If(isActive, "TextPrimaryBrush", "TextSecondaryBrush")), Brush)
 
-            button.Background = If(background, Brushes.Transparent)
-            button.BorderBrush = If(border, Brushes.Transparent)
-            button.BorderThickness = New Thickness(1)
+            If chipBorder IsNot Nothing Then
+                chipBorder.Background = If(background, Brushes.Transparent)
+                chipBorder.BorderBrush = If(border, Brushes.Transparent)
+                chipBorder.BorderThickness = New Thickness(1)
+                chipBorder.Opacity = If(isActive, 1.0R, 0.94R)
+            End If
+
+            button.Background = Brushes.Transparent
+            button.BorderBrush = Brushes.Transparent
+            button.BorderThickness = New Thickness(0)
             button.Foreground = If(foreground, Brushes.Black)
             button.FontWeight = If(isActive, FontWeights.SemiBold, FontWeights.Normal)
-            button.Opacity = If(isActive, 1.0R, 0.92R)
+            button.Opacity = 1.0R
+
+            UpdateTranscriptTabCloseButtonVisual(handle, isActive, foreground)
+        End Sub
+
+        Private Sub UpdateTranscriptTabCloseButtonVisual(handle As TranscriptTabSurfaceHandle,
+                                                         isActive As Boolean,
+                                                         foreground As Brush)
+            If handle Is Nothing OrElse handle.TabCloseButton Is Nothing Then
+                Return
+            End If
+
+            Dim closeButton = handle.TabCloseButton
+            Dim chipBorder = handle.TabChipBorder
+            Dim showClose = chipBorder IsNot Nothing AndAlso chipBorder.IsMouseOver
+
+            closeButton.Opacity = If(showClose, 1.0R, 0.0R)
+            closeButton.IsHitTestVisible = showClose
+            closeButton.Foreground = If(foreground, Brushes.Black)
+
+            Dim closeGlyph = TryCast(closeButton.Content, TextBlock)
+            If closeGlyph IsNot Nothing Then
+                closeGlyph.Foreground = If(foreground, Brushes.Black)
+                closeGlyph.FontWeight = If(isActive, FontWeights.SemiBold, FontWeights.Normal)
+                closeGlyph.Opacity = If(showClose, 0.9R, 0.0R)
+            End If
         End Sub
 
         Private Sub RefreshActiveTranscriptTabCaption()
