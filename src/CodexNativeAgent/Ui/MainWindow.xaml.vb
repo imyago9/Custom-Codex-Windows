@@ -800,22 +800,7 @@ Namespace CodexNativeAgent.Ui
             AddHandler GitPaneHost.LstGitPanelCommits.SelectionChanged, AddressOf OnGitPanelCommitsSelectionChanged
             AddHandler GitPaneHost.LstGitPanelBranches.SelectionChanged, AddressOf OnGitPanelBranchesSelectionChanged
             InitializeGitPanelUi()
-            If WorkspacePaneHost.LstTranscript IsNot Nothing Then
-                WorkspacePaneHost.LstTranscript.AddHandler(ScrollViewer.ScrollChangedEvent,
-                                                          New ScrollChangedEventHandler(AddressOf OnTranscriptScrollChanged))
-                AddHandler WorkspacePaneHost.LstTranscript.PreviewMouseWheel,
-                    New MouseWheelEventHandler(AddressOf OnTranscriptPreviewMouseWheel)
-                AddHandler WorkspacePaneHost.LstTranscript.PreviewMouseLeftButtonDown,
-                    New MouseButtonEventHandler(AddressOf OnTranscriptPreviewMouseLeftButtonDown)
-                AddHandler WorkspacePaneHost.LstTranscript.PreviewKeyDown,
-                    New KeyEventHandler(AddressOf OnTranscriptPreviewKeyDown)
-                WorkspacePaneHost.LstTranscript.AddHandler(Thumb.DragStartedEvent,
-                                                          New DragStartedEventHandler(AddressOf OnTranscriptScrollThumbDragStarted),
-                                                          True)
-                WorkspacePaneHost.LstTranscript.AddHandler(Thumb.DragCompletedEvent,
-                                                          New DragCompletedEventHandler(AddressOf OnTranscriptScrollThumbDragCompleted),
-                                                          True)
-            End If
+            AttachTranscriptInteractionHandlers(WorkspacePaneHost.LstTranscript)
             AddHandler WorkspacePaneHost.BtnDismissWorkspaceHintOverlay.Click,
                 Sub(sender, e)
                     DismissWorkspaceHintOverlay()
@@ -3986,7 +3971,7 @@ Namespace CodexNativeAgent.Ui
 
             UpdateWorkspaceEmptyStateVisibility()
 
-            Dim transcriptList = WorkspacePaneHost.LstTranscript
+            Dim transcriptList = CurrentTranscriptListControl()
             If transcriptList IsNot Nothing Then
                 Dim scroller = ResolveTranscriptScrollViewer()
                 Dim runtimeFollowOnly = IsRuntimeOnlyTranscriptScrollRequest(reasons)
@@ -4034,7 +4019,8 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Function ResolveTranscriptScrollViewer() As ScrollViewer
-            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+            Dim transcriptList = CurrentTranscriptListControl()
+            If transcriptList Is Nothing Then
                 _transcriptScrollViewer = Nothing
                 Return Nothing
             End If
@@ -4044,7 +4030,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If _transcriptScrollViewer Is Nothing Then
-                _transcriptScrollViewer = FindVisualDescendant(Of ScrollViewer)(WorkspacePaneHost.LstTranscript)
+                _transcriptScrollViewer = FindVisualDescendant(Of ScrollViewer)(transcriptList)
                 If _transcriptScrollViewer IsNot Nothing AndAlso Not IsTranscriptListRootScrollViewer(_transcriptScrollViewer) Then
                     _transcriptScrollViewer = Nothing
                 End If
@@ -4063,7 +4049,8 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Function IsTranscriptListRootScrollViewer(scroller As ScrollViewer) As Boolean
-            If scroller Is Nothing OrElse WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+            Dim transcriptList = CurrentTranscriptListControl()
+            If scroller Is Nothing OrElse transcriptList Is Nothing Then
                 Return False
             End If
 
@@ -4072,7 +4059,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim owningList = FindVisualAncestor(Of ListBox)(scroller)
-            Return ReferenceEquals(owningList, WorkspacePaneHost.LstTranscript)
+            Return ReferenceEquals(owningList, transcriptList)
         End Function
 
         Private Sub QueueTranscriptScrollToBottom(policy As TranscriptScrollRequestPolicy,

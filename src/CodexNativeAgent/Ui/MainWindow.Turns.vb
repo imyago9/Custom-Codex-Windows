@@ -491,6 +491,7 @@ Namespace CodexNativeAgent.Ui
             _viewModel.CurrentTurnText = If(String.IsNullOrWhiteSpace(visibleTurnId),
                                             "Turn: 0",
                                             $"Turn: {visibleTurnId}")
+            RefreshActiveTranscriptTabCaption()
             SyncSessionStateViewModel()
         End Sub
 

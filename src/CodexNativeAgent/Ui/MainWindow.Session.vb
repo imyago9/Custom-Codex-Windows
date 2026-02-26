@@ -113,6 +113,7 @@ Namespace CodexNativeAgent.Ui
 
             _activeTranscriptDocumentThreadId = normalizedThreadId
             TrimInactiveTranscriptDocuments()
+            EnsureTranscriptTabSurfaceActivatedForThread(normalizedThreadId)
 
             AppendProtocol("debug",
                            $"transcript_doc_swap thread={normalizedThreadId} previous={previousThreadId} reused={reusedCachedState} swapMs={swapMs} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count} reason={If(reason, String.Empty)}")
@@ -142,6 +143,7 @@ Namespace CodexNativeAgent.Ui
 
             _activeTranscriptDocumentThreadId = String.Empty
             TrimInactiveTranscriptDocuments()
+            EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
 
             AppendProtocol("debug",
                            $"transcript_doc_swap_blank previous={previousThreadId} swapMs={swapMs} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count} reason={If(reason, String.Empty)}")
@@ -220,6 +222,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 _inactiveTranscriptDocumentsByThreadId.Remove(oldestKey)
+                RemoveRetainedTranscriptTabSurface(oldestKey)
                 AppendProtocol("debug",
                                $"transcript_doc_retire thread={oldestKey} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count}")
             Loop
@@ -228,6 +231,7 @@ Namespace CodexNativeAgent.Ui
         Private Sub ClearCachedTranscriptDocuments()
             _inactiveTranscriptDocumentsByThreadId.Clear()
             _activeTranscriptDocumentThreadId = String.Empty
+            ClearRetainedTranscriptTabSurfaces()
         End Sub
 
         Private Sub TraceTranscriptChunkSession(eventName As String,

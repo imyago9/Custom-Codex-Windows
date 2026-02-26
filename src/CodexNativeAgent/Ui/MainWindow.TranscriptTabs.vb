@@ -1,0 +1,546 @@
+Imports System
+Imports System.Collections.Generic
+Imports System.Windows
+Imports System.Windows.Controls
+Imports System.Windows.Controls.Primitives
+Imports System.Windows.Input
+Imports System.Windows.Media
+Imports CodexNativeAgent.Ui.ViewModels.Threads
+
+Namespace CodexNativeAgent.Ui
+    Public NotInheritable Partial Class MainWindow
+        Private NotInheritable Class TranscriptTabSurfaceHandle
+            Public Property ThreadId As String = String.Empty
+            Public Property SurfaceListBox As ListBox
+            Public Property TabButton As Button
+            Public Property IsPrimarySurface As Boolean
+        End Class
+
+        Private ReadOnly _transcriptTabSurfacesByThreadId As New Dictionary(Of String, TranscriptTabSurfaceHandle)(StringComparer.Ordinal)
+        Private ReadOnly _transcriptInteractionHandlersAttached As New List(Of ListBox)()
+        Private _transcriptSurfaceHostPanel As Panel
+        Private _transcriptTabStripBorder As Border
+        Private _transcriptTabStripScrollViewer As ScrollViewer
+        Private _transcriptTabStripPanel As StackPanel
+        Private _activeTranscriptSurfaceListBox As ListBox
+        Private _activeTranscriptSurfaceThreadId As String = String.Empty
+
+        Private Function CurrentTranscriptListControl() As ListBox
+            If _activeTranscriptSurfaceListBox IsNot Nothing Then
+                Return _activeTranscriptSurfaceListBox
+            End If
+
+            If WorkspacePaneHost Is Nothing Then
+                Return Nothing
+            End If
+
+            Return WorkspacePaneHost.LstTranscript
+        End Function
+
+        Private Sub AttachTranscriptInteractionHandlers(listBox As ListBox)
+            If listBox Is Nothing Then
+                Return
+            End If
+
+            For Each existing In _transcriptInteractionHandlersAttached
+                If ReferenceEquals(existing, listBox) Then
+                    Return
+                End If
+            Next
+
+            listBox.AddHandler(ScrollViewer.ScrollChangedEvent,
+                               New ScrollChangedEventHandler(AddressOf OnTranscriptScrollChanged))
+            AddHandler listBox.PreviewMouseWheel,
+                New MouseWheelEventHandler(AddressOf OnTranscriptPreviewMouseWheel)
+            AddHandler listBox.PreviewMouseLeftButtonDown,
+                New MouseButtonEventHandler(AddressOf OnTranscriptPreviewMouseLeftButtonDown)
+            AddHandler listBox.PreviewKeyDown,
+                New KeyEventHandler(AddressOf OnTranscriptPreviewKeyDown)
+            listBox.AddHandler(Thumb.DragStartedEvent,
+                               New DragStartedEventHandler(AddressOf OnTranscriptScrollThumbDragStarted),
+                               True)
+            listBox.AddHandler(Thumb.DragCompletedEvent,
+                               New DragCompletedEventHandler(AddressOf OnTranscriptScrollThumbDragCompleted),
+                               True)
+
+            _transcriptInteractionHandlersAttached.Add(listBox)
+        End Sub
+
+        Private Sub EnsureTranscriptTabsUiInitialized()
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            If _transcriptSurfaceHostPanel Is Nothing Then
+                _transcriptSurfaceHostPanel = TryCast(WorkspacePaneHost.LstTranscript.Parent, Panel)
+            End If
+
+            If _activeTranscriptSurfaceListBox Is Nothing Then
+                _activeTranscriptSurfaceListBox = WorkspacePaneHost.LstTranscript
+            End If
+
+            WorkspacePaneHost.LstTranscript.DataContext = _viewModel
+            AttachTranscriptInteractionHandlers(WorkspacePaneHost.LstTranscript)
+
+            If _transcriptTabStripPanel Is Nothing Then
+                Dim titleStack = TryCast(WorkspacePaneHost.LblCurrentThread.Parent, StackPanel)
+                If titleStack IsNot Nothing Then
+                    _transcriptTabStripPanel = New StackPanel() With {
+                        .Orientation = Orientation.Horizontal
+                    }
+
+                    _transcriptTabStripScrollViewer = New ScrollViewer() With {
+                        .HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                        .VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                        .Content = _transcriptTabStripPanel,
+                        .CanContentScroll = False
+                    }
+
+                    _transcriptTabStripBorder = New Border() With {
+                        .Margin = New Thickness(0, 0, 0, 7),
+                        .Visibility = Visibility.Collapsed,
+                        .Child = _transcriptTabStripScrollViewer
+                    }
+
+                    titleStack.Children.Insert(0, _transcriptTabStripBorder)
+                End If
+            End If
+        End Sub
+
+        Private Function EnsureTranscriptTabSurfaceHandle(threadId As String) As TranscriptTabSurfaceHandle
+            EnsureTranscriptTabsUiInitialized()
+
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return Nothing
+            End If
+
+            Dim existing As TranscriptTabSurfaceHandle = Nothing
+            If _transcriptTabSurfacesByThreadId.TryGetValue(normalizedThreadId, existing) AndAlso existing IsNot Nothing Then
+                Return existing
+            End If
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim usePrimarySurface = _transcriptTabSurfacesByThreadId.Count = 0
+            If Not usePrimarySurface AndAlso _transcriptSurfaceHostPanel Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim listBox = If(usePrimarySurface, WorkspacePaneHost.LstTranscript, CreateRetainedTranscriptSurfaceClone())
+            If listBox Is Nothing Then
+                Return Nothing
+            End If
+
+            If Not usePrimarySurface AndAlso _transcriptSurfaceHostPanel IsNot Nothing Then
+                _transcriptSurfaceHostPanel.Children.Add(listBox)
+            End If
+
+            listBox.DataContext = _viewModel
+            listBox.Visibility = Visibility.Collapsed
+
+            Dim tabButton = CreateTranscriptTabButton(normalizedThreadId)
+
+            Dim handle As New TranscriptTabSurfaceHandle() With {
+                .ThreadId = normalizedThreadId,
+                .SurfaceListBox = listBox,
+                .TabButton = tabButton,
+                .IsPrimarySurface = usePrimarySurface
+            }
+
+            _transcriptTabSurfacesByThreadId(normalizedThreadId) = handle
+            If _transcriptTabStripPanel IsNot Nothing Then
+                _transcriptTabStripPanel.Children.Add(tabButton)
+            End If
+
+            AttachTranscriptInteractionHandlers(listBox)
+            RefreshTranscriptTabStripVisibility()
+            UpdateTranscriptTabButtonCaption(handle)
+            UpdateTranscriptTabButtonVisual(handle,
+                                            StringComparer.Ordinal.Equals(normalizedThreadId, _activeTranscriptSurfaceThreadId))
+
+            Return handle
+        End Function
+
+        Private Function CreateRetainedTranscriptSurfaceClone() As ListBox
+            Dim source = If(WorkspacePaneHost, Nothing)?.LstTranscript
+            If source Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim clone As New ListBox() With {
+                .Background = source.Background,
+                .BorderBrush = source.BorderBrush,
+                .BorderThickness = source.BorderThickness,
+                .FontFamily = source.FontFamily,
+                .FontSize = source.FontSize,
+                .HorizontalContentAlignment = source.HorizontalContentAlignment,
+                .HorizontalAlignment = source.HorizontalAlignment,
+                .VerticalAlignment = source.VerticalAlignment,
+                .Margin = source.Margin,
+                .Padding = source.Padding,
+                .SelectionMode = source.SelectionMode,
+                .ItemTemplate = source.ItemTemplate,
+                .ItemContainerStyle = source.ItemContainerStyle,
+                .ItemsPanel = source.ItemsPanel,
+                .Visibility = Visibility.Collapsed
+            }
+
+            clone.SetValue(ScrollViewer.CanContentScrollProperty, source.GetValue(ScrollViewer.CanContentScrollProperty))
+            clone.SetValue(VirtualizingPanel.IsVirtualizingProperty, source.GetValue(VirtualizingPanel.IsVirtualizingProperty))
+            clone.SetValue(VirtualizingPanel.VirtualizationModeProperty, source.GetValue(VirtualizingPanel.VirtualizationModeProperty))
+            clone.SetValue(VirtualizingPanel.ScrollUnitProperty, source.GetValue(VirtualizingPanel.ScrollUnitProperty))
+            clone.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, source.GetValue(ScrollViewer.VerticalScrollBarVisibilityProperty))
+            clone.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, source.GetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty))
+
+            If _transcriptSurfaceHostPanel IsNot Nothing Then
+                Grid.SetRow(clone, Grid.GetRow(source))
+                Grid.SetColumn(clone, Grid.GetColumn(source))
+                Grid.SetRowSpan(clone, Grid.GetRowSpan(source))
+                Grid.SetColumnSpan(clone, Grid.GetColumnSpan(source))
+                Panel.SetZIndex(clone, Panel.GetZIndex(source))
+            End If
+
+            For Each key As Object In source.Resources.Keys
+                If clone.Resources.Contains(key) Then
+                    Continue For
+                End If
+
+                clone.Resources.Add(key, source.Resources(key))
+            Next
+
+            Return clone
+        End Function
+
+        Private Function CreateTranscriptTabButton(threadId As String) As Button
+            Dim button As New Button() With {
+                .Tag = threadId,
+                .Padding = New Thickness(10, 3, 10, 3),
+                .Margin = New Thickness(0, 0, 6, 0),
+                .MinHeight = 26,
+                .FontSize = 12.5R,
+                .Cursor = Cursors.Hand,
+                .FocusVisualStyle = Nothing
+            }
+
+            Dim buttonBaseStyle = TryCast(TryFindResource("ButtonBaseStyle"), Style)
+            If buttonBaseStyle IsNot Nothing Then
+                button.Style = buttonBaseStyle
+            End If
+
+            AddHandler button.Click, AddressOf OnTranscriptTabButtonClick
+            Return button
+        End Function
+
+        Private Sub OnTranscriptTabButtonClick(sender As Object, e As RoutedEventArgs)
+            Dim button = TryCast(sender, Button)
+            If button Is Nothing Then
+                Return
+            End If
+
+            Dim threadId = TryCast(button.Tag, String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim entry = FindVisibleThreadListEntryById(normalizedThreadId)
+            If entry Is Nothing Then
+                ShowStatus("This tab's thread is hidden by the current filter/search.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            SelectThreadEntry(entry, suppressAutoLoad:=False)
+        End Sub
+
+        Private Sub EnsureTranscriptTabSurfaceActivatedForThread(threadId As String)
+            EnsureTranscriptTabsUiInitialized()
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                ActivateBlankTranscriptSurface()
+                Return
+            End If
+
+            Dim handle = EnsureTranscriptTabSurfaceHandle(normalizedThreadId)
+            If handle Is Nothing OrElse handle.SurfaceListBox Is Nothing Then
+                Return
+            End If
+
+            handle.SurfaceListBox.DataContext = _viewModel
+            handle.SurfaceListBox.ItemsSource = _viewModel.TranscriptPanel.Items
+
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                Dim candidate = kvp.Value
+                If candidate Is Nothing OrElse candidate.SurfaceListBox Is Nothing Then
+                    Continue For
+                End If
+
+                candidate.SurfaceListBox.Visibility = If(StringComparer.Ordinal.Equals(candidate.ThreadId, normalizedThreadId),
+                                                         Visibility.Visible,
+                                                         Visibility.Collapsed)
+            Next
+
+            If Not HandleOwnsPrimaryTranscriptSurface(normalizedThreadId) Then
+                WorkspacePaneHost.LstTranscript.Visibility = Visibility.Collapsed
+            End If
+
+            _activeTranscriptSurfaceListBox = handle.SurfaceListBox
+            _activeTranscriptSurfaceThreadId = normalizedThreadId
+            _transcriptScrollViewer = Nothing
+
+            UpdateTranscriptTabButtonCaptions()
+            UpdateTranscriptTabButtonVisuals()
+            RefreshTranscriptTabStripVisibility()
+            UpdateWorkspaceEmptyStateVisibility()
+        End Sub
+
+        Private Sub ActivateBlankTranscriptSurface()
+            EnsureTranscriptTabsUiInitialized()
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            WorkspacePaneHost.LstTranscript.DataContext = _viewModel
+            WorkspacePaneHost.LstTranscript.ItemsSource = _viewModel.TranscriptPanel.Items
+            WorkspacePaneHost.LstTranscript.Visibility = Visibility.Visible
+
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                Dim candidate = kvp.Value
+                If candidate Is Nothing OrElse candidate.SurfaceListBox Is Nothing Then
+                    Continue For
+                End If
+
+                candidate.SurfaceListBox.Visibility = Visibility.Collapsed
+            Next
+
+            _activeTranscriptSurfaceListBox = WorkspacePaneHost.LstTranscript
+            _activeTranscriptSurfaceThreadId = String.Empty
+            _transcriptScrollViewer = Nothing
+
+            UpdateTranscriptTabButtonVisuals()
+            RefreshTranscriptTabStripVisibility()
+            UpdateWorkspaceEmptyStateVisibility()
+        End Sub
+
+        Private Function HandleOwnsPrimaryTranscriptSurface(threadId As String) As Boolean
+            Dim handle As TranscriptTabSurfaceHandle = Nothing
+            If Not _transcriptTabSurfacesByThreadId.TryGetValue(If(threadId, String.Empty), handle) OrElse handle Is Nothing Then
+                Return False
+            End If
+
+            Return handle.IsPrimarySurface AndAlso ReferenceEquals(handle.SurfaceListBox, If(WorkspacePaneHost, Nothing)?.LstTranscript)
+        End Function
+
+        Private Sub RemoveRetainedTranscriptTabSurface(threadId As String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim handle As TranscriptTabSurfaceHandle = Nothing
+            If Not _transcriptTabSurfacesByThreadId.TryGetValue(normalizedThreadId, handle) OrElse handle Is Nothing Then
+                Return
+            End If
+
+            _transcriptTabSurfacesByThreadId.Remove(normalizedThreadId)
+
+            If handle.TabButton IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
+                _transcriptTabStripPanel.Children.Remove(handle.TabButton)
+            End If
+
+            If handle.SurfaceListBox IsNot Nothing Then
+                If handle.IsPrimarySurface AndAlso WorkspacePaneHost IsNot Nothing AndAlso ReferenceEquals(handle.SurfaceListBox, WorkspacePaneHost.LstTranscript) Then
+                    handle.SurfaceListBox.Visibility = Visibility.Collapsed
+                ElseIf _transcriptSurfaceHostPanel IsNot Nothing Then
+                    _transcriptSurfaceHostPanel.Children.Remove(handle.SurfaceListBox)
+                End If
+
+                For i = _transcriptInteractionHandlersAttached.Count - 1 To 0 Step -1
+                    If ReferenceEquals(_transcriptInteractionHandlersAttached(i), handle.SurfaceListBox) Then
+                        _transcriptInteractionHandlersAttached.RemoveAt(i)
+                    End If
+                Next
+
+                For i = _transcriptChunkScrollChangedHandlerAttachedLists.Count - 1 To 0 Step -1
+                    If ReferenceEquals(_transcriptChunkScrollChangedHandlerAttachedLists(i), handle.SurfaceListBox) Then
+                        _transcriptChunkScrollChangedHandlerAttachedLists.RemoveAt(i)
+                    End If
+                Next
+            End If
+
+            If StringComparer.Ordinal.Equals(_activeTranscriptSurfaceThreadId, normalizedThreadId) Then
+                _activeTranscriptSurfaceThreadId = String.Empty
+                _activeTranscriptSurfaceListBox = If(WorkspacePaneHost, Nothing)?.LstTranscript
+            End If
+
+            RefreshTranscriptTabStripVisibility()
+            UpdateTranscriptTabButtonVisuals()
+        End Sub
+
+        Private Sub ClearRetainedTranscriptTabSurfaces()
+            EnsureTranscriptTabsUiInitialized()
+
+            Dim handles As New List(Of TranscriptTabSurfaceHandle)(_transcriptTabSurfacesByThreadId.Values)
+            _transcriptTabSurfacesByThreadId.Clear()
+
+            For Each handle In handles
+                If handle Is Nothing Then
+                    Continue For
+                End If
+
+                If handle.TabButton IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
+                    _transcriptTabStripPanel.Children.Remove(handle.TabButton)
+                End If
+
+                If handle.SurfaceListBox Is Nothing Then
+                    Continue For
+                End If
+
+                If WorkspacePaneHost IsNot Nothing AndAlso ReferenceEquals(handle.SurfaceListBox, WorkspacePaneHost.LstTranscript) Then
+                    handle.SurfaceListBox.Visibility = Visibility.Visible
+                    handle.SurfaceListBox.DataContext = _viewModel
+                    handle.SurfaceListBox.ItemsSource = _viewModel.TranscriptPanel.Items
+                ElseIf _transcriptSurfaceHostPanel IsNot Nothing Then
+                    _transcriptSurfaceHostPanel.Children.Remove(handle.SurfaceListBox)
+                End If
+            Next
+
+            Dim primaryListBox = If(WorkspacePaneHost, Nothing)?.LstTranscript
+            For i = _transcriptInteractionHandlersAttached.Count - 1 To 0 Step -1
+                If primaryListBox Is Nothing OrElse
+                   Not ReferenceEquals(_transcriptInteractionHandlersAttached(i), primaryListBox) Then
+                    _transcriptInteractionHandlersAttached.RemoveAt(i)
+                End If
+            Next
+
+            For i = _transcriptChunkScrollChangedHandlerAttachedLists.Count - 1 To 0 Step -1
+                If primaryListBox Is Nothing OrElse
+                   Not ReferenceEquals(_transcriptChunkScrollChangedHandlerAttachedLists(i), primaryListBox) Then
+                    _transcriptChunkScrollChangedHandlerAttachedLists.RemoveAt(i)
+                End If
+            Next
+
+            If primaryListBox IsNot Nothing Then
+                AttachTranscriptInteractionHandlers(primaryListBox)
+                _activeTranscriptSurfaceListBox = WorkspacePaneHost.LstTranscript
+            Else
+                _activeTranscriptSurfaceListBox = Nothing
+            End If
+
+            _activeTranscriptSurfaceThreadId = String.Empty
+            _transcriptScrollViewer = Nothing
+            RefreshTranscriptTabStripVisibility()
+        End Sub
+
+        Private Sub RefreshTranscriptTabStripVisibility()
+            If _transcriptTabStripBorder Is Nothing Then
+                Return
+            End If
+
+            _transcriptTabStripBorder.Visibility = If(_transcriptTabSurfacesByThreadId.Count > 0,
+                                                      Visibility.Visible,
+                                                      Visibility.Collapsed)
+        End Sub
+
+        Private Sub UpdateTranscriptTabButtonCaptions()
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                UpdateTranscriptTabButtonCaption(kvp.Value)
+            Next
+        End Sub
+
+        Private Sub UpdateTranscriptTabButtonCaption(handle As TranscriptTabSurfaceHandle)
+            If handle Is Nothing OrElse handle.TabButton Is Nothing Then
+                Return
+            End If
+
+            Dim threadId = If(handle.ThreadId, String.Empty).Trim()
+            Dim text = ResolveTranscriptTabCaption(threadId)
+            handle.TabButton.Content = text
+            handle.TabButton.ToolTip = threadId
+        End Sub
+
+        Private Function ResolveTranscriptTabCaption(threadId As String) As String
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return "New thread"
+            End If
+
+            If StringComparer.Ordinal.Equals(normalizedThreadId, GetVisibleThreadId()) Then
+                Dim currentLabel = If(_viewModel, Nothing)?.CurrentThreadText
+                If Not String.IsNullOrWhiteSpace(currentLabel) AndAlso
+                   Not StringComparer.Ordinal.Equals(currentLabel, "New thread") Then
+                    Return CompactTranscriptTabCaption(currentLabel)
+                End If
+            End If
+
+            Dim entry = FindVisibleThreadListEntryById(normalizedThreadId)
+            If entry IsNot Nothing Then
+                Dim preview = If(entry.Preview, String.Empty).Trim()
+                If Not String.IsNullOrWhiteSpace(preview) Then
+                    Return CompactTranscriptTabCaption(preview)
+                End If
+            End If
+
+            Return CompactTranscriptTabCaption(normalizedThreadId)
+        End Function
+
+        Private Shared Function CompactTranscriptTabCaption(value As String) As String
+            Dim text = If(value, String.Empty).Replace(vbCr, " ").Replace(vbLf, " ").Trim()
+            If String.IsNullOrWhiteSpace(text) Then
+                Return "Thread"
+            End If
+
+            Const maxLen As Integer = 26
+            If text.Length <= maxLen Then
+                Return text
+            End If
+
+            Return text.Substring(0, maxLen - 3).TrimEnd() & "..."
+        End Function
+
+        Private Sub UpdateTranscriptTabButtonVisuals()
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                UpdateTranscriptTabButtonVisual(kvp.Value,
+                                               StringComparer.Ordinal.Equals(kvp.Key, _activeTranscriptSurfaceThreadId))
+            Next
+        End Sub
+
+        Private Sub UpdateTranscriptTabButtonVisual(handle As TranscriptTabSurfaceHandle, isActive As Boolean)
+            If handle Is Nothing OrElse handle.TabButton Is Nothing Then
+                Return
+            End If
+
+            Dim button = handle.TabButton
+            Dim background = TryCast(TryFindResource(If(isActive, "SurfaceMutedBrush", "SurfaceBrush")), Brush)
+            Dim border = TryCast(TryFindResource(If(isActive, "AccentGlowBrush", "BorderBrush")), Brush)
+            Dim foreground = TryCast(TryFindResource(If(isActive, "TextPrimaryBrush", "TextSecondaryBrush")), Brush)
+
+            button.Background = If(background, Brushes.Transparent)
+            button.BorderBrush = If(border, Brushes.Transparent)
+            button.BorderThickness = New Thickness(1)
+            button.Foreground = If(foreground, Brushes.Black)
+            button.FontWeight = If(isActive, FontWeights.SemiBold, FontWeights.Normal)
+            button.Opacity = If(isActive, 1.0R, 0.92R)
+        End Sub
+
+        Private Sub RefreshActiveTranscriptTabCaption()
+            If String.IsNullOrWhiteSpace(_activeTranscriptSurfaceThreadId) Then
+                Return
+            End If
+
+            Dim handle As TranscriptTabSurfaceHandle = Nothing
+            If _transcriptTabSurfacesByThreadId.TryGetValue(_activeTranscriptSurfaceThreadId, handle) Then
+                UpdateTranscriptTabButtonCaption(handle)
+                UpdateTranscriptTabButtonVisual(handle, True)
+            End If
+        End Sub
+    End Class
+End Namespace

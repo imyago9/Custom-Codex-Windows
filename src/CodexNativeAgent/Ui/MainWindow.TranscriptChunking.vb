@@ -18,7 +18,7 @@ Namespace CodexNativeAgent.Ui
 
         Private _transcriptChunkTopProbeTimer As DispatcherTimer
         Private _transcriptChunkTopProbeTickActive As Boolean
-        Private _transcriptChunkScrollChangedHandlerAttached As Boolean
+        Private ReadOnly _transcriptChunkScrollChangedHandlerAttachedLists As New List(Of ListBox)()
         Private _transcriptChunkImmediateLoadDispatchPending As Boolean
         Private _transcriptChunkTriggerCooldownUntilUtc As DateTimeOffset = DateTimeOffset.MinValue
 
@@ -93,18 +93,21 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub EnsureTranscriptChunkScrollTriggerHandlerAttached()
-            If _transcriptChunkScrollChangedHandlerAttached Then
+            Dim transcriptList = CurrentTranscriptListControl()
+            If transcriptList Is Nothing Then
                 Return
             End If
 
-            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
-                Return
-            End If
+            For Each existing In _transcriptChunkScrollChangedHandlerAttachedLists
+                If ReferenceEquals(existing, transcriptList) Then
+                    Return
+                End If
+            Next
 
-            WorkspacePaneHost.LstTranscript.AddHandler(ScrollViewer.ScrollChangedEvent,
-                                                       New ScrollChangedEventHandler(AddressOf OnTranscriptChunkingScrollChanged),
-                                                       True)
-            _transcriptChunkScrollChangedHandlerAttached = True
+            transcriptList.AddHandler(ScrollViewer.ScrollChangedEvent,
+                                      New ScrollChangedEventHandler(AddressOf OnTranscriptChunkingScrollChanged),
+                                      True)
+            _transcriptChunkScrollChangedHandlerAttachedLists.Add(transcriptList)
             DebugTranscriptScroll("chunk_scroll_trigger", "handler_attached")
         End Sub
 
