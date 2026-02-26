@@ -36,6 +36,9 @@ Namespace CodexNativeAgent.Ui
             Public Property CurrentLoadedRangeStart As Integer
             Public Property CurrentLoadedRangeEnd As Integer
             Public Property Anchor As TranscriptChunkPrependAnchorSnapshot
+            Public Property RuntimeStateLastEventUtcAtCapture As DateTimeOffset?
+            Public Property RuntimeStateActiveTurnIdAtCapture As String = String.Empty
+            Public Property RuntimeStateWasTurnActiveAtCapture As Boolean
         End Class
 
         Private Sub EnsureTranscriptChunkTopProbeTimerStarted()
@@ -294,6 +297,18 @@ Namespace CodexNativeAgent.Ui
                     Return
                 End If
 
+                If ShouldDeferOlderTranscriptChunkApplyForRuntimeState(threadId, generationId, loadSnapshot) Then
+                    _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "defer_apply_runtime_churn")
+                    _threadTranscriptChunkSessionCoordinator.SetPendingPrependRequest(threadId,
+                                                                                      generationId,
+                                                                                      True,
+                                                                                      "defer_apply_runtime_churn")
+                    SetTranscriptChunkTriggerCooldown("older_chunk_defer_runtime_churn")
+                    TraceTranscriptChunkSession("older_chunk_load_deferred_runtime_churn",
+                                                $"thread={threadId}; generation={generationId}")
+                    Return
+                End If
+
                 ApplyOlderTranscriptChunkRender(threadId, generationId, loadSnapshot, chunkPlan)
             Catch ex As Exception
                 _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "older_chunk_exception")
@@ -338,6 +353,19 @@ Namespace CodexNativeAgent.Ui
                 .ViewportHeight = Math.Max(0R, scroller.ViewportHeight)
             }
 
+            Dim runtimeStateLastEventUtc As DateTimeOffset? = Nothing
+            Dim runtimeStateActiveTurnId As String = String.Empty
+            Dim runtimeStateWasTurnActive As Boolean
+            Dim liveState As ThreadLiveSessionState = Nothing
+            If _threadLiveSessionRegistry.TryGet(threadId, liveState) AndAlso liveState IsNot Nothing Then
+                If liveState.LastRuntimeEventUtc <> DateTimeOffset.MinValue Then
+                    runtimeStateLastEventUtc = liveState.LastRuntimeEventUtc
+                End If
+
+                runtimeStateActiveTurnId = If(liveState.ActiveTurnId, String.Empty).Trim()
+                runtimeStateWasTurnActive = liveState.IsTurnActive
+            End If
+
             Return New TranscriptOlderChunkLoadSnapshot() With {
                 .ThreadId = threadId,
                 .GenerationId = generationId,
@@ -345,7 +373,10 @@ Namespace CodexNativeAgent.Ui
                 .CompletedOverlayTurnsForFullReplay = completedOverlayTurnsForFullReplay,
                 .CurrentLoadedRangeStart = Math.Max(0, loadedRangeStart),
                 .CurrentLoadedRangeEnd = Math.Max(Math.Max(0, loadedRangeStart), loadedRangeEnd),
-                .Anchor = anchor
+                .Anchor = anchor,
+                .RuntimeStateLastEventUtcAtCapture = runtimeStateLastEventUtc,
+                .RuntimeStateActiveTurnIdAtCapture = runtimeStateActiveTurnId,
+                .RuntimeStateWasTurnActiveAtCapture = runtimeStateWasTurnActive
             }
         End Function
 
@@ -361,6 +392,18 @@ Namespace CodexNativeAgent.Ui
                Not StringComparer.Ordinal.Equals(GetVisibleThreadId(), threadId) Then
                 _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "stale_before_apply")
                 TraceTranscriptChunkSession("older_chunk_load_cancel", $"thread={threadId}; generation={generationId}; stage=stale_before_apply")
+                Return
+            End If
+
+            If HasActiveRuntimeTurnForCurrentThread() Then
+                _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "defer_apply_active_turn")
+                _threadTranscriptChunkSessionCoordinator.SetPendingPrependRequest(threadId,
+                                                                                  generationId,
+                                                                                  True,
+                                                                                  "defer_apply_active_turn")
+                SetTranscriptChunkTriggerCooldown("older_chunk_defer_active_turn_before_apply")
+                TraceTranscriptChunkSession("older_chunk_load_deferred_active_turn_before_apply",
+                                            $"thread={threadId}; generation={generationId}")
                 Return
             End If
 
@@ -392,6 +435,63 @@ Namespace CodexNativeAgent.Ui
             TraceTranscriptChunkSession("older_chunk_load_complete",
                                         $"thread={threadId}; generation={generationId}; total={chunkPlan.TotalEntryCount}; selected={chunkPlan.SelectedEntryCount}; rangeStart={chunkPlan.LoadedRangeStart}; rangeEnd={chunkPlan.LoadedRangeEnd}; hasMoreOlder={chunkPlan.HasMoreOlderEntries}; weight={chunkPlan.TotalSelectedRenderWeight}")
         End Sub
+
+        Private Function ShouldDeferOlderTranscriptChunkApplyForRuntimeState(threadId As String,
+                                                                             generationId As Integer,
+                                                                             loadSnapshot As TranscriptOlderChunkLoadSnapshot) As Boolean
+            If loadSnapshot Is Nothing OrElse
+               String.IsNullOrWhiteSpace(threadId) OrElse
+               generationId <= 0 Then
+                Return False
+            End If
+
+            If Not _threadTranscriptChunkSessionCoordinator.IsActiveSessionGeneration(threadId, generationId) Then
+                Return True
+            End If
+
+            If Not StringComparer.Ordinal.Equals(GetVisibleThreadId(), threadId) Then
+                Return True
+            End If
+
+            If HasActiveRuntimeTurnForCurrentThread() Then
+                Return True
+            End If
+
+            Dim currentState As ThreadLiveSessionState = Nothing
+            If Not _threadLiveSessionRegistry.TryGet(threadId, currentState) OrElse currentState Is Nothing Then
+                Return False
+            End If
+
+            Dim currentLastRuntimeEventUtc As DateTimeOffset? = Nothing
+            If currentState.LastRuntimeEventUtc <> DateTimeOffset.MinValue Then
+                currentLastRuntimeEventUtc = currentState.LastRuntimeEventUtc
+            End If
+
+            If currentState.IsTurnActive Then
+                Return True
+            End If
+
+            If loadSnapshot.RuntimeStateWasTurnActiveAtCapture <> currentState.IsTurnActive Then
+                Return True
+            End If
+
+            Dim capturedActiveTurnId = If(loadSnapshot.RuntimeStateActiveTurnIdAtCapture, String.Empty).Trim()
+            Dim currentActiveTurnId = If(currentState.ActiveTurnId, String.Empty).Trim()
+            If Not StringComparer.Ordinal.Equals(capturedActiveTurnId, currentActiveTurnId) Then
+                Return True
+            End If
+
+            If loadSnapshot.RuntimeStateLastEventUtcAtCapture.HasValue <> currentLastRuntimeEventUtc.HasValue Then
+                Return True
+            End If
+
+            If loadSnapshot.RuntimeStateLastEventUtcAtCapture.HasValue AndAlso currentLastRuntimeEventUtc.HasValue AndAlso
+               DateTimeOffset.Compare(loadSnapshot.RuntimeStateLastEventUtcAtCapture.Value, currentLastRuntimeEventUtc.Value) <> 0 Then
+                Return True
+            End If
+
+            Return False
+        End Function
 
         Private Sub SetTranscriptChunkTriggerCooldown(Optional reason As String = Nothing)
             _transcriptChunkTriggerCooldownUntilUtc = DateTimeOffset.UtcNow.Add(TranscriptChunkTriggerCooldownDuration)
