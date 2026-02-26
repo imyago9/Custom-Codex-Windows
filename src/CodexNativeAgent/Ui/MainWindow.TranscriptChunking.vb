@@ -61,6 +61,37 @@ Namespace CodexNativeAgent.Ui
             DebugTranscriptScroll("chunk_top_probe", $"timer_started intervalMs={TranscriptChunkTopProbeIntervalMs}")
         End Sub
 
+        Private Sub TryDispatchDeferredTranscriptChunkPrependFromRuntimeUpdate()
+            Dim activeSession = _threadTranscriptChunkSessionCoordinator.ActiveSession
+            If activeSession Is Nothing OrElse
+               Not activeSession.PendingPrependRequest OrElse
+               activeSession.IsLoadingOlderChunk Then
+                Return
+            End If
+
+            Dim visibleThreadId = GetVisibleThreadId()
+            If String.IsNullOrWhiteSpace(visibleThreadId) OrElse
+               Not StringComparer.Ordinal.Equals(If(activeSession.ThreadId, String.Empty).Trim(), visibleThreadId) Then
+                Return
+            End If
+
+            If _threadContentLoading OrElse HasActiveRuntimeTurnForCurrentThread() Then
+                Return
+            End If
+
+            If _transcriptScrollFollowMode <> TranscriptScrollFollowMode.DetachedByUser Then
+                Return
+            End If
+
+            Dim scroller = ResolveTranscriptScrollViewer()
+            If scroller Is Nothing OrElse Not IsTranscriptScrollNearTopThreshold(scroller) Then
+                Return
+            End If
+
+            DebugTranscriptScroll("chunk_pending_retry", "runtime_update_retry_dispatch", scroller)
+            QueueTranscriptOlderChunkLoadFromScrollTrigger(scroller)
+        End Sub
+
         Private Sub EnsureTranscriptChunkScrollTriggerHandlerAttached()
             If _transcriptChunkScrollChangedHandlerAttached Then
                 Return
