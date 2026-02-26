@@ -1292,13 +1292,21 @@ Namespace CodexNativeAgent.Ui
             AppendTranscriptOrderingProjectionDebug("rebuild_projection_post_stamp",
                                                    normalizedThreadId,
                                                    projection.DisplayEntries)
+            Dim completedOverlayTurnsForFullReplay = RemoveProjectionSnapshotItemRowsForCompletedOverlayTurns(normalizedThreadId,
+                                                                                                              projection,
+                                                                                                              _sessionNotificationCoordinator.RuntimeStore)
+            AppendTranscriptOrderingProjectionDebug("rebuild_projection_post_completed_strip",
+                                                   normalizedThreadId,
+                                                   projection.DisplayEntries)
 
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(projection.RawText)
             _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(projection.DisplayEntries)
 
-            ApplyLiveRuntimeOverlayForThread(normalizedThreadId, _sessionNotificationCoordinator.RuntimeStore)
+            ApplyLiveRuntimeOverlayForThread(normalizedThreadId,
+                                            _sessionNotificationCoordinator.RuntimeStore,
+                                            completedOverlayTurnsForFullReplay)
 
             _threadLiveSessionRegistry.MarkBound(normalizedThreadId, _currentTurnId)
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
@@ -1389,7 +1397,9 @@ Namespace CodexNativeAgent.Ui
             Next
         End Sub
 
-        Private Sub ApplyLiveRuntimeOverlayForThread(threadId As String, runtimeStore As TurnFlowRuntimeStore)
+        Private Sub ApplyLiveRuntimeOverlayForThread(threadId As String,
+                                                     runtimeStore As TurnFlowRuntimeStore,
+                                                     Optional completedTurnsForFullItemReplay As ISet(Of String) = Nothing)
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse runtimeStore Is Nothing Then
                 Return
@@ -1420,7 +1430,10 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                Dim replayCompletedTurnRuntimeOnly = turn.IsCompleted
+                Dim replayCompletedTurnFully = turn.IsCompleted AndAlso
+                                              completedTurnsForFullItemReplay IsNot Nothing AndAlso
+                                              completedTurnsForFullItemReplay.Contains(turnId)
+                Dim replayCompletedTurnRuntimeOnly = turn.IsCompleted AndAlso Not replayCompletedTurnFully
                 Dim orderedTurnItems As IReadOnlyList(Of TurnItemRuntimeState) = runtimeStore.GetOrderedRuntimeItemsForTurn(turnThreadId, turnId)
                 AssignTurnItemOrderIndexes(orderedTurnItems)
                 AppendTranscriptOrderingRuntimeItemsDebug("overlay_replay_turn_items_preorder",
@@ -1725,6 +1738,67 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Return _sessionNotificationCoordinator.RuntimeStore.GetOrderedRuntimeItemsForThread(normalizedThreadId)
+        End Function
+
+        Private Function RemoveProjectionSnapshotItemRowsForCompletedOverlayTurns(threadId As String,
+                                                                                  projection As ThreadTranscriptProjectionSnapshot,
+                                                                                  runtimeStore As TurnFlowRuntimeStore) As HashSet(Of String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim completedTurnIds As New HashSet(Of String)(StringComparer.Ordinal)
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse projection Is Nothing OrElse runtimeStore Is Nothing Then
+                Return completedTurnIds
+            End If
+
+            For Each turnId In ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore)
+                Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                    Continue For
+                End If
+
+                Dim turnState = runtimeStore.GetTurnState(normalizedThreadId, normalizedTurnId)
+                If turnState Is Nothing OrElse Not turnState.IsCompleted Then
+                    Continue For
+                End If
+
+                completedTurnIds.Add(normalizedTurnId)
+            Next
+
+            If completedTurnIds.Count = 0 OrElse projection.DisplayEntries Is Nothing OrElse projection.DisplayEntries.Count = 0 Then
+                Return completedTurnIds
+            End If
+
+            Dim removedCount = 0
+            For i = projection.DisplayEntries.Count - 1 To 0 Step -1
+                Dim descriptor = projection.DisplayEntries(i)
+                If descriptor Is Nothing Then
+                    Continue For
+                End If
+
+                Dim descriptorTurnId = If(descriptor.TurnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(descriptorTurnId) OrElse Not completedTurnIds.Contains(descriptorTurnId) Then
+                    Continue For
+                End If
+
+                Dim runtimeKey = If(descriptor.RuntimeKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(runtimeKey) OrElse
+                   Not runtimeKey.StartsWith("item:", StringComparison.Ordinal) Then
+                    Continue For
+                End If
+
+                AppendTranscriptOrderingProtocolDebug(
+                    "projection_strip_completed_snapshot_item",
+                    $"threadId={FormatTranscriptOrderingDebugToken(normalizedThreadId)} turnId={FormatTranscriptOrderingDebugToken(descriptorTurnId)} idx={i.ToString(System.Globalization.CultureInfo.InvariantCulture)} kind={FormatTranscriptOrderingDebugToken(descriptor.Kind)} runtimeKey={FormatTranscriptOrderingDebugToken(runtimeKey)} seq={FormatTranscriptOrderingNullableLong(descriptor.TurnItemStreamSequence)} ord={FormatTranscriptOrderingNullableInt(descriptor.TurnItemOrderIndex)} ts={FormatTranscriptOrderingTimestamp(descriptor.TurnItemSortTimestampUtc)}")
+                projection.DisplayEntries.RemoveAt(i)
+                removedCount += 1
+            Next
+
+            If removedCount > 0 Then
+                AppendTranscriptOrderingProtocolDebug(
+                    "projection_strip_completed_snapshot_items_summary",
+                    $"threadId={FormatTranscriptOrderingDebugToken(normalizedThreadId)} completed_turns={FormatTranscriptOrderingTurnIdSet(completedTurnIds)} removed={removedCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}")
+            End If
+
+            Return completedTurnIds
         End Function
 
         Private Sub AppendTranscriptOrderingProjectionDebug(stage As String,
