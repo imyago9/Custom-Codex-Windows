@@ -58,7 +58,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Const TranscriptScrollDebugInstrumentationEnabled As Boolean = True
         Private Const TranscriptVirtualizationRollout As TranscriptVirtualizationRolloutMode =
-            TranscriptVirtualizationRolloutMode.DisabledStableBaseline
+            TranscriptVirtualizationRolloutMode.EnabledTestMode
 
         Private NotInheritable Class ModelListEntry
             Public Property Id As String = String.Empty
