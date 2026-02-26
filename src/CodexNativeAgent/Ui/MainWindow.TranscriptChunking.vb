@@ -1,6 +1,7 @@
 Imports System
 Imports System.Collections.Generic
 Imports System.Threading.Tasks
+Imports System.Windows
 Imports System.Windows.Controls
 Imports System.Windows.Threading
 Imports CodexNativeAgent.Ui.Coordinators
@@ -16,6 +17,8 @@ Namespace CodexNativeAgent.Ui
 
         Private _transcriptChunkTopProbeTimer As DispatcherTimer
         Private _transcriptChunkTopProbeTickActive As Boolean
+        Private _transcriptChunkScrollChangedHandlerAttached As Boolean
+        Private _transcriptChunkImmediateLoadDispatchPending As Boolean
 
         Private NotInheritable Class TranscriptChunkPrependAnchorSnapshot
             Public Property VerticalOffset As Double
@@ -39,6 +42,8 @@ Namespace CodexNativeAgent.Ui
                     _transcriptChunkTopProbeTimer.Start()
                 End If
 
+                EnsureTranscriptChunkScrollTriggerHandlerAttached()
+
                 Return
             End If
 
@@ -47,7 +52,82 @@ Namespace CodexNativeAgent.Ui
             }
             AddHandler _transcriptChunkTopProbeTimer.Tick, AddressOf OnTranscriptChunkTopProbeTimerTick
             _transcriptChunkTopProbeTimer.Start()
+            EnsureTranscriptChunkScrollTriggerHandlerAttached()
             DebugTranscriptScroll("chunk_top_probe", $"timer_started intervalMs={TranscriptChunkTopProbeIntervalMs}")
+        End Sub
+
+        Private Sub EnsureTranscriptChunkScrollTriggerHandlerAttached()
+            If _transcriptChunkScrollChangedHandlerAttached Then
+                Return
+            End If
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            WorkspacePaneHost.LstTranscript.AddHandler(ScrollViewer.ScrollChangedEvent,
+                                                       New ScrollChangedEventHandler(AddressOf OnTranscriptChunkingScrollChanged),
+                                                       True)
+            _transcriptChunkScrollChangedHandlerAttached = True
+            DebugTranscriptScroll("chunk_scroll_trigger", "handler_attached")
+        End Sub
+
+        Private Sub OnTranscriptChunkingScrollChanged(sender As Object, e As ScrollChangedEventArgs)
+            If e Is Nothing Then
+                Return
+            End If
+
+            If _suppressTranscriptScrollTracking OrElse _transcriptScrollProgrammaticMoveInProgress Then
+                Return
+            End If
+
+            Dim scroller = TryCast(e.OriginalSource, ScrollViewer)
+            If scroller Is Nothing Then
+                Dim root = TryCast(sender, DependencyObject)
+                If root IsNot Nothing Then
+                    scroller = FindVisualDescendant(Of ScrollViewer)(root)
+                End If
+            End If
+
+            If scroller Is Nothing OrElse Not IsTranscriptListRootScrollViewer(scroller) Then
+                Return
+            End If
+
+            If Math.Abs(e.VerticalChange) <= 0.01R AndAlso Math.Abs(e.ExtentHeightChange) <= 0.01R Then
+                Return
+            End If
+
+            QueueTranscriptOlderChunkLoadFromScrollTrigger(scroller)
+        End Sub
+
+        Private Sub QueueTranscriptOlderChunkLoadFromScrollTrigger(scroller As ScrollViewer)
+            If scroller Is Nothing Then
+                Return
+            End If
+
+            If _transcriptChunkImmediateLoadDispatchPending Then
+                Return
+            End If
+
+            _transcriptChunkImmediateLoadDispatchPending = True
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                New Action(Sub() ProcessTranscriptOlderChunkLoadFromScrollTriggerAsync(scroller)))
+        End Sub
+
+        Private Async Sub ProcessTranscriptOlderChunkLoadFromScrollTriggerAsync(scroller As ScrollViewer)
+            _transcriptChunkImmediateLoadDispatchPending = False
+
+            If Not ShouldRequestOlderTranscriptChunkFromScrollProbe(scroller) Then
+                Return
+            End If
+
+            Try
+                DebugTranscriptScroll("chunk_scroll_trigger", "near_top_immediate_request", scroller)
+                Await TryLoadOlderTranscriptChunkForVisibleThreadAsync(scroller).ConfigureAwait(True)
+            Catch ex As Exception
+                AppendProtocol("debug", $"transcript_chunk_scroll_trigger_error message={ex.Message}")
+            End Try
         End Sub
 
         Private Async Sub OnTranscriptChunkTopProbeTimerTick(sender As Object, e As EventArgs)
@@ -106,6 +186,18 @@ Namespace CodexNativeAgent.Ui
                 Return False
             End If
 
+            If HasActiveRuntimeTurnForCurrentThread() Then
+                If Not activeSession.PendingPrependRequest AndAlso
+                   _threadTranscriptChunkSessionCoordinator.SetPendingPrependRequest(activeSession.ThreadId,
+                                                                                    activeSession.GenerationId,
+                                                                                    True,
+                                                                                    "defer_older_chunk_while_active_turn") Then
+                    TraceTranscriptChunkSession("older_chunk_load_deferred_active_turn",
+                                                $"thread={visibleThreadId}; generation={activeSession.GenerationId}")
+                End If
+                Return False
+            End If
+
             If scroller.ScrollableHeight <= 0.01R Then
                 Return False
             End If
@@ -138,6 +230,11 @@ Namespace CodexNativeAgent.Ui
             If Not _threadTranscriptChunkSessionCoordinator.TryBeginOlderChunkLoad(threadId, generationId, "top_probe_near_top") Then
                 Return
             End If
+
+            _threadTranscriptChunkSessionCoordinator.SetPendingPrependRequest(threadId,
+                                                                              generationId,
+                                                                              False,
+                                                                              "older_chunk_begin_clear_pending")
 
             TraceTranscriptChunkSession("older_chunk_load_begin",
                                         $"thread={threadId}; generation={generationId}")
