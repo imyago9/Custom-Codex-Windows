@@ -9,11 +9,21 @@ Imports System.Windows
 Imports CodexNativeAgent.AppServer
 Imports CodexNativeAgent.Services
 Imports CodexNativeAgent.Ui.Coordinators
+Imports CodexNativeAgent.Ui.ViewModels
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
         Private Const TranscriptChunkSessionDebugInstrumentationEnabled As Boolean = True
+        Private Const TranscriptDocumentCacheMaxInactiveEntries As Integer = 3
         Private ReadOnly _threadTranscriptChunkSessionCoordinator As New ThreadTranscriptChunkSessionCoordinator()
+        Private ReadOnly _inactiveTranscriptDocumentsByThreadId As New Dictionary(Of String, CachedTranscriptDocumentState)(StringComparer.Ordinal)
+        Private _activeTranscriptDocumentThreadId As String = String.Empty
+
+        Private NotInheritable Class CachedTranscriptDocumentState
+            Public Property ThreadId As String = String.Empty
+            Public Property State As TranscriptPanelViewModel.TranscriptThreadDocumentState
+            Public Property LastUsedUtc As DateTimeOffset = DateTimeOffset.UtcNow
+        End Class
 
         ' Visible selection helpers (Phase 7 scaffold):
         ' `_currentThreadId` / `_currentTurnId` represent the currently selected thread/turn in the UI.
@@ -68,6 +78,156 @@ Namespace CodexNativeAgent.Ui
         Private Sub ClearVisibleSelection()
             ClearVisibleThreadId()
             ClearVisibleTurnId()
+        End Sub
+
+        Private Function EnsureTranscriptDocumentActivatedForThread(threadId As String,
+                                                                   Optional reason As String = Nothing) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return ActivateFreshTranscriptDocument(reason)
+            End If
+
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
+                Return False
+            End If
+
+            If StringComparer.Ordinal.Equals(_activeTranscriptDocumentThreadId, normalizedThreadId) Then
+                TouchCachedTranscriptDocument(normalizedThreadId)
+                Return False
+            End If
+
+            Dim nextState As TranscriptPanelViewModel.TranscriptThreadDocumentState = Nothing
+            Dim reusedCachedState = TryTakeCachedTranscriptDocumentState(normalizedThreadId, nextState)
+            If nextState Is Nothing Then
+                nextState = TranscriptPanelViewModel.CreateEmptyThreadDocumentState()
+            End If
+
+            Dim previousThreadId = _activeTranscriptDocumentThreadId
+            Dim swapPerf = Stopwatch.StartNew()
+            Dim previousState = _viewModel.TranscriptPanel.SwapThreadDocumentState(nextState)
+            Dim swapMs = swapPerf.ElapsedMilliseconds
+
+            If Not String.IsNullOrWhiteSpace(previousThreadId) AndAlso previousState IsNot Nothing Then
+                StoreCachedTranscriptDocumentState(previousThreadId, previousState)
+            End If
+
+            _activeTranscriptDocumentThreadId = normalizedThreadId
+            TrimInactiveTranscriptDocuments()
+
+            AppendProtocol("debug",
+                           $"transcript_doc_swap thread={normalizedThreadId} previous={previousThreadId} reused={reusedCachedState} swapMs={swapMs} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count} reason={If(reason, String.Empty)}")
+            Return True
+        End Function
+
+        Private Function ActivateFreshTranscriptDocument(Optional reason As String = Nothing) As Boolean
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
+                Return False
+            End If
+
+            Dim previousThreadId = _activeTranscriptDocumentThreadId
+            Dim hasPreviousThread = Not String.IsNullOrWhiteSpace(previousThreadId)
+            Dim nextState = TranscriptPanelViewModel.CreateEmptyThreadDocumentState()
+
+            If Not hasPreviousThread AndAlso _viewModel.TranscriptPanel.Items.Count = 0 Then
+                Return False
+            End If
+
+            Dim swapPerf = Stopwatch.StartNew()
+            Dim previousState = _viewModel.TranscriptPanel.SwapThreadDocumentState(nextState)
+            Dim swapMs = swapPerf.ElapsedMilliseconds
+
+            If hasPreviousThread AndAlso previousState IsNot Nothing Then
+                StoreCachedTranscriptDocumentState(previousThreadId, previousState)
+            End If
+
+            _activeTranscriptDocumentThreadId = String.Empty
+            TrimInactiveTranscriptDocuments()
+
+            AppendProtocol("debug",
+                           $"transcript_doc_swap_blank previous={previousThreadId} swapMs={swapMs} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count} reason={If(reason, String.Empty)}")
+            Return True
+        End Function
+
+        Private Sub StoreCachedTranscriptDocumentState(threadId As String,
+                                                       state As TranscriptPanelViewModel.TranscriptThreadDocumentState)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse state Is Nothing Then
+                Return
+            End If
+
+            _inactiveTranscriptDocumentsByThreadId(normalizedThreadId) = New CachedTranscriptDocumentState() With {
+                .ThreadId = normalizedThreadId,
+                .State = state,
+                .LastUsedUtc = DateTimeOffset.UtcNow
+            }
+        End Sub
+
+        Private Function TryTakeCachedTranscriptDocumentState(threadId As String,
+                                                              ByRef state As TranscriptPanelViewModel.TranscriptThreadDocumentState) As Boolean
+            state = Nothing
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            Dim entry As CachedTranscriptDocumentState = Nothing
+            If Not _inactiveTranscriptDocumentsByThreadId.TryGetValue(normalizedThreadId, entry) OrElse entry Is Nothing Then
+                Return False
+            End If
+
+            _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
+            entry.LastUsedUtc = DateTimeOffset.UtcNow
+            state = entry.State
+            Return state IsNot Nothing
+        End Function
+
+        Private Sub TouchCachedTranscriptDocument(threadId As String)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            Dim entry As CachedTranscriptDocumentState = Nothing
+            If _inactiveTranscriptDocumentsByThreadId.TryGetValue(normalizedThreadId, entry) AndAlso entry IsNot Nothing Then
+                entry.LastUsedUtc = DateTimeOffset.UtcNow
+            End If
+        End Sub
+
+        Private Sub TrimInactiveTranscriptDocuments()
+            If _inactiveTranscriptDocumentsByThreadId.Count <= TranscriptDocumentCacheMaxInactiveEntries Then
+                Return
+            End If
+
+            Do While _inactiveTranscriptDocumentsByThreadId.Count > TranscriptDocumentCacheMaxInactiveEntries
+                Dim oldestKey As String = String.Empty
+                Dim oldestUtc = DateTimeOffset.MaxValue
+
+                For Each kvp In _inactiveTranscriptDocumentsByThreadId
+                    Dim candidate = kvp.Value
+                    If candidate Is Nothing Then
+                        oldestKey = kvp.Key
+                        Exit For
+                    End If
+
+                    If candidate.LastUsedUtc < oldestUtc Then
+                        oldestUtc = candidate.LastUsedUtc
+                        oldestKey = kvp.Key
+                    End If
+                Next
+
+                If String.IsNullOrWhiteSpace(oldestKey) Then
+                    Exit Do
+                End If
+
+                _inactiveTranscriptDocumentsByThreadId.Remove(oldestKey)
+                AppendProtocol("debug",
+                               $"transcript_doc_retire thread={oldestKey} inactiveCached={_inactiveTranscriptDocumentsByThreadId.Count}")
+            Loop
+        End Sub
+
+        Private Sub ClearCachedTranscriptDocuments()
+            _inactiveTranscriptDocumentsByThreadId.Clear()
+            _activeTranscriptDocumentThreadId = String.Empty
         End Sub
 
         Private Sub TraceTranscriptChunkSession(eventName As String,
@@ -454,6 +614,8 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub ResetWorkspaceTransientStateCore(clearModelPicker As Boolean)
+            ActivateFreshTranscriptDocument("workspace_reset")
+            ClearCachedTranscriptDocuments()
             ClearVisibleSelection()
             _notificationRuntimeThreadId = String.Empty
             _notificationRuntimeTurnId = String.Empty

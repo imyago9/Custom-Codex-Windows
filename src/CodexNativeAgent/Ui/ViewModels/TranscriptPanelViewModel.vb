@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Collections.Specialized
 Imports System.Globalization
 Imports System.Collections.ObjectModel
 Imports System.Diagnostics
@@ -14,6 +15,26 @@ Imports CodexNativeAgent.Ui.ViewModels.Transcript
 Namespace CodexNativeAgent.Ui.ViewModels
     Public NotInheritable Class TranscriptPanelViewModel
         Inherits ViewModelBase
+
+        Public NotInheritable Class TranscriptThreadDocumentState
+            Public Property TranscriptText As String = String.Empty
+            Public Property FullTranscriptBuilder As New StringBuilder()
+            Public Property TokenUsageText As String = String.Empty
+            Public Property TokenUsageVisibility As Visibility = Visibility.Collapsed
+            Public Property Items As New ObservableCollection(Of TranscriptEntryViewModel)()
+            Public Property RuntimeEntriesByKey As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+            Public Property TurnDiffSummaryByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Public Property FileChangeRuntimeKeyByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Public Property FileChangeTurnIdByRuntimeKey As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Public Property FileChangeItemStateByRuntimeKey As New Dictionary(Of String, TurnItemRuntimeState)(StringComparer.Ordinal)
+            Public Property ActiveAssistantStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+            Public Property ActiveAssistantStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Public Property ActiveAssistantRawPrefixes As New HashSet(Of String)(StringComparer.Ordinal)
+            Public Property AssistantReasoningChainStreamIds As New HashSet(Of String)(StringComparer.Ordinal)
+            Public Property ActiveReasoningStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+            Public Property ActiveReasoningStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Public Property LastClearTranscriptTelemetry As New TranscriptClearTelemetrySnapshot()
+        End Class
 
         Public NotInheritable Class TranscriptClearTelemetrySnapshot
             Public Property CapturedUtc As DateTimeOffset = DateTimeOffset.UtcNow
@@ -62,7 +83,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Private _transcriptText As String = String.Empty
         Private _protocolText As String = String.Empty
-        Private ReadOnly _fullTranscriptBuilder As New StringBuilder()
+        Private _fullTranscriptBuilder As New StringBuilder()
         Private ReadOnly _fullProtocolBuilder As New StringBuilder()
         Private _loadingText As String = "Loading thread..."
         Private _loadingOverlayVisibility As Visibility = Visibility.Collapsed
@@ -72,19 +93,25 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _transcriptContentScale As Double = 1.0R
         Private _tokenUsageText As String = String.Empty
         Private _tokenUsageVisibility As Visibility = Visibility.Collapsed
-        Private ReadOnly _items As New ObservableCollection(Of TranscriptEntryViewModel)()
-        Private ReadOnly _runtimeEntriesByKey As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
-        Private ReadOnly _turnDiffSummaryByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
-        Private ReadOnly _fileChangeRuntimeKeyByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
-        Private ReadOnly _fileChangeTurnIdByRuntimeKey As New Dictionary(Of String, String)(StringComparer.Ordinal)
-        Private ReadOnly _fileChangeItemStateByRuntimeKey As New Dictionary(Of String, TurnItemRuntimeState)(StringComparer.Ordinal)
-        Private ReadOnly _activeAssistantStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
-        Private ReadOnly _activeAssistantStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
-        Private ReadOnly _activeAssistantRawPrefixes As New HashSet(Of String)(StringComparer.Ordinal)
-        Private ReadOnly _assistantReasoningChainStreamIds As New HashSet(Of String)(StringComparer.Ordinal)
-        Private ReadOnly _activeReasoningStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
-        Private ReadOnly _activeReasoningStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _items As New ObservableCollection(Of TranscriptEntryViewModel)()
+        Private _runtimeEntriesByKey As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+        Private _turnDiffSummaryByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _fileChangeRuntimeKeyByTurnId As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _fileChangeTurnIdByRuntimeKey As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _fileChangeItemStateByRuntimeKey As New Dictionary(Of String, TurnItemRuntimeState)(StringComparer.Ordinal)
+        Private _activeAssistantStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+        Private _activeAssistantStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _activeAssistantRawPrefixes As New HashSet(Of String)(StringComparer.Ordinal)
+        Private _assistantReasoningChainStreamIds As New HashSet(Of String)(StringComparer.Ordinal)
+        Private _activeReasoningStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+        Private _activeReasoningStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
         Private _lastClearTranscriptTelemetry As New TranscriptClearTelemetrySnapshot()
+
+        Public Event TranscriptItemsChanged As NotifyCollectionChangedEventHandler
+
+        Public Sub New()
+            AttachTranscriptItemsCollectionChangedForwarder(_items)
+        End Sub
 
         Public Property TranscriptText As String
             Get
@@ -146,6 +173,16 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
         End Property
 
+        Public Shared Function CreateEmptyThreadDocumentState() As TranscriptThreadDocumentState
+            Return New TranscriptThreadDocumentState()
+        End Function
+
+        Public Function SwapThreadDocumentState(state As TranscriptThreadDocumentState) As TranscriptThreadDocumentState
+            Dim previousState = CaptureThreadDocumentState()
+            ApplyThreadDocumentState(state)
+            Return previousState
+        End Function
+
         Public Function DescribeLastClearTranscriptTelemetry() As String
             Dim t = _lastClearTranscriptTelemetry
             If t Is Nothing Then
@@ -154,6 +191,152 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             Return $"clearTelemetryTotalMs={t.TotalMs}; itemsBefore={t.ItemsCountBefore}; runtimeEntriesBefore={t.RuntimeEntriesCountBefore}; turnDiffBefore={t.TurnDiffSummaryCountBefore}; fileChangeMapsBefore={t.FileChangeRuntimeKeyByTurnIdCountBefore}/{t.FileChangeTurnIdByRuntimeKeyCountBefore}/{t.FileChangeItemStateByRuntimeKeyCountBefore}; assistantMapsBefore={t.ActiveAssistantStreamsCountBefore}/{t.ActiveAssistantStreamBuffersCountBefore}; assistantSetsBefore={t.ActiveAssistantRawPrefixesCountBefore}/{t.AssistantReasoningChainStreamIdsCountBefore}; reasoningMapsBefore={t.ActiveReasoningStreamsCountBefore}/{t.ActiveReasoningStreamBuffersCountBefore}; fullBuilderLenBefore={t.FullTranscriptBuilderLengthBefore}; transcriptTextLenBefore={t.TranscriptTextLengthBefore}; tokenUsageLenBefore={t.TokenUsageTextLengthBefore}; setTranscriptTextMs={t.SetTranscriptTextMs}; fullBuilderClearMs={t.FullTranscriptBuilderClearMs}; itemsClearMs={t.ItemsClearMs}; runtimeEntriesClearMs={t.RuntimeEntriesClearMs}; turnDiffClearMs={t.TurnDiffSummaryClearMs}; fileChangeMapClearMs={t.FileChangeRuntimeKeyByTurnIdClearMs}/{t.FileChangeTurnIdByRuntimeKeyClearMs}/{t.FileChangeItemStateByRuntimeKeyClearMs}; assistantClearMs={t.ActiveAssistantStreamsClearMs}/{t.ActiveAssistantStreamBuffersClearMs}/{t.ActiveAssistantRawPrefixesClearMs}/{t.AssistantReasoningChainStreamIdsClearMs}; reasoningClearMs={t.ActiveReasoningStreamsClearMs}/{t.ActiveReasoningStreamBuffersClearMs}; setTokenUsageTextMs={t.SetTokenUsageTextMs}"
         End Function
+
+        Private Function CaptureThreadDocumentState() As TranscriptThreadDocumentState
+            Return New TranscriptThreadDocumentState() With {
+                .TranscriptText = If(_transcriptText, String.Empty),
+                .FullTranscriptBuilder = _fullTranscriptBuilder,
+                .TokenUsageText = If(_tokenUsageText, String.Empty),
+                .TokenUsageVisibility = _tokenUsageVisibility,
+                .Items = _items,
+                .RuntimeEntriesByKey = _runtimeEntriesByKey,
+                .TurnDiffSummaryByTurnId = _turnDiffSummaryByTurnId,
+                .FileChangeRuntimeKeyByTurnId = _fileChangeRuntimeKeyByTurnId,
+                .FileChangeTurnIdByRuntimeKey = _fileChangeTurnIdByRuntimeKey,
+                .FileChangeItemStateByRuntimeKey = _fileChangeItemStateByRuntimeKey,
+                .ActiveAssistantStreams = _activeAssistantStreams,
+                .ActiveAssistantStreamBuffers = _activeAssistantStreamBuffers,
+                .ActiveAssistantRawPrefixes = _activeAssistantRawPrefixes,
+                .AssistantReasoningChainStreamIds = _assistantReasoningChainStreamIds,
+                .ActiveReasoningStreams = _activeReasoningStreams,
+                .ActiveReasoningStreamBuffers = _activeReasoningStreamBuffers,
+                .LastClearTranscriptTelemetry = _lastClearTranscriptTelemetry
+            }
+        End Function
+
+        Private Sub ApplyThreadDocumentState(state As TranscriptThreadDocumentState)
+            Dim nextState = NormalizeThreadDocumentState(state)
+
+            DetachTranscriptItemsCollectionChangedForwarder(_items)
+
+            _transcriptText = nextState.TranscriptText
+            _fullTranscriptBuilder = nextState.FullTranscriptBuilder
+            _tokenUsageText = nextState.TokenUsageText
+            _tokenUsageVisibility = nextState.TokenUsageVisibility
+            _items = nextState.Items
+            _runtimeEntriesByKey = nextState.RuntimeEntriesByKey
+            _turnDiffSummaryByTurnId = nextState.TurnDiffSummaryByTurnId
+            _fileChangeRuntimeKeyByTurnId = nextState.FileChangeRuntimeKeyByTurnId
+            _fileChangeTurnIdByRuntimeKey = nextState.FileChangeTurnIdByRuntimeKey
+            _fileChangeItemStateByRuntimeKey = nextState.FileChangeItemStateByRuntimeKey
+            _activeAssistantStreams = nextState.ActiveAssistantStreams
+            _activeAssistantStreamBuffers = nextState.ActiveAssistantStreamBuffers
+            _activeAssistantRawPrefixes = nextState.ActiveAssistantRawPrefixes
+            _assistantReasoningChainStreamIds = nextState.AssistantReasoningChainStreamIds
+            _activeReasoningStreams = nextState.ActiveReasoningStreams
+            _activeReasoningStreamBuffers = nextState.ActiveReasoningStreamBuffers
+            _lastClearTranscriptTelemetry = nextState.LastClearTranscriptTelemetry
+
+            AttachTranscriptItemsCollectionChangedForwarder(_items)
+
+            RaisePropertyChanged(NameOf(TranscriptText))
+            RaisePropertyChanged(NameOf(FullTranscriptText))
+            RaisePropertyChanged(NameOf(Items))
+            RaisePropertyChanged(NameOf(TokenUsageText))
+            RaisePropertyChanged(NameOf(TokenUsageVisibility))
+            RaisePropertyChanged(NameOf(LastClearTranscriptTelemetry))
+
+            RefreshTimelineDotRowVisibility()
+            RaiseTranscriptItemsReset()
+        End Sub
+
+        Private Shared Function NormalizeThreadDocumentState(state As TranscriptThreadDocumentState) As TranscriptThreadDocumentState
+            Dim normalized = If(state, New TranscriptThreadDocumentState())
+            If normalized.FullTranscriptBuilder Is Nothing Then
+                normalized.FullTranscriptBuilder = New StringBuilder()
+            End If
+
+            If normalized.Items Is Nothing Then
+                normalized.Items = New ObservableCollection(Of TranscriptEntryViewModel)()
+            End If
+
+            If normalized.RuntimeEntriesByKey Is Nothing Then
+                normalized.RuntimeEntriesByKey = New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+            End If
+
+            If normalized.TurnDiffSummaryByTurnId Is Nothing Then
+                normalized.TurnDiffSummaryByTurnId = New Dictionary(Of String, String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.FileChangeRuntimeKeyByTurnId Is Nothing Then
+                normalized.FileChangeRuntimeKeyByTurnId = New Dictionary(Of String, String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.FileChangeTurnIdByRuntimeKey Is Nothing Then
+                normalized.FileChangeTurnIdByRuntimeKey = New Dictionary(Of String, String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.FileChangeItemStateByRuntimeKey Is Nothing Then
+                normalized.FileChangeItemStateByRuntimeKey = New Dictionary(Of String, TurnItemRuntimeState)(StringComparer.Ordinal)
+            End If
+
+            If normalized.ActiveAssistantStreams Is Nothing Then
+                normalized.ActiveAssistantStreams = New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+            End If
+
+            If normalized.ActiveAssistantStreamBuffers Is Nothing Then
+                normalized.ActiveAssistantStreamBuffers = New Dictionary(Of String, String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.ActiveAssistantRawPrefixes Is Nothing Then
+                normalized.ActiveAssistantRawPrefixes = New HashSet(Of String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.AssistantReasoningChainStreamIds Is Nothing Then
+                normalized.AssistantReasoningChainStreamIds = New HashSet(Of String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.ActiveReasoningStreams Is Nothing Then
+                normalized.ActiveReasoningStreams = New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
+            End If
+
+            If normalized.ActiveReasoningStreamBuffers Is Nothing Then
+                normalized.ActiveReasoningStreamBuffers = New Dictionary(Of String, String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.LastClearTranscriptTelemetry Is Nothing Then
+                normalized.LastClearTranscriptTelemetry = New TranscriptClearTelemetrySnapshot()
+            End If
+
+            normalized.TranscriptText = If(normalized.TranscriptText, String.Empty)
+            normalized.TokenUsageText = If(normalized.TokenUsageText, String.Empty)
+            Return normalized
+        End Function
+
+        Private Sub AttachTranscriptItemsCollectionChangedForwarder(items As ObservableCollection(Of TranscriptEntryViewModel))
+            If items Is Nothing Then
+                Return
+            End If
+
+            AddHandler items.CollectionChanged, AddressOf OnTranscriptItemsCollectionChanged
+        End Sub
+
+        Private Sub DetachTranscriptItemsCollectionChangedForwarder(items As ObservableCollection(Of TranscriptEntryViewModel))
+            If items Is Nothing Then
+                Return
+            End If
+
+            RemoveHandler items.CollectionChanged, AddressOf OnTranscriptItemsCollectionChanged
+        End Sub
+
+        Private Sub OnTranscriptItemsCollectionChanged(sender As Object, e As NotifyCollectionChangedEventArgs)
+            RaiseEvent TranscriptItemsChanged(sender, e)
+        End Sub
+
+        Private Sub RaiseTranscriptItemsReset()
+            RaiseEvent TranscriptItemsChanged(_items,
+                                             New NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset))
+        End Sub
 
         Public Property CollapseCommandDetailsByDefault As Boolean
             Get

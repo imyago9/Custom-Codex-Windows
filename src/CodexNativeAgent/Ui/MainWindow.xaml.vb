@@ -532,7 +532,7 @@ Namespace CodexNativeAgent.Ui
                 Function(operation) RunUiActionAsync(operation),
                 AddressOf FireAndForget)
             _settingsStore = New JsonAppSettingsStore(_settingsFilePath, _settingsJsonOptions)
-            AddHandler _viewModel.TranscriptPanel.Items.CollectionChanged,
+            AddHandler _viewModel.TranscriptPanel.TranscriptItemsChanged,
                 Sub(sender, e)
                     UpdateWorkspaceEmptyStateVisibility()
                 End Sub

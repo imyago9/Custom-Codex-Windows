@@ -62,7 +62,7 @@ Namespace CodexNativeAgent.Ui
             CancelActiveThreadSelectionLoad()
             ResetThreadSelectionLoadUiState(hideTranscriptLoader:=True)
             ClearPendingUserEchoTracking()
-            _viewModel.TranscriptPanel.ClearTranscript()
+            ActivateFreshTranscriptDocument("start_thread")
             ClearVisibleSelection()
             SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
             UpdateThreadTurnLabels()
@@ -435,6 +435,9 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim uiBindStartMs = perf.ElapsedMilliseconds
+            Dim docSwapStartMs = perf.ElapsedMilliseconds
+            Dim didSwapTranscriptDoc = EnsureTranscriptDocumentActivatedForThread(normalizedThreadId, "selection_fast_bind")
+            Dim docSwapMs = Math.Max(0, perf.ElapsedMilliseconds - docSwapStartMs)
             Dim clearStartMs = perf.ElapsedMilliseconds
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
@@ -473,7 +476,7 @@ Namespace CodexNativeAgent.Ui
 
             TraceThreadSelectionPerformance(
                 "fast_bind_complete",
-                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={snapshot.DisplayEntries.Count}")
+                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; docSwapMs={docSwapMs}; docSwapped={didSwapTranscriptDoc}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={snapshot.DisplayEntries.Count}")
             Return True
         End Function
 
@@ -1548,6 +1551,7 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub ApplyThreadTranscriptSnapshot(transcriptSnapshot As ThreadTranscriptSnapshot, hasTurns As Boolean)
+            EnsureTranscriptDocumentActivatedForThread(GetVisibleThreadId(), "apply_thread_snapshot")
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
             If Not hasTurns Then
@@ -1729,6 +1733,11 @@ Namespace CodexNativeAgent.Ui
                                  Math.Max(0, rebuildPerf.ElapsedMilliseconds - chunkPlanStartMs))
 
             Dim uiBindStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
+            Dim docSwapStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
+            Dim didSwapTranscriptDoc = EnsureTranscriptDocumentActivatedForThread(normalizedThreadId, "rebuild_visible_transcript")
+            Dim docSwapMs = If(rebuildPerf Is Nothing,
+                               0L,
+                               Math.Max(0, rebuildPerf.ElapsedMilliseconds - docSwapStartMs))
             Dim clearStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
@@ -1777,7 +1786,7 @@ Namespace CodexNativeAgent.Ui
                 Dim finalizeMs = Math.Max(0, rebuildPerf.ElapsedMilliseconds - finalizeStartMs)
                 TraceThreadSelectionPerformance(
                     "rebuild_path_complete",
-                    $"thread={normalizedThreadId}; projectionPrepMs={projectionPrepMs}; chunkPlanMs={chunkPlanMs}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeMs}; totalMs={rebuildPerf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={totalProjectionCount}")
+                    $"thread={normalizedThreadId}; projectionPrepMs={projectionPrepMs}; chunkPlanMs={chunkPlanMs}; docSwapMs={docSwapMs}; docSwapped={didSwapTranscriptDoc}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeMs}; totalMs={rebuildPerf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={totalProjectionCount}")
             End If
         End Sub
 
