@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <Style x:Key="FocusVisualStyle" TargetType="Control">
         <Setter Property="Template">
             <Setter.Value>
@@ -408,6 +409,8 @@
 
     <Style x:Key="AppScrollThumbStyle" TargetType="Thumb">
         <Setter Property="Background" Value="{DynamicResource TextTertiaryBrush}" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="MinWidth" Value="36" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
@@ -415,7 +418,8 @@
                             Background="{TemplateBinding Background}"
                             CornerRadius="5"
                             Margin="2"
-                            MinHeight="26"
+                            MinHeight="32"
+                            MinWidth="32"
                             Opacity="0.9" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -453,6 +457,11 @@
                         <Track x:Name="PART_Track"
                                Margin="1,2,1,2"
                                IsDirectionReversed="True">
+                            <Track.Resources>
+                                <!-- WPF Track clamps thumb length using these system metrics (minimum is ~ half). -->
+                                <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarButtonHeightKey}">72</sys:Double>
+                                <sys:Double x:Key="{x:Static SystemParameters.HorizontalScrollBarButtonWidthKey}">72</sys:Double>
+                            </Track.Resources>
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton x:Name="DecreaseButton"
                                               Command="ScrollBar.PageUpCommand"
