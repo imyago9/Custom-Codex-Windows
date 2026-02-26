@@ -444,7 +444,21 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub AppendTurnLifecycleMarker(threadId As String, turnId As String, status As String)
-            _viewModel.TranscriptPanel.UpsertTurnLifecycleMarker(threadId, turnId, status)
+            Dim lifecycleTimestampUtc As DateTimeOffset? = Nothing
+            Dim runtimeStore = _sessionNotificationCoordinator?.RuntimeStore
+            If runtimeStore IsNot Nothing Then
+                Dim turnState = runtimeStore.GetTurnState(threadId, turnId)
+                If turnState IsNot Nothing Then
+                    Dim normalizedStatus = If(status, String.Empty).Trim()
+                    If StringComparer.OrdinalIgnoreCase.Equals(normalizedStatus, "started") Then
+                        lifecycleTimestampUtc = turnState.StartedAt
+                    Else
+                        lifecycleTimestampUtc = turnState.CompletedAt
+                    End If
+                End If
+            End If
+
+            _viewModel.TranscriptPanel.UpsertTurnLifecycleMarker(threadId, turnId, status, lifecycleTimestampUtc)
         End Sub
 
         Private Sub UpsertTurnMetadata(threadId As String, turnId As String, kind As String, summaryText As String)

@@ -18,6 +18,8 @@ Namespace CodexNativeAgent.Ui.Coordinators
         Public Property TurnId As String = String.Empty
         Public Property TurnStatus As String = String.Empty
         Public Property IsCompleted As Boolean
+        Public Property StartedAt As DateTimeOffset?
+        Public Property CompletedAt As DateTimeOffset?
         Public Property LastErrorMessage As String = String.Empty
         Public Property DiffSummary As String = String.Empty
         Public Property PlanSummary As String = String.Empty
@@ -671,6 +673,9 @@ Namespace CodexNativeAgent.Ui.Coordinators
             Dim turn = EnsureTurn(resolvedThreadId, resolvedTurnId)
             turn.IsCompleted = False
             turn.TurnStatus = "in_progress"
+            If Not turn.StartedAt.HasValue Then
+                turn.StartedAt = DateTimeOffset.UtcNow
+            End If
             turn.LastErrorMessage = String.Empty
             turn.LastEventMethod = evt.MethodName
 
@@ -696,6 +701,10 @@ Namespace CodexNativeAgent.Ui.Coordinators
             Dim turn = EnsureTurn(resolvedThreadId, resolvedTurnId)
             turn.IsCompleted = True
             turn.TurnStatus = NormalizeStatus(evt.Status, "completed")
+            If Not turn.StartedAt.HasValue Then
+                turn.StartedAt = DateTimeOffset.UtcNow
+            End If
+            turn.CompletedAt = DateTimeOffset.UtcNow
             If Not String.IsNullOrWhiteSpace(evt.ErrorMessage) Then
                 turn.LastErrorMessage = evt.ErrorMessage
             End If

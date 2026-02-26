@@ -1519,6 +1519,11 @@ Namespace CodexNativeAgent.Ui
                     RenderItem(item)
                 Next
 
+                If turn.IsCompleted Then
+                    Dim completionStatus = If(String.IsNullOrWhiteSpace(turn.TurnStatus), "completed", turn.TurnStatus)
+                    AppendTurnLifecycleMarker(turnThreadId, turnId, completionStatus)
+                End If
+
             Next
 
             ' Fallback for items that may exist without a materialized turn state yet.

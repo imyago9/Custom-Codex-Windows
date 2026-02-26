@@ -729,16 +729,22 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
         End Sub
 
-        Public Sub UpsertTurnLifecycleMarker(threadId As String, turnId As String, status As String)
+        Public Sub UpsertTurnLifecycleMarker(threadId As String,
+                                            turnId As String,
+                                            status As String,
+                                            Optional timestampUtc As DateTimeOffset? = Nothing)
             Dim normalizedTurnId = If(turnId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedTurnId) Then
                 Return
             End If
 
             Dim normalizedStatus = If(status, String.Empty).Trim()
+            Dim lifecycleTimestampText = If(timestampUtc.HasValue,
+                                            timestampUtc.Value.ToLocalTime().ToString("HH:mm"),
+                                            FormatLiveTimestamp())
             Dim descriptor = BuildTurnLifecycleDescriptorForSnapshot(normalizedTurnId,
                                                                      normalizedStatus,
-                                                                     FormatLiveTimestamp())
+                                                                     lifecycleTimestampText)
             descriptor.ThreadId = If(threadId, String.Empty).Trim()
 
             Dim lifecycleSlot = If(StringComparer.OrdinalIgnoreCase.Equals(normalizedStatus, "started"),
@@ -911,6 +917,9 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             _runtimeEntriesByKey(normalizedKey) = replacement
             Dim runtimeInsertIndex = ResolveRuntimeInsertIndex(normalizedKey, descriptor)
+            If runtimeInsertIndex < 0 Then
+                runtimeInsertIndex = ResolveLifecycleInsertIndex(normalizedKey, descriptor)
+            End If
             If runtimeInsertIndex >= 0 AndAlso runtimeInsertIndex <= _items.Count Then
                 _items.Insert(runtimeInsertIndex, replacement)
             Else
@@ -1084,6 +1093,66 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 descriptor,
                 -1,
                 Nothing)
+            Return -1
+        End Function
+
+        Private Function ResolveLifecycleInsertIndex(runtimeKey As String, descriptor As TranscriptEntryDescriptor) As Integer
+            Dim normalizedRuntimeKey = If(runtimeKey, String.Empty).Trim()
+            Dim normalizedTurnId = NormalizeTurnId(descriptor?.TurnId)
+            If String.IsNullOrWhiteSpace(normalizedRuntimeKey) OrElse
+               String.IsNullOrWhiteSpace(normalizedTurnId) OrElse
+               Not normalizedRuntimeKey.StartsWith("turn:lifecycle:", StringComparison.Ordinal) Then
+                Return -1
+            End If
+
+            If normalizedRuntimeKey.StartsWith("turn:lifecycle:start:", StringComparison.Ordinal) Then
+                Dim lastUserIndex = -1
+                For i = 0 To _items.Count - 1
+                    Dim candidate = _items(i)
+                    If candidate Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                        Continue For
+                    End If
+
+                    If StringComparer.OrdinalIgnoreCase.Equals(candidate.Kind, "user") Then
+                        lastUserIndex = i
+                    End If
+                Next
+
+                If lastUserIndex >= 0 Then
+                    Return lastUserIndex + 1
+                End If
+
+                For i = 0 To _items.Count - 1
+                    Dim candidate = _items(i)
+                    If candidate Is Nothing Then
+                        Continue For
+                    End If
+
+                    If StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                        Return i
+                    End If
+                Next
+
+                Return -1
+            End If
+
+            If normalizedRuntimeKey.StartsWith("turn:lifecycle:end:", StringComparison.Ordinal) Then
+                For i = _items.Count - 1 To 0 Step -1
+                    Dim candidate = _items(i)
+                    If candidate Is Nothing Then
+                        Continue For
+                    End If
+
+                    If StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                        Return i + 1
+                    End If
+                Next
+            End If
+
             Return -1
         End Function
 
