@@ -1083,6 +1083,8 @@ Namespace CodexNativeAgent.Ui
                visibleRuntimeItemsRendered > 0 Then
                 ScrollTranscriptToBottom(reason:=TranscriptScrollRequestReason.RuntimeStream)
             End If
+
+            TryDispatchDeferredTranscriptChunkPrependFromRuntimeUpdate()
         End Sub
 
         Private Sub UpdateNotificationRuntimeContextFromDispatch(dispatch As SessionNotificationCoordinator.NotificationDispatchResult)
@@ -1175,6 +1177,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             RefreshThreadRuntimeIndicatorsIfNeeded()
+            TryDispatchDeferredTranscriptChunkPrependFromRuntimeUpdate()
         End Sub
 
         Private Sub ApplyApprovalResolutionDispatchResult(dispatch As SessionNotificationCoordinator.ApprovalResolutionDispatchResult)
@@ -1229,6 +1232,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             RefreshThreadRuntimeIndicatorsIfNeeded()
+            TryDispatchDeferredTranscriptChunkPrependFromRuntimeUpdate()
         End Sub
 
         Private Function TryResolveRuntimeEventUiScope(threadId As String,
