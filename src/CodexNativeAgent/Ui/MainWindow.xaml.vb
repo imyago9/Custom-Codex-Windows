@@ -3949,9 +3949,11 @@ Namespace CodexNativeAgent.Ui
 
             Dim transcriptList = WorkspacePaneHost.LstTranscript
             Dim hasVisibleActiveTurn = HasActiveRuntimeTurnForCurrentThread()
-            Dim shouldDisableVirtualizationForStreamingTail = hasVisibleActiveTurn AndAlso IsTranscriptFollowBottomEnabled()
+            ' Freeze transcript virtualization for the whole visible active turn to avoid
+            ' mode-switch remeasure churn when the user first detaches from bottom.
+            Dim shouldDisableVirtualizationForVisibleActiveTurn = hasVisibleActiveTurn
 
-            If shouldDisableVirtualizationForStreamingTail Then
+            If shouldDisableVirtualizationForVisibleActiveTurn Then
                 ApplyTranscriptVirtualizationSettings(
                     transcriptList,
                     canContentScroll:=False,
