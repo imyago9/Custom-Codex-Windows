@@ -11,6 +11,7 @@ Imports System.Threading
 Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Controls
+Imports System.Windows.Controls.Primitives
 Imports System.Windows.Data
 Imports System.Windows.Input
 Imports System.Windows.Interop
@@ -769,6 +770,9 @@ Namespace CodexNativeAgent.Ui
                     New MouseWheelEventHandler(AddressOf OnTranscriptPreviewMouseWheel)
                 AddHandler WorkspacePaneHost.LstTranscript.PreviewKeyDown,
                     New KeyEventHandler(AddressOf OnTranscriptPreviewKeyDown)
+                WorkspacePaneHost.LstTranscript.AddHandler(Thumb.DragStartedEvent,
+                                                          New DragStartedEventHandler(AddressOf OnTranscriptScrollThumbDragStarted),
+                                                          True)
             End If
             AddHandler WorkspacePaneHost.BtnDismissWorkspaceHintOverlay.Click,
                 Sub(sender, e)
@@ -3406,12 +3410,23 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If IsScrollViewerAtBottomExtreme(scroller) Then
+            Dim atBottom = IsScrollViewerAtBottomExtreme(scroller)
+            If atBottom Then
                 _transcriptAutoScrollEnabled = True
                 Return
             End If
 
-            If Math.Abs(e.VerticalChange) > 0.01R Then
+            Dim verticalOffsetChanged = Math.Abs(e.VerticalChange) > 0.01R
+            If Not verticalOffsetChanged Then
+                Return
+            End If
+
+            ' Content growth/layout changes during streaming can also move the offset a bit.
+            ' Only disable auto-follow on user-style scroll navigation (offset change without
+            ' extent/viewport growth in the same event).
+            Dim extentOrViewportChanged = Math.Abs(e.ExtentHeightChange) > 0.01R OrElse
+                                         Math.Abs(e.ViewportHeightChange) > 0.01R
+            If Not extentOrViewportChanged Then
                 _transcriptAutoScrollEnabled = False
             End If
         End Sub
@@ -3445,9 +3460,20 @@ Namespace CodexNativeAgent.Ui
             End Select
         End Sub
 
+        Private Sub OnTranscriptScrollThumbDragStarted(sender As Object, e As DragStartedEventArgs)
+            If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
+                Return
+            End If
+
+            If Not IsTurnInProgressForTranscriptAutoScroll() Then
+                Return
+            End If
+
+            _transcriptAutoScrollEnabled = False
+        End Sub
+
         Private Function IsTurnInProgressForTranscriptAutoScroll() As Boolean
-            Dim session = If(_viewModel, Nothing)?.SessionState
-            Return session IsNot Nothing AndAlso session.HasCurrentTurn
+            Return HasActiveRuntimeTurnForCurrentThread()
         End Function
 
         Private Function IsWorkspaceHintOverlayContext() As Boolean
