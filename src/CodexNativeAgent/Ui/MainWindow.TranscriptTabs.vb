@@ -298,7 +298,8 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Function EnsureTranscriptTabSurfaceHandle(threadId As String,
-                                                         Optional preferSecondarySurface As Boolean = False) As TranscriptTabSurfaceHandle
+                                                         Optional preferSecondarySurface As Boolean = False,
+                                                         Optional avoidDormantSurfaceReuse As Boolean = False) As TranscriptTabSurfaceHandle
             EnsureTranscriptTabsUiInitialized()
 
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
@@ -333,8 +334,10 @@ Namespace CodexNativeAgent.Ui
             If usePrimarySurface Then
                 listBox = WorkspacePaneHost.LstTranscript
             Else
-                listBox = TakeDormantTranscriptTabSurface()
-                reusedDormantSurface = listBox IsNot Nothing
+                If Not avoidDormantSurfaceReuse Then
+                    listBox = TakeDormantTranscriptTabSurface()
+                    reusedDormantSurface = listBox IsNot Nothing
+                End If
                 If listBox Is Nothing Then
                     listBox = CreateRetainedTranscriptSurfaceClone()
                 End If
@@ -622,7 +625,8 @@ Namespace CodexNativeAgent.Ui
 
             Dim blankSurfacePerf = Stopwatch.StartNew()
             ActivateFreshTranscriptDocument("tab_close_last_tab", activateBlankSurface:=False)
-            Dim transitionedToPendingDraft = EnsurePendingNewThreadTranscriptTabActivated(preferSecondarySurface:=True)
+            Dim transitionedToPendingDraft = EnsurePendingNewThreadTranscriptTabActivated(preferSecondarySurface:=True,
+                                                                                          avoidDormantSurfaceReuse:=True)
             If Not transitionedToPendingDraft Then
                 ActivateBlankTranscriptSurfacePlaceholder()
             Else
@@ -843,7 +847,8 @@ Namespace CodexNativeAgent.Ui
             UpdateWorkspaceEmptyStateVisibility()
         End Sub
 
-        Private Function EnsurePendingNewThreadTranscriptTabActivated(Optional preferSecondarySurface As Boolean = False) As Boolean
+        Private Function EnsurePendingNewThreadTranscriptTabActivated(Optional preferSecondarySurface As Boolean = False,
+                                                                     Optional avoidDormantSurfaceReuse As Boolean = False) As Boolean
             EnsureTranscriptTabsUiInitialized()
 
             If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
@@ -851,7 +856,8 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim handle = EnsureTranscriptTabSurfaceHandle(PendingNewThreadTranscriptTabId,
-                                                          preferSecondarySurface)
+                                                          preferSecondarySurface,
+                                                          avoidDormantSurfaceReuse)
             If handle Is Nothing OrElse handle.SurfaceListBox Is Nothing Then
                 Return False
             End If
