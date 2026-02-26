@@ -29,6 +29,17 @@ Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
         Inherits Window
 
+        <Flags>
+        Private Enum TranscriptScrollRequestReason
+            None = 0
+            LegacyCallsite = 1
+            ThreadSelection = 2
+            ThreadRebuild = 4
+            RuntimeStream = 8
+            SystemMessage = 16
+            UserMessage = 32
+        End Enum
+
         Private NotInheritable Class ModelListEntry
             Public Property Id As String = String.Empty
             Public Property DisplayName As String = String.Empty
@@ -434,6 +445,10 @@ Namespace CodexNativeAgent.Ui
         Private _transcriptScrollViewer As ScrollViewer
         Private _transcriptScrollThumbDragActive As Boolean
         Private _transcriptUserScrollInteractionArmed As Boolean
+        Private _transcriptScrollRequestPending As Boolean
+        Private _transcriptScrollQueuedForce As Boolean
+        Private _transcriptScrollQueuedReasons As TranscriptScrollRequestReason = TranscriptScrollRequestReason.None
+        Private _transcriptScrollRequestGeneration As Integer
         Private _pendingNewThreadFirstPromptSelection As Boolean
         Private _threadsPanelHintBubbleHintKey As String = String.Empty
         Private _threadsPanelHintBubbleDismissedForCurrentHint As Boolean
@@ -3721,7 +3736,51 @@ Namespace CodexNativeAgent.Ui
             Return scroller.VerticalOffset >= scroller.ScrollableHeight
         End Function
 
-        Private Sub ScrollTranscriptToBottom(Optional force As Boolean = False)
+        Private Sub ScrollTranscriptToBottom(Optional force As Boolean = False,
+                                            Optional reason As TranscriptScrollRequestReason = TranscriptScrollRequestReason.LegacyCallsite)
+            RequestTranscriptScroll(reason, force)
+        End Sub
+
+        Private Sub RequestTranscriptScroll(reason As TranscriptScrollRequestReason,
+                                            Optional force As Boolean = False)
+            If WorkspacePaneHost Is Nothing Then
+                Return
+            End If
+
+            _transcriptScrollQueuedForce = _transcriptScrollQueuedForce Or force
+            _transcriptScrollQueuedReasons = _transcriptScrollQueuedReasons Or reason
+            _transcriptScrollRequestGeneration += 1
+
+            QueueTranscriptScrollRequestProcessing()
+        End Sub
+
+        Private Sub QueueTranscriptScrollRequestProcessing()
+            If _transcriptScrollRequestPending Then
+                Return
+            End If
+
+            _transcriptScrollRequestPending = True
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                New Action(AddressOf ProcessTranscriptScrollRequestQueue))
+        End Sub
+
+        Private Sub ProcessTranscriptScrollRequestQueue()
+            _transcriptScrollRequestPending = False
+
+            Dim queuedForce = _transcriptScrollQueuedForce
+            Dim queuedReasons = _transcriptScrollQueuedReasons
+            Dim requestGeneration = _transcriptScrollRequestGeneration
+
+            _transcriptScrollQueuedForce = False
+            _transcriptScrollQueuedReasons = TranscriptScrollRequestReason.None
+
+            ApplyTranscriptScrollRequest(queuedForce, queuedReasons, requestGeneration)
+        End Sub
+
+        Private Sub ApplyTranscriptScrollRequest(force As Boolean,
+                                                 reasons As TranscriptScrollRequestReason,
+                                                 requestGeneration As Integer)
             If WorkspacePaneHost Is Nothing Then
                 Return
             End If
@@ -3748,7 +3807,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 If scroller IsNot Nothing Then
-                    QueueTranscriptScrollToBottom()
+                    QueueTranscriptScrollToBottom(requestGeneration)
                 ElseIf transcriptList.Items IsNot Nothing AndAlso transcriptList.Items.Count > 0 Then
                     transcriptList.ScrollIntoView(transcriptList.Items(transcriptList.Items.Count - 1))
                 End If
@@ -3770,7 +3829,7 @@ Namespace CodexNativeAgent.Ui
             Return _transcriptScrollViewer
         End Function
 
-        Private Sub QueueTranscriptScrollToBottom()
+        Private Sub QueueTranscriptScrollToBottom(requestGeneration As Integer)
             If _transcriptScrollToBottomPending Then
                 Return
             End If
@@ -3784,6 +3843,10 @@ Namespace CodexNativeAgent.Ui
 
                         Dim scroller = ResolveTranscriptScrollViewer()
                         If scroller Is Nothing Then
+                            Return
+                        End If
+
+                        If requestGeneration <> _transcriptScrollRequestGeneration Then
                             Return
                         End If
 
