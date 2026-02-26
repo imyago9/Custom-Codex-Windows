@@ -359,30 +359,10 @@ Namespace CodexNativeAgent.Ui
                 Return Nothing
             End If
 
-            Dim projection = _threadLiveSessionRegistry.GetProjectionSnapshot(threadId)
-            ApplyOverlayRuntimeOrderMetadataToProjection(threadId, projection, _sessionNotificationCoordinator.RuntimeStore)
-            Dim completedOverlayTurnsForFullReplay = RemoveProjectionSnapshotItemRowsForCompletedOverlayTurns(threadId,
-                                                                                                              projection,
-                                                                                                              _sessionNotificationCoordinator.RuntimeStore)
-            RemoveProjectionOverlayReplaySupersededMarkers(threadId,
-                                                           projection,
-                                                           _sessionNotificationCoordinator.RuntimeStore)
-
             Dim activeSession = _threadTranscriptChunkSessionCoordinator.ActiveSession
             If activeSession Is Nothing Then
                 Return Nothing
             End If
-
-            Dim loadedRangeStart = If(activeSession.LoadedRangeStart.HasValue, activeSession.LoadedRangeStart.Value, 0)
-            Dim loadedRangeEnd = If(activeSession.LoadedRangeEnd.HasValue,
-                                    activeSession.LoadedRangeEnd.Value,
-                                    Math.Max(0, projection.DisplayEntries.Count - 1))
-
-            Dim anchor As New TranscriptChunkPrependAnchorSnapshot() With {
-                .VerticalOffset = Math.Max(0R, scroller.VerticalOffset),
-                .ExtentHeight = Math.Max(0R, scroller.ExtentHeight),
-                .ViewportHeight = Math.Max(0R, scroller.ViewportHeight)
-            }
 
             Dim runtimeStateLastEventUtc As DateTimeOffset? = Nothing
             Dim runtimeStateActiveTurnId As String = String.Empty
@@ -396,6 +376,48 @@ Namespace CodexNativeAgent.Ui
                 runtimeStateActiveTurnId = If(liveState.ActiveTurnId, String.Empty).Trim()
                 runtimeStateWasTurnActive = liveState.IsTurnActive
             End If
+
+            Dim projection As ThreadTranscriptProjectionSnapshot = Nothing
+            Dim completedOverlayTurnsForFullReplay As HashSet(Of String) = Nothing
+            Dim preparedProjectionActiveTurnId = If(activeSession.PreparedProjectionRuntimeStateActiveTurnId, String.Empty).Trim()
+            Dim preparedProjectionRuntimeMatches = activeSession.PreparedProjection IsNot Nothing AndAlso
+                                                activeSession.PreparedProjectionRuntimeStateWasTurnActive = runtimeStateWasTurnActive AndAlso
+                                                StringComparer.Ordinal.Equals(preparedProjectionActiveTurnId, runtimeStateActiveTurnId) AndAlso
+                                                activeSession.PreparedProjectionRuntimeStateLastEventUtc.HasValue = runtimeStateLastEventUtc.HasValue AndAlso
+                                                (Not runtimeStateLastEventUtc.HasValue OrElse
+                                                 DateTimeOffset.Compare(activeSession.PreparedProjectionRuntimeStateLastEventUtc.Value,
+                                                                        runtimeStateLastEventUtc.Value) = 0)
+
+            If preparedProjectionRuntimeMatches Then
+                projection = activeSession.PreparedProjection
+            Else
+                projection = _threadLiveSessionRegistry.GetProjectionSnapshot(threadId)
+                ApplyOverlayRuntimeOrderMetadataToProjection(threadId, projection, _sessionNotificationCoordinator.RuntimeStore)
+                completedOverlayTurnsForFullReplay = RemoveProjectionSnapshotItemRowsForCompletedOverlayTurns(threadId,
+                                                                                                              projection,
+                                                                                                              _sessionNotificationCoordinator.RuntimeStore)
+                RemoveProjectionOverlayReplaySupersededMarkers(threadId,
+                                                               projection,
+                                                               _sessionNotificationCoordinator.RuntimeStore)
+
+                If _threadTranscriptChunkSessionCoordinator.IsActiveSessionGeneration(threadId, generationId) Then
+                    activeSession.PreparedProjection = projection
+                    activeSession.PreparedProjectionRuntimeStateLastEventUtc = runtimeStateLastEventUtc
+                    activeSession.PreparedProjectionRuntimeStateActiveTurnId = runtimeStateActiveTurnId
+                    activeSession.PreparedProjectionRuntimeStateWasTurnActive = runtimeStateWasTurnActive
+                End If
+            End If
+
+            Dim loadedRangeStart = If(activeSession.LoadedRangeStart.HasValue, activeSession.LoadedRangeStart.Value, 0)
+            Dim loadedRangeEnd = If(activeSession.LoadedRangeEnd.HasValue,
+                                    activeSession.LoadedRangeEnd.Value,
+                                    Math.Max(0, projection.DisplayEntries.Count - 1))
+
+            Dim anchor As New TranscriptChunkPrependAnchorSnapshot() With {
+                .VerticalOffset = Math.Max(0R, scroller.VerticalOffset),
+                .ExtentHeight = Math.Max(0R, scroller.ExtentHeight),
+                .ViewportHeight = Math.Max(0R, scroller.ViewportHeight)
+            }
 
             Return New TranscriptOlderChunkLoadSnapshot() With {
                 .ThreadId = threadId,
