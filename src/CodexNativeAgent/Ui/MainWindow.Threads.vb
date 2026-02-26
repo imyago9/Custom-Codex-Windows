@@ -1340,6 +1340,19 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            Dim chunkSessionGeneration = 0
+            Dim chunkSession = _threadTranscriptChunkSessionCoordinator.ActivateVisibleThread(normalizedThreadId,
+                                                                                              "rebuild_visible_transcript_activate")
+            If chunkSession IsNot Nothing Then
+                chunkSession = _threadTranscriptChunkSessionCoordinator.BumpActiveSessionGeneration("rebuild_visible_transcript")
+                If chunkSession IsNot Nothing Then
+                    chunkSessionGeneration = chunkSession.GenerationId
+                End If
+
+                TraceTranscriptChunkSession("rebuild_begin",
+                                            $"thread={normalizedThreadId}; generation={chunkSessionGeneration}")
+            End If
+
             Dim projection = _threadLiveSessionRegistry.GetProjectionSnapshot(normalizedThreadId)
             ApplyOverlayRuntimeOrderMetadataToProjection(normalizedThreadId, projection, _sessionNotificationCoordinator.RuntimeStore)
             Dim completedOverlayTurnsForFullReplay = RemoveProjectionSnapshotItemRowsForCompletedOverlayTurns(normalizedThreadId,
@@ -1348,6 +1361,13 @@ Namespace CodexNativeAgent.Ui
             RemoveProjectionOverlayReplaySupersededMarkers(normalizedThreadId,
                                                            projection,
                                                            _sessionNotificationCoordinator.RuntimeStore)
+
+            If chunkSessionGeneration > 0 AndAlso
+               Not _threadTranscriptChunkSessionCoordinator.IsActiveSessionGeneration(normalizedThreadId, chunkSessionGeneration) Then
+                TraceTranscriptChunkSession("rebuild_stale_skip",
+                                            $"thread={normalizedThreadId}; generation={chunkSessionGeneration}")
+                Return
+            End If
 
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
@@ -1361,6 +1381,8 @@ Namespace CodexNativeAgent.Ui
             _threadLiveSessionRegistry.MarkBound(normalizedThreadId, GetVisibleTurnId())
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
             RefreshThreadRuntimeIndicatorsIfNeeded()
+            TraceTranscriptChunkSession("rebuild_complete",
+                                        $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={projection.DisplayEntries.Count}")
             ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
         End Sub
 
