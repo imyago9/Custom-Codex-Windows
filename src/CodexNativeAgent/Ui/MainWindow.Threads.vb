@@ -42,7 +42,7 @@ Namespace CodexNativeAgent.Ui
             ResetThreadSelectionLoadUiState(hideTranscriptLoader:=True)
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
-            _currentThreadId = String.Empty
+            ClearVisibleThreadId()
             ClearVisibleTurnId()
             SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
             UpdateThreadTurnLabels()
@@ -1922,7 +1922,7 @@ Namespace CodexNativeAgent.Ui
 
             Dim threadId = GetPropertyString(threadObject, "id")
             If Not String.IsNullOrWhiteSpace(threadId) Then
-                _currentThreadId = threadId
+                SetVisibleThreadId(threadId)
             End If
 
             Dim loadedThreadCwd = ExtractThreadWorkingDirectoryFromThreadObject(threadObject)

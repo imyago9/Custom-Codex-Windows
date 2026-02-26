@@ -16,6 +16,14 @@ Namespace CodexNativeAgent.Ui
             Return If(_currentThreadId, String.Empty).Trim()
         End Function
 
+        Private Sub SetVisibleThreadId(value As String)
+            _currentThreadId = If(value, String.Empty).Trim()
+        End Sub
+
+        Private Sub ClearVisibleThreadId()
+            _currentThreadId = String.Empty
+        End Sub
+
         Private Function GetVisibleTurnId() As String
             Return If(_currentTurnId, String.Empty).Trim()
         End Function
@@ -364,7 +372,7 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub ResetWorkspaceTransientStateCore(clearModelPicker As Boolean)
-            _currentThreadId = String.Empty
+            ClearVisibleThreadId()
             ClearVisibleTurnId()
             _notificationRuntimeThreadId = String.Empty
             _notificationRuntimeTurnId = String.Empty
