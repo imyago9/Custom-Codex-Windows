@@ -463,6 +463,7 @@ Namespace CodexNativeAgent.Ui
         Private _transcriptUserScrollInteractionArmed As Boolean
         Private _transcriptScrollUserInteractionEpoch As Integer
         Private _transcriptScrollProgrammaticMoveInProgress As Boolean
+        Private _transcriptDetachedAnchorOffset As Double?
         Private _transcriptScrollRequestPending As Boolean
         Private _transcriptScrollQueuedPolicy As TranscriptScrollRequestPolicy = TranscriptScrollRequestPolicy.None
         Private _transcriptScrollQueuedReasons As TranscriptScrollRequestReason = TranscriptScrollRequestReason.None
@@ -3477,9 +3478,30 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            If _transcriptUserScrollInteractionArmed AndAlso
+               Not _transcriptScrollThumbDragActive AndAlso
+               IsTranscriptFollowBottomEnabled() AndAlso
+               layoutMetricsChanged AndAlso
+               e.ExtentHeightChange > 0.01R AndAlso
+               e.VerticalChange >= -0.01R Then
+                ' Content growth while pinned at bottom can move the offset and extent in the same event.
+                ' If a no-op user input (e.g. wheel-down at bottom) armed interaction, do not misclassify
+                ' this as a user navigation detach.
+                _transcriptUserScrollInteractionArmed = False
+                DebugTranscriptScroll("scroll_changed", "skip=armed_content_growth_while_following", scroller, e)
+                Return
+            End If
+
             Dim isUserDrivenOffsetChange = _transcriptScrollThumbDragActive OrElse
                                            _transcriptUserScrollInteractionArmed
             If Not isUserDrivenOffsetChange Then
+                If layoutMetricsChanged AndAlso
+                   _transcriptScrollFollowMode = TranscriptScrollFollowMode.DetachedByUser AndAlso
+                   TryRestoreTranscriptDetachedAnchorOffset(scroller) Then
+                    DebugTranscriptScroll("scroll_changed", "restore=detached_anchor_after_layout_change", scroller, e)
+                    Return
+                End If
+
                 DebugTranscriptScroll("scroll_changed", "skip=content_or_layout_change", scroller, e)
                 Return
             End If
@@ -3494,6 +3516,10 @@ Namespace CodexNativeAgent.Ui
                 SetTranscriptFollowModeFollowBottom()
             Else
                 SetTranscriptFollowModeDetachedByUser()
+            End If
+
+            If _transcriptScrollFollowMode = TranscriptScrollFollowMode.DetachedByUser Then
+                UpdateTranscriptDetachedAnchorOffset(scroller)
             End If
 
             If Not _transcriptScrollThumbDragActive Then
@@ -3511,6 +3537,12 @@ Namespace CodexNativeAgent.Ui
             Dim scroller = ResolveTranscriptScrollViewer()
             Dim atBottom = IsScrollViewerAtBottomExtreme(scroller)
             Dim detachFollow = e.Delta > 0 OrElse Not atBottom
+
+            If e.Delta < 0 AndAlso atBottom AndAlso IsTranscriptFollowBottomEnabled() Then
+                DebugTranscriptScroll("mouse_wheel", $"skip=noop_pinned_bottom;delta={e.Delta}", scroller)
+                Return
+            End If
+
             DebugTranscriptScroll("mouse_wheel", $"delta={e.Delta};detachFollow={detachFollow}", scroller)
             BeginTranscriptUserScrollInteraction(detachFollow)
         End Sub
@@ -3548,6 +3580,15 @@ Namespace CodexNativeAgent.Ui
 
             Select Case e.Key
                 Case Key.Up, Key.PageUp, Key.Home, Key.Down, Key.PageDown, Key.End
+                    Dim scroller = ResolveTranscriptScrollViewer()
+                    Dim atBottom = IsScrollViewerAtBottomExtreme(scroller)
+                    If (e.Key = Key.Down OrElse e.Key = Key.PageDown OrElse e.Key = Key.End) AndAlso
+                       atBottom AndAlso
+                       IsTranscriptFollowBottomEnabled() Then
+                        DebugTranscriptScroll("key_down", $"skip=noop_pinned_bottom;key={e.Key}", scroller)
+                        Return
+                    End If
+
                     Dim detachFollow = (e.Key = Key.Up OrElse e.Key = Key.PageUp OrElse e.Key = Key.Home)
                     DebugTranscriptScroll("key_down", $"key={e.Key};detachFollow={detachFollow}")
                     BeginTranscriptUserScrollInteraction(detachFollow)
@@ -3611,6 +3652,7 @@ Namespace CodexNativeAgent.Ui
             CancelPendingTranscriptScrollRequests()
             If detachFollow Then
                 SetTranscriptFollowModeDetachedByUser()
+                UpdateTranscriptDetachedAnchorOffset(ResolveTranscriptScrollViewer())
             End If
             DebugTranscriptScroll("user_interaction_begin", $"detachFollow={detachFollow}")
         End Sub
@@ -3869,18 +3911,26 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If policy = TranscriptScrollRequestPolicy.FollowIfPinned Then
-                If _transcriptScrollThumbDragActive OrElse _transcriptUserScrollInteractionArmed Then
-                    DebugTranscriptScroll("request_scroll", $"skip=user_interacting;reason={reason};policy={policy};force={force}")
-                    Return
-                End If
+                If policy = TranscriptScrollRequestPolicy.FollowIfPinned Then
+                    If _transcriptScrollThumbDragActive OrElse _transcriptUserScrollInteractionArmed Then
+                        DebugTranscriptScroll("request_scroll", $"skip=user_interacting;reason={reason};policy={policy};force={force}")
+                        Return
+                    End If
 
-                If reason = TranscriptScrollRequestReason.RuntimeStream AndAlso
-                   Not IsTranscriptFollowBottomEnabled() Then
-                    DebugTranscriptScroll("request_scroll", $"skip=detached_follow;reason={reason};policy={policy}")
-                    Return
+                    If reason = TranscriptScrollRequestReason.RuntimeStream AndAlso
+                       Not IsTranscriptFollowBottomEnabled() Then
+                        Dim scroller = ResolveTranscriptScrollViewer()
+                        If scroller IsNot Nothing AndAlso
+                           IsScrollViewerAtBottomExtreme(scroller) AndAlso
+                           IsScrollViewerAtStableBottomForUserReattach(scroller) Then
+                            SetTranscriptFollowModeFollowBottom()
+                            DebugTranscriptScroll("request_scroll", $"auto_reattach=bottom;reason={reason};policy={policy}", scroller)
+                        Else
+                            DebugTranscriptScroll("request_scroll", $"skip=detached_follow;reason={reason};policy={policy}", scroller)
+                            Return
+                        End If
+                    End If
                 End If
-            End If
 
             _transcriptScrollQueuedPolicy = MergeTranscriptScrollRequestPolicy(_transcriptScrollQueuedPolicy, policy)
             _transcriptScrollQueuedReasons = _transcriptScrollQueuedReasons Or reason
@@ -4114,11 +4164,58 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub SetTranscriptFollowModeFollowBottom()
             _transcriptScrollFollowMode = TranscriptScrollFollowMode.FollowBottom
+            _transcriptDetachedAnchorOffset = Nothing
         End Sub
 
         Private Sub SetTranscriptFollowModeDetachedByUser()
             _transcriptScrollFollowMode = TranscriptScrollFollowMode.DetachedByUser
+            If Not _transcriptDetachedAnchorOffset.HasValue Then
+                UpdateTranscriptDetachedAnchorOffset(ResolveTranscriptScrollViewer())
+            End If
         End Sub
+
+        Private Sub UpdateTranscriptDetachedAnchorOffset(scroller As ScrollViewer)
+            If scroller Is Nothing Then
+                Return
+            End If
+
+            _transcriptDetachedAnchorOffset = Math.Max(0R, scroller.VerticalOffset)
+            DebugTranscriptScroll("detached_anchor", $"update={FormatTranscriptScrollMetric(_transcriptDetachedAnchorOffset.GetValueOrDefault())}", scroller)
+        End Sub
+
+        Private Function TryRestoreTranscriptDetachedAnchorOffset(scroller As ScrollViewer) As Boolean
+            If scroller Is Nothing OrElse
+               _transcriptScrollThumbDragActive OrElse
+               _transcriptUserScrollInteractionArmed OrElse
+               _transcriptScrollProgrammaticMoveInProgress OrElse
+               Not _transcriptDetachedAnchorOffset.HasValue OrElse
+               _transcriptScrollFollowMode <> TranscriptScrollFollowMode.DetachedByUser Then
+                Return False
+            End If
+
+            Dim desiredOffset = _transcriptDetachedAnchorOffset.Value
+            If Double.IsNaN(desiredOffset) OrElse Double.IsInfinity(desiredOffset) Then
+                Return False
+            End If
+
+            desiredOffset = Math.Max(0R, Math.Min(desiredOffset, scroller.ScrollableHeight))
+            If Math.Abs(scroller.VerticalOffset - desiredOffset) <= 0.5R Then
+                Return False
+            End If
+
+            DebugTranscriptScroll("detached_anchor", $"restore={FormatTranscriptScrollMetric(desiredOffset)}", scroller)
+
+            _transcriptScrollProgrammaticMoveInProgress = True
+            _suppressTranscriptScrollTracking = True
+            Try
+                scroller.ScrollToVerticalOffset(desiredOffset)
+            Finally
+                _suppressTranscriptScrollTracking = False
+                _transcriptScrollProgrammaticMoveInProgress = False
+            End Try
+
+            Return True
+        End Function
 
         Private Sub DebugTranscriptScroll(eventName As String,
                                           Optional details As String = Nothing,
@@ -4210,7 +4307,8 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If TranscriptScrollRequestHasReason(reason, TranscriptScrollRequestReason.ThreadSelection) OrElse
-               TranscriptScrollRequestHasReason(reason, TranscriptScrollRequestReason.ThreadRebuild) Then
+               TranscriptScrollRequestHasReason(reason, TranscriptScrollRequestReason.ThreadRebuild) OrElse
+               TranscriptScrollRequestHasReason(reason, TranscriptScrollRequestReason.UserMessage) Then
                 Return TranscriptScrollRequestPolicy.ForceJump
             End If
 
