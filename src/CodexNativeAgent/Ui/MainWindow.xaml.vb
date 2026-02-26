@@ -429,6 +429,8 @@ Namespace CodexNativeAgent.Ui
         Private _turnComposerPickersExpandedWidth As Double = 434.0R
         Private _transcriptAutoScrollEnabled As Boolean = True
         Private _suppressTranscriptScrollTracking As Boolean
+        Private _transcriptScrollToBottomPending As Boolean
+        Private _transcriptScrollViewer As ScrollViewer
         Private _pendingNewThreadFirstPromptSelection As Boolean
         Private _threadsPanelHintBubbleHintKey As String = String.Empty
         Private _threadsPanelHintBubbleDismissedForCurrentHint As Boolean
@@ -763,6 +765,10 @@ Namespace CodexNativeAgent.Ui
             If WorkspacePaneHost.LstTranscript IsNot Nothing Then
                 WorkspacePaneHost.LstTranscript.AddHandler(ScrollViewer.ScrollChangedEvent,
                                                           New ScrollChangedEventHandler(AddressOf OnTranscriptScrollChanged))
+                AddHandler WorkspacePaneHost.LstTranscript.PreviewMouseWheel,
+                    New MouseWheelEventHandler(AddressOf OnTranscriptPreviewMouseWheel)
+                AddHandler WorkspacePaneHost.LstTranscript.PreviewKeyDown,
+                    New KeyEventHandler(AddressOf OnTranscriptPreviewKeyDown)
             End If
             AddHandler WorkspacePaneHost.BtnDismissWorkspaceHintOverlay.Click,
                 Sub(sender, e)
@@ -3393,6 +3399,8 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            _transcriptScrollViewer = scroller
+
             If Not IsTurnInProgressForTranscriptAutoScroll() Then
                 _transcriptAutoScrollEnabled = True
                 Return
@@ -3403,9 +3411,38 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If e.VerticalChange < 0 Then
+            If Math.Abs(e.VerticalChange) > 0.01R Then
                 _transcriptAutoScrollEnabled = False
             End If
+        End Sub
+
+        Private Sub OnTranscriptPreviewMouseWheel(sender As Object, e As MouseWheelEventArgs)
+            If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
+                Return
+            End If
+
+            If Not IsTurnInProgressForTranscriptAutoScroll() Then
+                Return
+            End If
+
+            If e.Delta > 0 Then
+                _transcriptAutoScrollEnabled = False
+            End If
+        End Sub
+
+        Private Sub OnTranscriptPreviewKeyDown(sender As Object, e As KeyEventArgs)
+            If e Is Nothing OrElse _suppressTranscriptScrollTracking Then
+                Return
+            End If
+
+            If Not IsTurnInProgressForTranscriptAutoScroll() Then
+                Return
+            End If
+
+            Select Case e.Key
+                Case Key.Up, Key.PageUp, Key.Home
+                    _transcriptAutoScrollEnabled = False
+            End Select
         End Sub
 
         Private Function IsTurnInProgressForTranscriptAutoScroll() As Boolean
@@ -3639,28 +3676,74 @@ Namespace CodexNativeAgent.Ui
 
             UpdateWorkspaceEmptyStateVisibility()
 
-            If Not IsTurnInProgressForTranscriptAutoScroll() Then
+            Dim turnInProgress = IsTurnInProgressForTranscriptAutoScroll()
+            If Not turnInProgress Then
                 _transcriptAutoScrollEnabled = True
-            ElseIf Not _transcriptAutoScrollEnabled Then
-                Return
             End If
 
             Dim transcriptList = WorkspacePaneHost.LstTranscript
             If transcriptList IsNot Nothing Then
-                Dim scroller = FindVisualDescendant(Of ScrollViewer)(transcriptList)
+                Dim scroller = ResolveTranscriptScrollViewer()
+                If turnInProgress AndAlso Not _transcriptAutoScrollEnabled Then
+                    If scroller IsNot Nothing AndAlso IsScrollViewerNearBottom(scroller) Then
+                        _transcriptAutoScrollEnabled = True
+                    Else
+                        ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+                        Return
+                    End If
+                End If
+
                 If scroller IsNot Nothing Then
-                    _suppressTranscriptScrollTracking = True
-                    Try
-                        scroller.ScrollToBottom()
-                    Finally
-                        _suppressTranscriptScrollTracking = False
-                    End Try
+                    QueueTranscriptScrollToBottom()
                 ElseIf transcriptList.Items IsNot Nothing AndAlso transcriptList.Items.Count > 0 Then
                     transcriptList.ScrollIntoView(transcriptList.Items(transcriptList.Items.Count - 1))
                 End If
             End If
 
             ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
+        End Sub
+
+        Private Function ResolveTranscriptScrollViewer() As ScrollViewer
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                _transcriptScrollViewer = Nothing
+                Return Nothing
+            End If
+
+            If _transcriptScrollViewer Is Nothing Then
+                _transcriptScrollViewer = FindVisualDescendant(Of ScrollViewer)(WorkspacePaneHost.LstTranscript)
+            End If
+
+            Return _transcriptScrollViewer
+        End Function
+
+        Private Sub QueueTranscriptScrollToBottom()
+            If _transcriptScrollToBottomPending Then
+                Return
+            End If
+
+            _transcriptScrollToBottomPending = True
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                New Action(
+                    Sub()
+                        _transcriptScrollToBottomPending = False
+
+                        Dim scroller = ResolveTranscriptScrollViewer()
+                        If scroller Is Nothing Then
+                            Return
+                        End If
+
+                        If IsTurnInProgressForTranscriptAutoScroll() AndAlso Not _transcriptAutoScrollEnabled Then
+                            Return
+                        End If
+
+                        _suppressTranscriptScrollTracking = True
+                        Try
+                            scroller.ScrollToBottom()
+                        Finally
+                            _suppressTranscriptScrollTracking = False
+                        End Try
+                    End Sub))
         End Sub
 
         Private Shared Function FindVisualDescendant(Of T As DependencyObject)(root As DependencyObject) As T
