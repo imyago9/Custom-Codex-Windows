@@ -8,6 +8,7 @@ Imports System.Windows
 Imports System.Windows.Controls
 Imports System.Windows.Input
 Imports System.Windows.Media
+Imports System.Windows.Threading
 Imports CodexNativeAgent.Services
 Imports CodexNativeAgent.Ui.Coordinators
 Imports CodexNativeAgent.Ui.ViewModels.Transcript
@@ -253,19 +254,31 @@ Namespace CodexNativeAgent.Ui
 
             Dim cancellationToken = request.CancellationToken
             Await RunOnUiAsync(
-                Function()
+                Async Function()
                     If cancellationToken.IsCancellationRequested OrElse
                        Not IsCurrentThreadSelectionLoadUiState(request.LoadVersion, request.ThreadId) Then
-                        Return Task.CompletedTask
+                        Return
                     End If
 
                     Dim selectedNow = TryCast(_viewModel.ThreadsPanel.SelectedListItem, ThreadListEntry)
                     If selectedNow Is Nothing OrElse Not StringComparer.Ordinal.Equals(selectedNow.Id, request.ThreadId) Then
-                        Return Task.CompletedTask
+                        Return
                     End If
 
                     ApplyCurrentThreadFromThreadObject(payload.ThreadObject)
                     PersistThreadSelectionSnapshotToLiveRegistry(request.ThreadId, payload.TranscriptSnapshot)
+                    Await Dispatcher.Yield(DispatcherPriority.Render)
+
+                    If cancellationToken.IsCancellationRequested OrElse
+                       Not IsCurrentThreadSelectionLoadUiState(request.LoadVersion, request.ThreadId) Then
+                        Return
+                    End If
+
+                    selectedNow = TryCast(_viewModel.ThreadsPanel.SelectedListItem, ThreadListEntry)
+                    If selectedNow Is Nothing OrElse Not StringComparer.Ordinal.Equals(selectedNow.Id, request.ThreadId) Then
+                        Return
+                    End If
+
                     RebuildVisibleTranscriptForThread(request.ThreadId)
                     If Not payload.HasTurns AndAlso _viewModel.TranscriptPanel.Items.Count = 0 Then
                         AppendSystemMessage("No historical turns loaded for this thread.")
@@ -273,7 +286,6 @@ Namespace CodexNativeAgent.Ui
                     Dim visibleThreadId = GetVisibleThreadId()
                     AppendSystemMessage($"Loaded thread {visibleThreadId} from history.")
                     ShowStatus($"Loaded thread {visibleThreadId}.")
-                    Return Task.CompletedTask
                 End Function).ConfigureAwait(False)
         End Function
 
