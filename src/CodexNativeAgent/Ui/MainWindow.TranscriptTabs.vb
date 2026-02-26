@@ -57,6 +57,7 @@ Namespace CodexNativeAgent.Ui
         Private _activeTranscriptSurfaceThreadId As String = String.Empty
         Private _transcriptTabSurfaceRetireDrainScheduled As Boolean
         Private _primaryTranscriptSurfaceResetScheduled As Boolean
+        Private _primaryTranscriptSurfaceResetDeferredNeeded As Boolean
         Private _deferredBlankCloseFinalizeVersion As Integer
         Private Const TranscriptTabDormantSurfacePoolMax As Integer = 4
 
@@ -316,7 +317,10 @@ Namespace CodexNativeAgent.Ui
                 Return Nothing
             End If
 
-            Dim usePrimarySurface = (_transcriptTabSurfacesByThreadId.Count = 0) AndAlso Not preferSecondarySurface
+            Dim primarySurfaceDeferredDirty = _primaryTranscriptSurfaceResetDeferredNeeded
+            Dim usePrimarySurface = (_transcriptTabSurfacesByThreadId.Count = 0) AndAlso
+                                    Not preferSecondarySurface AndAlso
+                                    Not primarySurfaceDeferredDirty
             If preferSecondarySurface AndAlso _transcriptSurfaceHostPanel Is Nothing Then
                 usePrimarySurface = True
             End If
@@ -341,6 +345,10 @@ Namespace CodexNativeAgent.Ui
 
             If Not usePrimarySurface AndAlso Not reusedDormantSurface AndAlso _transcriptSurfaceHostPanel IsNot Nothing Then
                 _transcriptSurfaceHostPanel.Children.Add(listBox)
+            End If
+
+            If usePrimarySurface Then
+                _primaryTranscriptSurfaceResetDeferredNeeded = False
             End If
 
             listBox.DataContext = _viewModel
@@ -618,7 +626,7 @@ Namespace CodexNativeAgent.Ui
             If Not transitionedToPendingDraft Then
                 ActivateBlankTranscriptSurfacePlaceholder()
             Else
-                SchedulePrimaryTranscriptSurfaceResetIfDetached()
+                MarkPrimaryTranscriptSurfaceResetDeferredIfDetached()
             End If
             Dim blankSurfaceMs = blankSurfacePerf.ElapsedMilliseconds
 
@@ -906,11 +914,7 @@ Namespace CodexNativeAgent.Ui
             Return False
         End Function
 
-        Private Sub SchedulePrimaryTranscriptSurfaceResetIfDetached()
-            If _primaryTranscriptSurfaceResetScheduled Then
-                Return
-            End If
-
+        Private Sub MarkPrimaryTranscriptSurfaceResetDeferredIfDetached()
             If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
                 Return
             End If
@@ -919,10 +923,9 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            _primaryTranscriptSurfaceResetScheduled = True
-            Dispatcher.BeginInvoke(
-                DispatcherPriority.ApplicationIdle,
-                New Action(AddressOf ResetPrimaryTranscriptSurfaceIfDetached))
+            _primaryTranscriptSurfaceResetDeferredNeeded = True
+            AppendProtocol("debug",
+                           $"transcript_tab_perf event=primary_surface_reset_deferred activeTab={If(_activeTranscriptSurfaceThreadId, String.Empty)} dormantCount={_dormantTranscriptTabSurfaces.Count}")
         End Sub
 
         Private Sub ResetPrimaryTranscriptSurfaceIfDetached()
@@ -948,6 +951,8 @@ Namespace CodexNativeAgent.Ui
             Else
                 primaryListBox.ItemsSource = Nothing
             End If
+
+            _primaryTranscriptSurfaceResetDeferredNeeded = False
 
             AppendProtocol("debug",
                            $"transcript_tab_perf event=primary_surface_reset_if_detached elapsedMs={resetPerf.ElapsedMilliseconds} activeTab={If(_activeTranscriptSurfaceThreadId, String.Empty)}")
@@ -1301,6 +1306,8 @@ Namespace CodexNativeAgent.Ui
             _transcriptTabSurfacesByThreadId.Clear()
             _transcriptTabStatesByTabId.Clear()
             FlushQueuedTranscriptTabSurfaceRetiresImmediately()
+            _primaryTranscriptSurfaceResetDeferredNeeded = False
+            _primaryTranscriptSurfaceResetScheduled = False
 
             For Each handle In surfaceHandles
                 If handle Is Nothing Then
