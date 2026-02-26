@@ -3457,13 +3457,13 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim atBottom = IsScrollViewerAtBottomExtreme(scroller)
+            Dim layoutMetricsChanged = Math.Abs(e.ExtentHeightChange) > 0.01R OrElse
+                                      Math.Abs(e.ViewportHeightChange) > 0.01R
 
             Dim verticalOffsetChanged = Math.Abs(e.VerticalChange) > 0.01R
             If Not verticalOffsetChanged Then
                 ' Consume one-shot user-arm on no-op clicks/wheel/key events so later content-growth
                 ' ScrollChanged events are not misclassified as user navigation.
-                Dim layoutMetricsChanged = Math.Abs(e.ExtentHeightChange) > 0.01R OrElse
-                                          Math.Abs(e.ViewportHeightChange) > 0.01R
                 If _transcriptUserScrollInteractionArmed AndAlso
                    Not _transcriptScrollThumbDragActive AndAlso
                    Not layoutMetricsChanged Then
@@ -3490,7 +3490,7 @@ Namespace CodexNativeAgent.Ui
 
             If _transcriptScrollThumbDragActive Then
                 SetTranscriptFollowModeDetachedByUser()
-            ElseIf atBottom Then
+            ElseIf atBottom AndAlso Not layoutMetricsChanged AndAlso IsScrollViewerAtStableBottomForUserReattach(scroller) Then
                 SetTranscriptFollowModeFollowBottom()
             Else
                 SetTranscriptFollowModeDetachedByUser()
@@ -3836,6 +3836,20 @@ Namespace CodexNativeAgent.Ui
 
             ' Use the ScrollViewer's actual bottom extreme rather than a "near bottom" pixel heuristic.
             Return scroller.VerticalOffset >= scroller.ScrollableHeight
+        End Function
+
+        Private Shared Function IsScrollViewerAtStableBottomForUserReattach(scroller As ScrollViewer) As Boolean
+            If scroller Is Nothing Then
+                Return True
+            End If
+
+            If scroller.ScrollableHeight <= 0 Then
+                Return True
+            End If
+
+            ' WPF can briefly report offset > scrollable during layout churn while streaming.
+            ' Require a tighter equality check before treating this as an intentional user reattach.
+            Return Math.Abs(scroller.VerticalOffset - scroller.ScrollableHeight) <= 0.5R
         End Function
 
         Private Sub ScrollTranscriptToBottom(Optional force As Boolean = False,
