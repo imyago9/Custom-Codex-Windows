@@ -439,6 +439,8 @@ Namespace CodexNativeAgent.Ui
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
             Dim clearMs = Math.Max(0, perf.ElapsedMilliseconds - clearStartMs)
+            TraceThreadSelectionPerformance("clear_transcript_breakdown",
+                                            $"thread={normalizedThreadId}; mode=fast; {_viewModel.TranscriptPanel.DescribeLastClearTranscriptTelemetry()}")
 
             Dim setRawTextStartMs = perf.ElapsedMilliseconds
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
@@ -1733,6 +1735,10 @@ Namespace CodexNativeAgent.Ui
             Dim clearMs = If(rebuildPerf Is Nothing,
                              0L,
                              Math.Max(0, rebuildPerf.ElapsedMilliseconds - clearStartMs))
+            If rebuildPerf IsNot Nothing Then
+                TraceThreadSelectionPerformance("clear_transcript_breakdown",
+                                                $"thread={normalizedThreadId}; mode=rebuild; {_viewModel.TranscriptPanel.DescribeLastClearTranscriptTelemetry()}")
+            End If
 
             Dim setRawTextStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(projection.RawText)

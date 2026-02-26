@@ -1,6 +1,7 @@
 Imports System.Collections.Generic
 Imports System.Globalization
 Imports System.Collections.ObjectModel
+Imports System.Diagnostics
 Imports System.Text
 Imports System.Text.RegularExpressions
 Imports System.Text.Json.Nodes
@@ -13,6 +14,43 @@ Imports CodexNativeAgent.Ui.ViewModels.Transcript
 Namespace CodexNativeAgent.Ui.ViewModels
     Public NotInheritable Class TranscriptPanelViewModel
         Inherits ViewModelBase
+
+        Public NotInheritable Class TranscriptClearTelemetrySnapshot
+            Public Property CapturedUtc As DateTimeOffset = DateTimeOffset.UtcNow
+            Public Property TotalMs As Long
+
+            Public Property ItemsCountBefore As Integer
+            Public Property RuntimeEntriesCountBefore As Integer
+            Public Property TurnDiffSummaryCountBefore As Integer
+            Public Property FileChangeRuntimeKeyByTurnIdCountBefore As Integer
+            Public Property FileChangeTurnIdByRuntimeKeyCountBefore As Integer
+            Public Property FileChangeItemStateByRuntimeKeyCountBefore As Integer
+            Public Property ActiveAssistantStreamsCountBefore As Integer
+            Public Property ActiveAssistantStreamBuffersCountBefore As Integer
+            Public Property ActiveAssistantRawPrefixesCountBefore As Integer
+            Public Property AssistantReasoningChainStreamIdsCountBefore As Integer
+            Public Property ActiveReasoningStreamsCountBefore As Integer
+            Public Property ActiveReasoningStreamBuffersCountBefore As Integer
+            Public Property FullTranscriptBuilderLengthBefore As Integer
+            Public Property TranscriptTextLengthBefore As Integer
+            Public Property TokenUsageTextLengthBefore As Integer
+
+            Public Property SetTranscriptTextMs As Long
+            Public Property FullTranscriptBuilderClearMs As Long
+            Public Property ItemsClearMs As Long
+            Public Property RuntimeEntriesClearMs As Long
+            Public Property TurnDiffSummaryClearMs As Long
+            Public Property FileChangeRuntimeKeyByTurnIdClearMs As Long
+            Public Property FileChangeTurnIdByRuntimeKeyClearMs As Long
+            Public Property FileChangeItemStateByRuntimeKeyClearMs As Long
+            Public Property ActiveAssistantStreamsClearMs As Long
+            Public Property ActiveAssistantStreamBuffersClearMs As Long
+            Public Property ActiveAssistantRawPrefixesClearMs As Long
+            Public Property AssistantReasoningChainStreamIdsClearMs As Long
+            Public Property ActiveReasoningStreamsClearMs As Long
+            Public Property ActiveReasoningStreamBuffersClearMs As Long
+            Public Property SetTokenUsageTextMs As Long
+        End Class
 
         Private Const MaxLogChars As Integer = 500000
         Private Const MaxTranscriptEntries As Integer = 2000
@@ -46,6 +84,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private ReadOnly _assistantReasoningChainStreamIds As New HashSet(Of String)(StringComparer.Ordinal)
         Private ReadOnly _activeReasoningStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
         Private ReadOnly _activeReasoningStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _lastClearTranscriptTelemetry As New TranscriptClearTelemetrySnapshot()
 
         Public Property TranscriptText As String
             Get
@@ -100,6 +139,21 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return _items
             End Get
         End Property
+
+        Public ReadOnly Property LastClearTranscriptTelemetry As TranscriptClearTelemetrySnapshot
+            Get
+                Return _lastClearTranscriptTelemetry
+            End Get
+        End Property
+
+        Public Function DescribeLastClearTranscriptTelemetry() As String
+            Dim t = _lastClearTranscriptTelemetry
+            If t Is Nothing Then
+                Return "clearTelemetry=missing"
+            End If
+
+            Return $"clearTelemetryTotalMs={t.TotalMs}; itemsBefore={t.ItemsCountBefore}; runtimeEntriesBefore={t.RuntimeEntriesCountBefore}; turnDiffBefore={t.TurnDiffSummaryCountBefore}; fileChangeMapsBefore={t.FileChangeRuntimeKeyByTurnIdCountBefore}/{t.FileChangeTurnIdByRuntimeKeyCountBefore}/{t.FileChangeItemStateByRuntimeKeyCountBefore}; assistantMapsBefore={t.ActiveAssistantStreamsCountBefore}/{t.ActiveAssistantStreamBuffersCountBefore}; assistantSetsBefore={t.ActiveAssistantRawPrefixesCountBefore}/{t.AssistantReasoningChainStreamIdsCountBefore}; reasoningMapsBefore={t.ActiveReasoningStreamsCountBefore}/{t.ActiveReasoningStreamBuffersCountBefore}; fullBuilderLenBefore={t.FullTranscriptBuilderLengthBefore}; transcriptTextLenBefore={t.TranscriptTextLengthBefore}; tokenUsageLenBefore={t.TokenUsageTextLengthBefore}; setTranscriptTextMs={t.SetTranscriptTextMs}; fullBuilderClearMs={t.FullTranscriptBuilderClearMs}; itemsClearMs={t.ItemsClearMs}; runtimeEntriesClearMs={t.RuntimeEntriesClearMs}; turnDiffClearMs={t.TurnDiffSummaryClearMs}; fileChangeMapClearMs={t.FileChangeRuntimeKeyByTurnIdClearMs}/{t.FileChangeTurnIdByRuntimeKeyClearMs}/{t.FileChangeItemStateByRuntimeKeyClearMs}; assistantClearMs={t.ActiveAssistantStreamsClearMs}/{t.ActiveAssistantStreamBuffersClearMs}/{t.ActiveAssistantRawPrefixesClearMs}/{t.AssistantReasoningChainStreamIdsClearMs}; reasoningClearMs={t.ActiveReasoningStreamsClearMs}/{t.ActiveReasoningStreamBuffersClearMs}; setTokenUsageTextMs={t.SetTokenUsageTextMs}"
+        End Function
 
         Public Property CollapseCommandDetailsByDefault As Boolean
             Get
@@ -182,21 +236,88 @@ Namespace CodexNativeAgent.Ui.ViewModels
         End Property
 
         Public Sub ClearTranscript()
+            Dim perf = Stopwatch.StartNew()
+            Dim telemetry As New TranscriptClearTelemetrySnapshot() With {
+                .CapturedUtc = DateTimeOffset.UtcNow,
+                .ItemsCountBefore = _items.Count,
+                .RuntimeEntriesCountBefore = _runtimeEntriesByKey.Count,
+                .TurnDiffSummaryCountBefore = _turnDiffSummaryByTurnId.Count,
+                .FileChangeRuntimeKeyByTurnIdCountBefore = _fileChangeRuntimeKeyByTurnId.Count,
+                .FileChangeTurnIdByRuntimeKeyCountBefore = _fileChangeTurnIdByRuntimeKey.Count,
+                .FileChangeItemStateByRuntimeKeyCountBefore = _fileChangeItemStateByRuntimeKey.Count,
+                .ActiveAssistantStreamsCountBefore = _activeAssistantStreams.Count,
+                .ActiveAssistantStreamBuffersCountBefore = _activeAssistantStreamBuffers.Count,
+                .ActiveAssistantRawPrefixesCountBefore = _activeAssistantRawPrefixes.Count,
+                .AssistantReasoningChainStreamIdsCountBefore = _assistantReasoningChainStreamIds.Count,
+                .ActiveReasoningStreamsCountBefore = _activeReasoningStreams.Count,
+                .ActiveReasoningStreamBuffersCountBefore = _activeReasoningStreamBuffers.Count,
+                .FullTranscriptBuilderLengthBefore = _fullTranscriptBuilder.Length,
+                .TranscriptTextLengthBefore = If(_transcriptText, String.Empty).Length,
+                .TokenUsageTextLengthBefore = If(_tokenUsageText, String.Empty).Length
+            }
+
+            Dim stepStartMs = perf.ElapsedMilliseconds
             TranscriptText = String.Empty
+            telemetry.SetTranscriptTextMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _fullTranscriptBuilder.Clear()
+            telemetry.FullTranscriptBuilderClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _items.Clear()
+            telemetry.ItemsClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _runtimeEntriesByKey.Clear()
+            telemetry.RuntimeEntriesClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _turnDiffSummaryByTurnId.Clear()
+            telemetry.TurnDiffSummaryClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _fileChangeRuntimeKeyByTurnId.Clear()
+            telemetry.FileChangeRuntimeKeyByTurnIdClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _fileChangeTurnIdByRuntimeKey.Clear()
+            telemetry.FileChangeTurnIdByRuntimeKeyClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _fileChangeItemStateByRuntimeKey.Clear()
+            telemetry.FileChangeItemStateByRuntimeKeyClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _activeAssistantStreams.Clear()
+            telemetry.ActiveAssistantStreamsClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _activeAssistantStreamBuffers.Clear()
+            telemetry.ActiveAssistantStreamBuffersClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _activeAssistantRawPrefixes.Clear()
+            telemetry.ActiveAssistantRawPrefixesClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _assistantReasoningChainStreamIds.Clear()
+            telemetry.AssistantReasoningChainStreamIdsClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _activeReasoningStreams.Clear()
+            telemetry.ActiveReasoningStreamsClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             _activeReasoningStreamBuffers.Clear()
+            telemetry.ActiveReasoningStreamBuffersClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            stepStartMs = perf.ElapsedMilliseconds
             TokenUsageText = String.Empty
+            telemetry.SetTokenUsageTextMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
+
+            telemetry.TotalMs = perf.ElapsedMilliseconds
+            _lastClearTranscriptTelemetry = telemetry
         End Sub
 
         Public Sub SetTranscriptSnapshot(value As String)
