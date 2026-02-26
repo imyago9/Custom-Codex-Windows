@@ -388,10 +388,10 @@ Namespace CodexNativeAgent.Ui
         Private Sub ClearRetainedTranscriptTabSurfaces()
             EnsureTranscriptTabsUiInitialized()
 
-            Dim handles As New List(Of TranscriptTabSurfaceHandle)(_transcriptTabSurfacesByThreadId.Values)
+            Dim surfaceHandles As New List(Of TranscriptTabSurfaceHandle)(_transcriptTabSurfacesByThreadId.Values)
             _transcriptTabSurfacesByThreadId.Clear()
 
-            For Each handle In handles
+            For Each handle In surfaceHandles
                 If handle Is Nothing Then
                     Continue For
                 End If
