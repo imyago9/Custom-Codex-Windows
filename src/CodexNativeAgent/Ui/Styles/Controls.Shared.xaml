@@ -409,8 +409,6 @@
 
     <Style x:Key="AppScrollThumbStyle" TargetType="Thumb">
         <Setter Property="Background" Value="{DynamicResource TextTertiaryBrush}" />
-        <Setter Property="MinHeight" Value="36" />
-        <Setter Property="MinWidth" Value="36" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
@@ -418,8 +416,6 @@
                             Background="{TemplateBinding Background}"
                             CornerRadius="5"
                             Margin="2"
-                            MinHeight="32"
-                            MinWidth="32"
                             Opacity="0.9" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
