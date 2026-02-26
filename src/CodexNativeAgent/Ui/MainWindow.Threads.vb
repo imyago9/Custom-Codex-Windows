@@ -1025,6 +1025,8 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            TryRemoveEmptyPendingNewThreadDraftTabOnExistingSelection(entry.Id)
+
             If suppressAutoLoad Then
                 _suppressThreadSelectionEvents = True
             End If

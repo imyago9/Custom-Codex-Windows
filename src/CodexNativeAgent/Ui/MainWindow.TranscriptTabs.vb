@@ -11,6 +11,22 @@ Imports CodexNativeAgent.Ui.ViewModels.Threads
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
+        Private Enum TranscriptTabKind
+            Thread = 0
+            PendingNewThread = 1
+        End Enum
+
+        Private NotInheritable Class TranscriptTabState
+            Public Property TabId As String = String.Empty
+            Public Property Kind As TranscriptTabKind = TranscriptTabKind.Thread
+            Public Property ThreadId As String = String.Empty
+            Public Property CreatedUtc As DateTimeOffset = DateTimeOffset.UtcNow
+            Public Property LastActivatedUtc As DateTimeOffset = DateTimeOffset.UtcNow
+            Public Property LastLifecycleReason As String = String.Empty
+            Public Property IsClosable As Boolean = True
+            Public Property AutoRemoveIfEmptyOnExistingSelection As Boolean
+        End Class
+
         Private NotInheritable Class TranscriptTabSurfaceHandle
             Public Property ThreadId As String = String.Empty
             Public Property SurfaceListBox As ListBox
@@ -28,6 +44,7 @@ Namespace CodexNativeAgent.Ui
         End Class
 
         Private ReadOnly _transcriptTabSurfacesByThreadId As New Dictionary(Of String, TranscriptTabSurfaceHandle)(StringComparer.Ordinal)
+        Private ReadOnly _transcriptTabStatesByTabId As New Dictionary(Of String, TranscriptTabState)(StringComparer.Ordinal)
         Private ReadOnly _transcriptInteractionHandlersAttached As New List(Of ListBox)()
         Private ReadOnly _transcriptTabSurfaceRetireQueue As New Queue(Of TranscriptTabSurfaceRetireWorkItem)()
         Private ReadOnly _dormantTranscriptTabSurfaces As New Stack(Of ListBox)()
@@ -53,6 +70,131 @@ Namespace CodexNativeAgent.Ui
 
             Return WorkspacePaneHost.LstTranscript
         End Function
+
+        Private Shared Function NormalizeTranscriptTabId(value As String) As String
+            Return If(value, String.Empty).Trim()
+        End Function
+
+        Private Shared Function TranscriptTabKindForTabId(tabId As String) As TranscriptTabKind
+            If StringComparer.Ordinal.Equals(NormalizeTranscriptTabId(tabId), PendingNewThreadTranscriptTabId) Then
+                Return TranscriptTabKind.PendingNewThread
+            End If
+
+            Return TranscriptTabKind.Thread
+        End Function
+
+        Private Function GetOrCreateTranscriptTabState(tabId As String,
+                                                       Optional lifecycleReason As String = Nothing) As TranscriptTabState
+            Dim normalizedTabId = NormalizeTranscriptTabId(tabId)
+            If String.IsNullOrWhiteSpace(normalizedTabId) Then
+                Return Nothing
+            End If
+
+            Dim state As TranscriptTabState = Nothing
+            If Not _transcriptTabStatesByTabId.TryGetValue(normalizedTabId, state) OrElse state Is Nothing Then
+                state = New TranscriptTabState() With {
+                    .TabId = normalizedTabId,
+                    .Kind = TranscriptTabKindForTabId(normalizedTabId),
+                    .ThreadId = If(StringComparer.Ordinal.Equals(normalizedTabId, PendingNewThreadTranscriptTabId), String.Empty, normalizedTabId),
+                    .AutoRemoveIfEmptyOnExistingSelection = StringComparer.Ordinal.Equals(normalizedTabId, PendingNewThreadTranscriptTabId)
+                }
+                _transcriptTabStatesByTabId(normalizedTabId) = state
+                TraceTranscriptTabStateSnapshot("tab_state_created",
+                                               $"tab={normalizedTabId}; kind={state.Kind}")
+            End If
+
+            state.Kind = TranscriptTabKindForTabId(normalizedTabId)
+            state.ThreadId = If(state.Kind = TranscriptTabKind.PendingNewThread, String.Empty, normalizedTabId)
+            state.AutoRemoveIfEmptyOnExistingSelection = (state.Kind = TranscriptTabKind.PendingNewThread)
+            If Not String.IsNullOrWhiteSpace(lifecycleReason) Then
+                state.LastLifecycleReason = lifecycleReason
+            End If
+
+            Return state
+        End Function
+
+        Private Function TryGetTranscriptTabState(tabId As String,
+                                                  ByRef state As TranscriptTabState) As Boolean
+            state = Nothing
+            Dim normalizedTabId = NormalizeTranscriptTabId(tabId)
+            If String.IsNullOrWhiteSpace(normalizedTabId) Then
+                Return False
+            End If
+
+            Return _transcriptTabStatesByTabId.TryGetValue(normalizedTabId, state) AndAlso state IsNot Nothing
+        End Function
+
+        Private Sub RemoveTranscriptTabState(tabId As String,
+                                             Optional reason As String = Nothing)
+            Dim normalizedTabId = NormalizeTranscriptTabId(tabId)
+            If String.IsNullOrWhiteSpace(normalizedTabId) Then
+                Return
+            End If
+
+            If _transcriptTabStatesByTabId.Remove(normalizedTabId) Then
+                RecomputeTranscriptTabStatePolicies($"remove:{If(reason, String.Empty)}")
+                TraceTranscriptTabStateSnapshot("tab_state_removed",
+                                               $"tab={normalizedTabId}; reason={If(reason, String.Empty)}")
+            End If
+        End Sub
+
+        Private Sub TouchTranscriptTabStateActivation(tabId As String,
+                                                      Optional reason As String = Nothing)
+            Dim state = GetOrCreateTranscriptTabState(tabId, reason)
+            If state Is Nothing Then
+                Return
+            End If
+
+            state.LastActivatedUtc = DateTimeOffset.UtcNow
+            If Not String.IsNullOrWhiteSpace(reason) Then
+                state.LastLifecycleReason = reason
+            End If
+            RecomputeTranscriptTabStatePolicies($"activate:{If(reason, String.Empty)}")
+        End Sub
+
+        Private Sub RecomputeTranscriptTabStatePolicies(Optional reason As String = Nothing)
+            Dim totalTabs = _transcriptTabStatesByTabId.Count
+            For Each kvp In _transcriptTabStatesByTabId
+                Dim state = kvp.Value
+                If state Is Nothing Then
+                    Continue For
+                End If
+
+                Dim isOnlyTab = (totalTabs <= 1)
+                If state.Kind = TranscriptTabKind.PendingNewThread Then
+                    state.IsClosable = Not isOnlyTab
+                    state.AutoRemoveIfEmptyOnExistingSelection = True
+                Else
+                    state.IsClosable = True
+                    state.AutoRemoveIfEmptyOnExistingSelection = False
+                End If
+
+                If Not String.IsNullOrWhiteSpace(reason) Then
+                    state.LastLifecycleReason = reason
+                End If
+            Next
+
+            TraceTranscriptTabStateSnapshot("policies_recomputed",
+                                           $"reason={If(reason, String.Empty)}")
+        End Sub
+
+        Private Function IsTranscriptTabClosable(tabId As String) As Boolean
+            Dim state As TranscriptTabState = Nothing
+            If TryGetTranscriptTabState(tabId, state) AndAlso state IsNot Nothing Then
+                Return state.IsClosable
+            End If
+
+            Return True
+        End Function
+
+        Private Sub TraceTranscriptTabStateSnapshot(eventName As String,
+                                                    Optional details As String = Nothing)
+            Dim totalTabs = _transcriptTabStatesByTabId.Count
+            Dim pendingExists = _transcriptTabStatesByTabId.ContainsKey(PendingNewThreadTranscriptTabId)
+            Dim pendingClosable = IsTranscriptTabClosable(PendingNewThreadTranscriptTabId)
+            AppendProtocol("debug",
+                           $"transcript_tab_state event={If(eventName, String.Empty)} totalTabs={totalTabs} pendingExists={pendingExists} pendingClosable={pendingClosable} activeTab={If(_activeTranscriptSurfaceThreadId, String.Empty)} details={If(details, String.Empty)}")
+        End Sub
 
         Private Sub AttachTranscriptInteractionHandlers(listBox As ListBox)
             If listBox Is Nothing Then
@@ -163,6 +305,8 @@ Namespace CodexNativeAgent.Ui
 
             Dim existing As TranscriptTabSurfaceHandle = Nothing
             If _transcriptTabSurfacesByThreadId.TryGetValue(normalizedThreadId, existing) AndAlso existing IsNot Nothing Then
+                GetOrCreateTranscriptTabState(normalizedThreadId, "surface_handle_reuse")
+                RecomputeTranscriptTabStatePolicies("surface_handle_reuse")
                 Return existing
             End If
 
@@ -211,6 +355,8 @@ Namespace CodexNativeAgent.Ui
             }
 
             _transcriptTabSurfacesByThreadId(normalizedThreadId) = handle
+            GetOrCreateTranscriptTabState(normalizedThreadId, "surface_handle_created")
+            RecomputeTranscriptTabStatePolicies("surface_handle_created")
             If _transcriptTabStripPanel IsNot Nothing AndAlso tabChipBorder IsNot Nothing Then
                 _transcriptTabStripPanel.Children.Add(tabChipBorder)
             End If
@@ -420,6 +566,12 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            If Not IsTranscriptTabClosable(normalizedThreadId) Then
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=close_blocked thread={normalizedThreadId} reason=tab_not_closable openTabs={_transcriptTabSurfacesByThreadId.Count}")
+                Return
+            End If
+
             AppendProtocol("debug",
                            $"transcript_tab_perf event=close_begin thread={normalizedThreadId} active={StringComparer.Ordinal.Equals(normalizedThreadId, _activeTranscriptSurfaceThreadId)} openTabs={_transcriptTabSurfacesByThreadId.Count}")
 
@@ -457,7 +609,10 @@ Namespace CodexNativeAgent.Ui
 
             Dim blankSurfacePerf = Stopwatch.StartNew()
             ActivateFreshTranscriptDocument("tab_close_last_tab", activateBlankSurface:=False)
-            ActivateBlankTranscriptSurfacePlaceholder()
+            Dim transitionedToPendingDraft = EnsurePendingNewThreadTranscriptTabActivated()
+            If Not transitionedToPendingDraft Then
+                ActivateBlankTranscriptSurfacePlaceholder()
+            End If
             Dim blankSurfaceMs = blankSurfacePerf.ElapsedMilliseconds
 
             Dim deferredFinalizePerf = Stopwatch.StartNew()
@@ -466,7 +621,7 @@ Namespace CodexNativeAgent.Ui
 
             _inactiveTranscriptDocumentsByThreadId.Remove(normalizedThreadId)
             AppendProtocol("debug",
-                           $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=start_blank_deferred elapsedMs={closePerf.ElapsedMilliseconds} removeMs={removeMs} cancelLoadMs={cancelLoadMs} resetLoadUiMs={resetLoadUiMs} blankSurfaceMs={blankSurfaceMs} queueFinalizeMs={deferQueueMs} finalizeVersion={deferredFinalizeVersion} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
+                           $"transcript_tab_perf event=close_complete thread={normalizedThreadId} mode=start_blank_deferred elapsedMs={closePerf.ElapsedMilliseconds} removeMs={removeMs} cancelLoadMs={cancelLoadMs} resetLoadUiMs={resetLoadUiMs} blankSurfaceMs={blankSurfaceMs} nextSurfaceMode={If(transitionedToPendingDraft, "pending_draft", "blank_placeholder")} queueFinalizeMs={deferQueueMs} finalizeVersion={deferredFinalizeVersion} remainingTabs={_transcriptTabSurfacesByThreadId.Count}")
         End Sub
 
         Private Sub ActivateBlankTranscriptSurfacePlaceholder()
@@ -649,6 +804,7 @@ Namespace CodexNativeAgent.Ui
             _activeTranscriptSurfaceListBox = handle.SurfaceListBox
             _activeTranscriptSurfaceThreadId = normalizedThreadId
             _transcriptScrollViewer = Nothing
+            TouchTranscriptTabStateActivation(normalizedThreadId, "activate_thread_surface")
 
             UpdateTranscriptTabButtonCaptions()
             UpdateTranscriptTabButtonVisuals()
@@ -693,6 +849,7 @@ Namespace CodexNativeAgent.Ui
             _activeTranscriptSurfaceListBox = handle.SurfaceListBox
             _activeTranscriptSurfaceThreadId = PendingNewThreadTranscriptTabId
             _transcriptScrollViewer = Nothing
+            TouchTranscriptTabStateActivation(PendingNewThreadTranscriptTabId, "activate_pending_new_thread")
 
             UpdateTranscriptTabButtonCaption(handle)
             UpdateTranscriptTabButtonCaptions()
@@ -715,7 +872,15 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If Not _pendingNewThreadFirstPromptSelection Then
+            Dim pendingState As TranscriptTabState = Nothing
+            If Not TryGetTranscriptTabState(PendingNewThreadTranscriptTabId, pendingState) OrElse
+               pendingState Is Nothing OrElse
+               Not pendingState.AutoRemoveIfEmptyOnExistingSelection Then
+                Return
+            End If
+
+            Dim pendingTabIsActive = IsPendingNewThreadTranscriptTabActive()
+            If Not pendingTabIsActive AndAlso Not _pendingNewThreadFirstPromptSelection Then
                 Return
             End If
 
@@ -745,6 +910,8 @@ Namespace CodexNativeAgent.Ui
 
             RemoveRetainedTranscriptTabSurface(PendingNewThreadTranscriptTabId)
             SetPendingNewThreadFirstPromptSelectionActive(False, clearThreadSelection:=False)
+            TraceTranscriptTabStateSnapshot("pending_removed_on_existing_selection",
+                                           $"selected={normalizedSelectedThreadId}")
             AppendProtocol("debug",
                            $"transcript_tab_perf event=pending_new_thread_tab_removed_on_select thread={normalizedSelectedThreadId}")
         End Sub
@@ -774,6 +941,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _transcriptTabSurfacesByThreadId.Remove(PendingNewThreadTranscriptTabId)
+            RemoveTranscriptTabState(PendingNewThreadTranscriptTabId, "promote_pending_to_thread")
             draftHandle.ThreadId = normalizedTargetThreadId
             If draftHandle.TabButton IsNot Nothing Then
                 draftHandle.TabButton.Tag = normalizedTargetThreadId
@@ -788,11 +956,16 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _transcriptTabSurfacesByThreadId(normalizedTargetThreadId) = draftHandle
+            GetOrCreateTranscriptTabState(normalizedTargetThreadId, "promote_pending_to_thread")
+            RecomputeTranscriptTabStatePolicies("promote_pending_to_thread")
             _activeTranscriptSurfaceThreadId = normalizedTargetThreadId
 
             UpdateTranscriptTabButtonCaption(draftHandle)
+            UpdateTranscriptTabButtonVisual(draftHandle, True)
             AppendProtocol("debug",
                            $"transcript_tab_perf event=pending_new_thread_tab_promoted thread={normalizedTargetThreadId}")
+            TraceTranscriptTabStateSnapshot("pending_promoted",
+                                           $"tab={normalizedTargetThreadId}")
         End Sub
 
         Private Sub ActivateBlankTranscriptSurface()
@@ -820,6 +993,7 @@ Namespace CodexNativeAgent.Ui
             _activeTranscriptSurfaceListBox = WorkspacePaneHost.LstTranscript
             _activeTranscriptSurfaceThreadId = String.Empty
             _transcriptScrollViewer = Nothing
+            TraceTranscriptTabStateSnapshot("activate_blank_surface")
 
             UpdateTranscriptTabButtonVisuals()
             RefreshTranscriptTabStripVisibility()
@@ -1007,6 +1181,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _transcriptTabSurfacesByThreadId.Remove(normalizedThreadId)
+            RemoveTranscriptTabState(normalizedThreadId, "remove_surface")
 
             If handle.TabChipBorder IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
                 _transcriptTabStripPanel.Children.Remove(handle.TabChipBorder)
@@ -1028,6 +1203,8 @@ Namespace CodexNativeAgent.Ui
 
             RefreshTranscriptTabStripVisibility()
             UpdateTranscriptTabButtonVisuals()
+            TraceTranscriptTabStateSnapshot("surface_removed",
+                                           $"tab={normalizedThreadId}")
         End Sub
 
         Private Sub ClearRetainedTranscriptTabSurfaces()
@@ -1035,6 +1212,7 @@ Namespace CodexNativeAgent.Ui
 
             Dim surfaceHandles As New List(Of TranscriptTabSurfaceHandle)(_transcriptTabSurfacesByThreadId.Values)
             _transcriptTabSurfacesByThreadId.Clear()
+            _transcriptTabStatesByTabId.Clear()
             FlushQueuedTranscriptTabSurfaceRetiresImmediately()
 
             For Each handle In surfaceHandles
@@ -1088,11 +1266,17 @@ Namespace CodexNativeAgent.Ui
             _activeTranscriptSurfaceThreadId = String.Empty
             _transcriptScrollViewer = Nothing
             RefreshTranscriptTabStripVisibility()
+            TraceTranscriptTabStateSnapshot("clear_all_surfaces")
         End Sub
 
         Private Sub RefreshTranscriptTabStripVisibility()
             If _transcriptTabStripBorder Is Nothing Then
                 Return
+            End If
+
+            If _transcriptTabStatesByTabId.Count <> _transcriptTabSurfacesByThreadId.Count Then
+                AppendProtocol("debug",
+                               $"transcript_tab_state event=surface_state_mismatch surfaceCount={_transcriptTabSurfacesByThreadId.Count} stateCount={_transcriptTabStatesByTabId.Count} activeTab={If(_activeTranscriptSurfaceThreadId, String.Empty)}")
             End If
 
             _transcriptTabStripBorder.Visibility = If(_transcriptTabSurfacesByThreadId.Count > 0,
@@ -1209,10 +1393,14 @@ Namespace CodexNativeAgent.Ui
             Dim closeButton = handle.TabCloseButton
             Dim chipBorder = handle.TabChipBorder
             Dim showClose = chipBorder IsNot Nothing AndAlso chipBorder.IsMouseOver
+            Dim isClosable = IsTranscriptTabClosable(handle.ThreadId)
+            showClose = showClose AndAlso isClosable
 
             closeButton.Opacity = If(showClose, 1.0R, 0.0R)
             closeButton.IsHitTestVisible = showClose
+            closeButton.IsEnabled = isClosable
             closeButton.Foreground = If(foreground, Brushes.Black)
+            closeButton.ToolTip = If(isClosable, "Close tab", "Keep at least one New thread tab open")
 
             Dim closeGlyph = TryCast(closeButton.Content, TextBlock)
             If closeGlyph IsNot Nothing Then
