@@ -435,10 +435,18 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim uiBindStartMs = perf.ElapsedMilliseconds
+            Dim clearStartMs = perf.ElapsedMilliseconds
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
+            Dim clearMs = Math.Max(0, perf.ElapsedMilliseconds - clearStartMs)
+
+            Dim setRawTextStartMs = perf.ElapsedMilliseconds
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
+            Dim setRawTextMs = Math.Max(0, perf.ElapsedMilliseconds - setRawTextStartMs)
+
+            Dim setDisplayStartMs = perf.ElapsedMilliseconds
             _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(visibleEntriesToRender)
+            Dim setDisplayMs = Math.Max(0, perf.ElapsedMilliseconds - setDisplayStartMs)
             Dim uiBindMs = Math.Max(0, perf.ElapsedMilliseconds - uiBindStartMs)
 
             Dim overlayApplyStartMs = perf.ElapsedMilliseconds
@@ -463,7 +471,7 @@ Namespace CodexNativeAgent.Ui
 
             TraceThreadSelectionPerformance(
                 "fast_bind_complete",
-                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; uiBindMs={uiBindMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={snapshot.DisplayEntries.Count}")
+                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={snapshot.DisplayEntries.Count}")
             Return True
         End Function
 
@@ -1719,10 +1727,24 @@ Namespace CodexNativeAgent.Ui
                                  Math.Max(0, rebuildPerf.ElapsedMilliseconds - chunkPlanStartMs))
 
             Dim uiBindStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
+            Dim clearStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
+            Dim clearMs = If(rebuildPerf Is Nothing,
+                             0L,
+                             Math.Max(0, rebuildPerf.ElapsedMilliseconds - clearStartMs))
+
+            Dim setRawTextStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(projection.RawText)
+            Dim setRawTextMs = If(rebuildPerf Is Nothing,
+                                  0L,
+                                  Math.Max(0, rebuildPerf.ElapsedMilliseconds - setRawTextStartMs))
+
+            Dim setDisplayStartMs = If(rebuildPerf Is Nothing, 0L, rebuildPerf.ElapsedMilliseconds)
             _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(visibleEntriesToRender)
+            Dim setDisplayMs = If(rebuildPerf Is Nothing,
+                                  0L,
+                                  Math.Max(0, rebuildPerf.ElapsedMilliseconds - setDisplayStartMs))
             Dim uiBindMs = If(rebuildPerf Is Nothing,
                               0L,
                               Math.Max(0, rebuildPerf.ElapsedMilliseconds - uiBindStartMs))
@@ -1749,7 +1771,7 @@ Namespace CodexNativeAgent.Ui
                 Dim finalizeMs = Math.Max(0, rebuildPerf.ElapsedMilliseconds - finalizeStartMs)
                 TraceThreadSelectionPerformance(
                     "rebuild_path_complete",
-                    $"thread={normalizedThreadId}; projectionPrepMs={projectionPrepMs}; chunkPlanMs={chunkPlanMs}; uiBindMs={uiBindMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeMs}; totalMs={rebuildPerf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={totalProjectionCount}")
+                    $"thread={normalizedThreadId}; projectionPrepMs={projectionPrepMs}; chunkPlanMs={chunkPlanMs}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeMs}; totalMs={rebuildPerf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={totalProjectionCount}")
             End If
         End Sub
 
