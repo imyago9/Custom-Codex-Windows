@@ -14,11 +14,13 @@ Namespace CodexNativeAgent.Ui
         Private Const TranscriptChunkTopTriggerViewportRatio As Double = 0.18R
         Private Const TranscriptChunkPageMaxRows As Integer = 140
         Private Const TranscriptChunkPageMaxRenderWeight As Integer = 280
+        Private Shared ReadOnly TranscriptChunkTriggerCooldownDuration As TimeSpan = TimeSpan.FromMilliseconds(220)
 
         Private _transcriptChunkTopProbeTimer As DispatcherTimer
         Private _transcriptChunkTopProbeTickActive As Boolean
         Private _transcriptChunkScrollChangedHandlerAttached As Boolean
         Private _transcriptChunkImmediateLoadDispatchPending As Boolean
+        Private _transcriptChunkTriggerCooldownUntilUtc As DateTimeOffset = DateTimeOffset.MinValue
 
         Private NotInheritable Class TranscriptChunkPrependAnchorSnapshot
             Public Property VerticalOffset As Double
@@ -93,7 +95,7 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If Math.Abs(e.VerticalChange) <= 0.01R AndAlso Math.Abs(e.ExtentHeightChange) <= 0.01R Then
+            If Math.Abs(e.VerticalChange) <= 0.01R Then
                 Return
             End If
 
@@ -156,6 +158,10 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If _threadContentLoading Then
+                Return False
+            End If
+
+            If DateTimeOffset.UtcNow < _transcriptChunkTriggerCooldownUntilUtc Then
                 Return False
             End If
 
@@ -235,6 +241,7 @@ Namespace CodexNativeAgent.Ui
                                                                               generationId,
                                                                               False,
                                                                               "older_chunk_begin_clear_pending")
+            SetTranscriptChunkTriggerCooldown("older_chunk_begin")
 
             TraceTranscriptChunkSession("older_chunk_load_begin",
                                         $"thread={threadId}; generation={generationId}")
@@ -245,6 +252,7 @@ Namespace CodexNativeAgent.Ui
                 If loadSnapshot Is Nothing Then
                     _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "capture_snapshot_failed")
                     TraceTranscriptChunkSession("older_chunk_load_cancel", $"thread={threadId}; generation={generationId}; stage=capture")
+                    SetTranscriptChunkTriggerCooldown("older_chunk_cancel_capture")
                     Return
                 End If
 
@@ -259,6 +267,7 @@ Namespace CodexNativeAgent.Ui
 
                 If chunkPlan Is Nothing Then
                     _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "chunk_plan_null")
+                    SetTranscriptChunkTriggerCooldown("older_chunk_cancel_null_plan")
                     Return
                 End If
 
@@ -266,6 +275,7 @@ Namespace CodexNativeAgent.Ui
                    Not StringComparer.Ordinal.Equals(GetVisibleThreadId(), threadId) Then
                     _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "stale_after_plan")
                     TraceTranscriptChunkSession("older_chunk_load_cancel", $"thread={threadId}; generation={generationId}; stage=stale_after_plan")
+                    SetTranscriptChunkTriggerCooldown("older_chunk_cancel_stale_after_plan")
                     Return
                 End If
 
@@ -278,6 +288,7 @@ Namespace CodexNativeAgent.Ui
                                                                                       chunkPlan.LoadedRangeStart,
                                                                                       chunkPlan.LoadedRangeEnd,
                                                                                       "older_chunk_noop_complete")
+                    SetTranscriptChunkTriggerCooldown("older_chunk_noop_complete")
                     TraceTranscriptChunkSession("older_chunk_load_noop",
                                                 $"thread={threadId}; generation={generationId}; rangeStart={chunkPlan.LoadedRangeStart}; rangeEnd={chunkPlan.LoadedRangeEnd}; hasMoreOlder={chunkPlan.HasMoreOlderEntries}")
                     Return
@@ -286,6 +297,7 @@ Namespace CodexNativeAgent.Ui
                 ApplyOlderTranscriptChunkRender(threadId, generationId, loadSnapshot, chunkPlan)
             Catch ex As Exception
                 _threadTranscriptChunkSessionCoordinator.TryCancelOlderChunkLoad(threadId, generationId, "older_chunk_exception")
+                SetTranscriptChunkTriggerCooldown("older_chunk_exception")
                 AppendProtocol("debug", $"transcript_chunk_load_older_error thread={threadId} gen={generationId} message={ex.Message}")
             End Try
         End Function
@@ -371,6 +383,7 @@ Namespace CodexNativeAgent.Ui
                                                                               chunkPlan.LoadedRangeStart,
                                                                               chunkPlan.LoadedRangeEnd,
                                                                               "older_chunk_apply_complete")
+            SetTranscriptChunkTriggerCooldown("older_chunk_apply_complete")
 
             QueueRestoreTranscriptOffsetAfterChunkPrepend(threadId,
                                                           generationId,
@@ -378,6 +391,12 @@ Namespace CodexNativeAgent.Ui
 
             TraceTranscriptChunkSession("older_chunk_load_complete",
                                         $"thread={threadId}; generation={generationId}; total={chunkPlan.TotalEntryCount}; selected={chunkPlan.SelectedEntryCount}; rangeStart={chunkPlan.LoadedRangeStart}; rangeEnd={chunkPlan.LoadedRangeEnd}; hasMoreOlder={chunkPlan.HasMoreOlderEntries}; weight={chunkPlan.TotalSelectedRenderWeight}")
+        End Sub
+
+        Private Sub SetTranscriptChunkTriggerCooldown(Optional reason As String = Nothing)
+            _transcriptChunkTriggerCooldownUntilUtc = DateTimeOffset.UtcNow.Add(TranscriptChunkTriggerCooldownDuration)
+            DebugTranscriptScroll("chunk_trigger_cooldown",
+                                  $"until={_transcriptChunkTriggerCooldownUntilUtc:O}; reason={If(reason, String.Empty)}")
         End Sub
 
         Private Sub QueueRestoreTranscriptOffsetAfterChunkPrepend(threadId As String,
