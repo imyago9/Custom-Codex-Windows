@@ -210,6 +210,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 .RuntimeKey = If(source.RuntimeKey, String.Empty),
                 .ThreadId = If(source.ThreadId, String.Empty),
                 .TurnId = If(source.TurnId, String.Empty),
+                .TurnItemStreamSequence = source.TurnItemStreamSequence,
                 .TurnItemOrderIndex = source.TurnItemOrderIndex,
                 .TurnItemSortTimestampUtc = source.TurnItemSortTimestampUtc,
                 .TimestampText = If(source.TimestampText, String.Empty),

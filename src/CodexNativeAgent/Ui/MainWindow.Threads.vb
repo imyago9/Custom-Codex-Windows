@@ -1354,6 +1354,7 @@ Namespace CodexNativeAgent.Ui
                 descriptor.TurnId = If(String.IsNullOrWhiteSpace(descriptor.TurnId),
                                        If(runtimeItem.TurnId, String.Empty).Trim(),
                                        descriptor.TurnId)
+                descriptor.TurnItemStreamSequence = runtimeItem.TurnItemStreamSequence
                 descriptor.TurnItemOrderIndex = runtimeItem.TurnItemOrderIndex
                 descriptor.TurnItemSortTimestampUtc = If(runtimeItem.StartedAt, runtimeItem.CompletedAt)
             Next
@@ -1545,6 +1546,11 @@ Namespace CodexNativeAgent.Ui
 
             indexedItems.Sort(
                 Function(left, right)
+                    Dim streamSequenceCompare = CompareCompletedTurnReplayItemStreamSequence(left.Value, right.Value)
+                    If streamSequenceCompare <> 0 Then
+                        Return streamSequenceCompare
+                    End If
+
                     Dim timestampCompare = CompareCompletedTurnReplayItemTimestamp(left.Value, right.Value)
                     If timestampCompare <> 0 Then
                         Return timestampCompare
@@ -1564,6 +1570,26 @@ Namespace CodexNativeAgent.Ui
             Next
 
             Return results
+        End Function
+
+        Private Shared Function CompareCompletedTurnReplayItemStreamSequence(left As TurnItemRuntimeState,
+                                                                             right As TurnItemRuntimeState) As Integer
+            Dim leftSequence = left?.TurnItemStreamSequence
+            Dim rightSequence = right?.TurnItemStreamSequence
+
+            If leftSequence.HasValue AndAlso rightSequence.HasValue Then
+                Return leftSequence.Value.CompareTo(rightSequence.Value)
+            End If
+
+            If leftSequence.HasValue Then
+                Return -1
+            End If
+
+            If rightSequence.HasValue Then
+                Return 1
+            End If
+
+            Return 0
         End Function
 
         Private Shared Function CompareCompletedTurnReplayItemTimestamp(left As TurnItemRuntimeState,

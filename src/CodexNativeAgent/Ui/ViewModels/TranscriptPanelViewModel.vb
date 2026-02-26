@@ -868,7 +868,9 @@ Namespace CodexNativeAgent.Ui.ViewModels
             If _runtimeEntriesByKey.TryGetValue(normalizedKey, existing) AndAlso existing IsNot Nothing Then
                 Dim index = _items.IndexOf(existing)
                 Dim shouldReposition = normalizedKey.StartsWith("item:", StringComparison.Ordinal) AndAlso
-                                       (descriptor.TurnItemSortTimestampUtc.HasValue OrElse descriptor.TurnItemOrderIndex.HasValue)
+                                       (descriptor.TurnItemStreamSequence.HasValue OrElse
+                                        descriptor.TurnItemSortTimestampUtc.HasValue OrElse
+                                        descriptor.TurnItemOrderIndex.HasValue)
                 If index >= 0 AndAlso shouldReposition Then
                     _items.RemoveAt(index)
                     Dim repositionInsertIndex = ResolveRuntimeInsertIndex(normalizedKey, descriptor)
@@ -911,6 +913,37 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Dim normalizedTurnId = NormalizeTurnId(descriptor.TurnId)
             If String.IsNullOrWhiteSpace(normalizedTurnId) Then
                 Return -1
+            End If
+
+            If descriptor.TurnItemStreamSequence.HasValue Then
+                Dim targetStreamSequence = descriptor.TurnItemStreamSequence.Value
+                Dim targetOrderIndex = descriptor.TurnItemOrderIndex
+                For i = 0 To _items.Count - 1
+                    Dim candidate = _items(i)
+                    If candidate Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                        Continue For
+                    End If
+
+                    If Not candidate.TurnItemStreamSequence.HasValue Then
+                        Continue For
+                    End If
+
+                    Dim candidateStreamSequence = candidate.TurnItemStreamSequence.Value
+                    If candidateStreamSequence > targetStreamSequence Then
+                        Return i
+                    End If
+
+                    If candidateStreamSequence = targetStreamSequence AndAlso
+                       targetOrderIndex.HasValue AndAlso
+                       candidate.TurnItemOrderIndex.HasValue AndAlso
+                       candidate.TurnItemOrderIndex.Value > targetOrderIndex.Value Then
+                        Return i
+                    End If
+                Next
             End If
 
             If descriptor.TurnItemSortTimestampUtc.HasValue Then
@@ -1176,6 +1209,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Dim descriptor As New TranscriptEntryDescriptor() With {
                 .ThreadId = If(itemState.ThreadId, String.Empty).Trim(),
                 .TurnId = If(itemState.TurnId, String.Empty).Trim(),
+                .TurnItemStreamSequence = itemState.TurnItemStreamSequence,
                 .TurnItemOrderIndex = itemState.TurnItemOrderIndex,
                 .TurnItemSortTimestampUtc = If(itemState.StartedAt, itemState.CompletedAt),
                 .TimestampText = If(timestampText, String.Empty)
@@ -2767,6 +2801,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .RuntimeKey = If(descriptor.RuntimeKey, String.Empty),
                 .ThreadId = If(descriptor.ThreadId, String.Empty),
                 .TurnId = If(descriptor.TurnId, String.Empty),
+                .TurnItemStreamSequence = descriptor.TurnItemStreamSequence,
                 .TurnItemOrderIndex = descriptor.TurnItemOrderIndex,
                 .TurnItemSortTimestampUtc = descriptor.TurnItemSortTimestampUtc,
                 .TimestampText = If(descriptor.TimestampText, String.Empty),

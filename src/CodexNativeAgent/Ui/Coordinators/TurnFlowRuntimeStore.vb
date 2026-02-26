@@ -28,6 +28,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
         Public Property ScopedItemKey As String = String.Empty
         Public Property ThreadId As String = String.Empty
         Public Property TurnId As String = String.Empty
+        Public Property TurnItemStreamSequence As Long?
         Public Property TurnItemOrderIndex As Integer?
         Public Property ItemId As String = String.Empty
         Public Property ItemType As String = String.Empty
@@ -109,6 +110,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
         Private ReadOnly _turnItemOrder As New Dictionary(Of String, List(Of String))(StringComparer.Ordinal)
         Private ReadOnly _pendingApprovals As New Dictionary(Of String, PendingApprovalRuntimeState)(StringComparer.Ordinal)
         Private ReadOnly _approvalKeyByRequestId As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _nextTurnItemStreamSequence As Long = 1
 
         Public ReadOnly Property ThreadsById As IReadOnlyDictionary(Of String, ThreadRuntimeState)
             Get
@@ -433,6 +435,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
             _turnItemOrder.Clear()
             _pendingApprovals.Clear()
             _approvalKeyByRequestId.Clear()
+            _nextTurnItemStreamSequence = 1
         End Sub
 
         Public Function Reduce([event] As TurnFlowEvent) As TurnFlowReduceResult
@@ -1236,6 +1239,11 @@ Namespace CodexNativeAgent.Ui.Coordinators
             If Not _turnItemOrder.TryGetValue(turnKey, order) OrElse order Is Nothing Then
                 order = New List(Of String)()
                 _turnItemOrder(turnKey) = order
+            End If
+
+            If Not item.TurnItemStreamSequence.HasValue Then
+                item.TurnItemStreamSequence = _nextTurnItemStreamSequence
+                _nextTurnItemStreamSequence += 1
             End If
 
             Dim alreadyPresent = False
