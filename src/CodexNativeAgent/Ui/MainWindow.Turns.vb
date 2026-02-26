@@ -287,18 +287,20 @@ Namespace CodexNativeAgent.Ui
                 Throw New InvalidOperationException("Enter turn input before sending.")
             End If
 
-            If String.IsNullOrWhiteSpace(_currentThreadId) AndAlso Not _pendingNewThreadFirstPromptSelection Then
+            If String.IsNullOrWhiteSpace(GetVisibleThreadId()) AndAlso Not _pendingNewThreadFirstPromptSelection Then
                 Await StartThreadAsync()
             End If
 
             Dim startedFromDraftNewThread = _pendingNewThreadFirstPromptSelection
 
-            If _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(_currentThreadId) Then
+            If _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
                 Await EnsurePendingDraftThreadCreatedAsync()
             End If
 
+            Dim visibleThreadIdAtDispatch = GetVisibleThreadId()
+
             Await _turnWorkflowCoordinator.RunStartTurnAsync(
-                _currentThreadId,
+                visibleThreadIdAtDispatch,
                 _viewModel.TurnComposer.InputText,
                 _viewModel.TurnComposer.SelectedModelId,
                 _viewModel.TurnComposer.SelectedReasoningEffort,
@@ -315,15 +317,16 @@ Namespace CodexNativeAgent.Ui
                     End If
 
                     SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
-                    threadIdToRefreshAfterTurnStart = _currentThreadId
-                    MarkThreadLastActive(_currentThreadId)
-                    Dim threadMissingFromList = SyncThreadListAfterUserPrompt(_currentThreadId, submittedInputText)
+                    Dim visibleThreadIdAfterStart = GetVisibleThreadId()
+                    threadIdToRefreshAfterTurnStart = visibleThreadIdAfterStart
+                    MarkThreadLastActive(visibleThreadIdAfterStart)
+                    Dim threadMissingFromList = SyncThreadListAfterUserPrompt(visibleThreadIdAfterStart, submittedInputText)
                     shouldRefreshThreadsAfterTurnStart = startedFromDraftNewThread OrElse threadMissingFromList
                     FinalizePendingNewThreadFirstPromptSelection()
                     UpdateThreadTurnLabels()
                     RefreshControlStates()
                     WorkspacePaneHost.TxtTurnInput.Clear()
-                    ShowStatus($"Turn started: {_currentTurnId}")
+                    ShowStatus($"Turn started: {GetVisibleTurnId()}")
                 End Sub)
 
             If shouldRefreshThreadsAfterTurnStart Then
@@ -336,9 +339,11 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Async Function SteerTurnAsync() As Task
+            Dim visibleThreadId = GetVisibleThreadId()
+            Dim visibleTurnId = GetVisibleTurnId()
             Await _turnWorkflowCoordinator.RunSteerTurnAsync(
-                _currentThreadId,
-                _currentTurnId,
+                visibleThreadId,
+                visibleTurnId,
                 _viewModel.TurnComposer.InputText,
                 AddressOf EnsureThreadSelected,
                 Sub(steerText)
@@ -351,18 +356,20 @@ Namespace CodexNativeAgent.Ui
                     End If
 
                     SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=True)
-                    MarkThreadLastActive(_currentThreadId)
+                    MarkThreadLastActive(GetVisibleThreadId())
                     UpdateThreadTurnLabels()
                     RefreshControlStates()
                     WorkspacePaneHost.TxtTurnInput.Clear()
-                    ShowStatus($"Turn steered: {_currentTurnId}")
+                    ShowStatus($"Turn steered: {GetVisibleTurnId()}")
                 End Sub)
         End Function
 
         Private Async Function InterruptTurnAsync() As Task
+            Dim visibleThreadId = GetVisibleThreadId()
+            Dim visibleTurnId = GetVisibleTurnId()
             Await _turnWorkflowCoordinator.RunInterruptTurnAsync(
-                _currentThreadId,
-                _currentTurnId,
+                visibleThreadId,
+                visibleTurnId,
                 AddressOf EnsureThreadSelected,
                 Sub(turnId)
                     AppendSystemMessage($"Interrupt requested for turn {turnId}.")
@@ -407,8 +414,8 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim runtimeItem As New TurnItemRuntimeState() With {
-                .ThreadId = _currentThreadId,
-                .TurnId = _currentTurnId,
+                .ThreadId = GetVisibleThreadId(),
+                .TurnId = GetVisibleTurnId(),
                 .ItemId = itemId,
                 .ItemType = itemType,
                 .Status = "completed",
