@@ -191,6 +191,7 @@ Namespace CodexNativeAgent.Ui
             _viewModel.SettingsPanel.RateLimitsText = "No rate-limit data loaded yet."
             SyncThreadToolbarMenus()
             SyncNewThreadTargetChip()
+            InitializeStartupDraftNewThreadUi()
             ApplyTurnComposerPickersCollapsedState(animated:=False, persist:=False)
         End Sub
 

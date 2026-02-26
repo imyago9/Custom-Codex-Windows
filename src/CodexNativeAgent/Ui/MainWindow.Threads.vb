@@ -66,9 +66,7 @@ Namespace CodexNativeAgent.Ui
             ResetThreadSelectionLoadUiState(hideTranscriptLoader:=True)
             ClearPendingUserEchoTracking()
             ActivateFreshTranscriptDocument("start_thread", activateBlankSurface:=False)
-            If Not EnsurePendingNewThreadTranscriptTabActivated() Then
-                EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
-            End If
+            ActivatePendingNewThreadTranscriptSurfaceOrBlank()
             ClearVisibleSelection()
             SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
             UpdateThreadTurnLabels()
@@ -76,6 +74,28 @@ Namespace CodexNativeAgent.Ui
             ShowStatus("New thread ready. Send your first instruction.")
             Return Task.CompletedTask
         End Function
+
+        Private Sub ActivatePendingNewThreadTranscriptSurfaceOrBlank()
+            If Not EnsurePendingNewThreadTranscriptTabActivated() Then
+                EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
+            End If
+        End Sub
+
+        Private Sub InitializeStartupDraftNewThreadUi()
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
+                Return
+            End If
+
+            If Not String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
+                Return
+            End If
+
+            ActivatePendingNewThreadTranscriptSurfaceOrBlank()
+            ClearVisibleSelection()
+            SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=True)
+            UpdateThreadTurnLabels()
+            RefreshControlStates()
+        End Sub
 
         Private Function CanBeginThreadsRefresh() As Boolean
             Return IsClientRunning()

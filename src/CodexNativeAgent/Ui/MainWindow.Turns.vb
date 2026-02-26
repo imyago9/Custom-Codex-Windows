@@ -287,15 +287,7 @@ Namespace CodexNativeAgent.Ui
                 Throw New InvalidOperationException("Enter turn input before sending.")
             End If
 
-            If String.IsNullOrWhiteSpace(GetVisibleThreadId()) AndAlso Not _pendingNewThreadFirstPromptSelection Then
-                Await StartThreadAsync()
-            End If
-
-            Dim startedFromDraftNewThread = _pendingNewThreadFirstPromptSelection
-
-            If _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
-                Await EnsurePendingDraftThreadCreatedAsync()
-            End If
+            Dim startedFromDraftNewThread = Await EnsureThreadReadyForTurnSubmissionAsync()
 
             Dim visibleThreadIdAtDispatch = GetVisibleThreadId()
 
@@ -336,6 +328,30 @@ Namespace CodexNativeAgent.Ui
                 End If
                 FinalizePendingNewThreadFirstPromptSelection()
             End If
+        End Function
+
+        Private Async Function EnsureThreadReadyForTurnSubmissionAsync() As Task(Of Boolean)
+            Dim startedFromDraftNewThread = _pendingNewThreadFirstPromptSelection
+
+            If String.IsNullOrWhiteSpace(GetVisibleThreadId()) AndAlso
+               Not startedFromDraftNewThread AndAlso
+               IsPendingNewThreadTranscriptTabActive() Then
+                SetPendingNewThreadFirstPromptSelectionActive(True, clearThreadSelection:=False)
+                startedFromDraftNewThread = True
+            End If
+
+            If String.IsNullOrWhiteSpace(GetVisibleThreadId()) AndAlso Not _pendingNewThreadFirstPromptSelection Then
+                Await StartThreadAsync()
+            End If
+
+            startedFromDraftNewThread = startedFromDraftNewThread OrElse _pendingNewThreadFirstPromptSelection
+
+            If _pendingNewThreadFirstPromptSelection AndAlso String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
+                Await EnsurePendingDraftThreadCreatedAsync()
+                startedFromDraftNewThread = True
+            End If
+
+            Return startedFromDraftNewThread
         End Function
 
         Private Async Function SteerTurnAsync() As Task

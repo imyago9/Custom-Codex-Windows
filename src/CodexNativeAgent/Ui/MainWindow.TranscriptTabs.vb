@@ -705,6 +705,10 @@ Namespace CodexNativeAgent.Ui
             Return True
         End Function
 
+        Private Function IsPendingNewThreadTranscriptTabActive() As Boolean
+            Return StringComparer.Ordinal.Equals(_activeTranscriptSurfaceThreadId, PendingNewThreadTranscriptTabId)
+        End Function
+
         Private Sub PromotePendingNewThreadTranscriptTabHandleIfActive(targetThreadId As String)
             Dim normalizedTargetThreadId = If(targetThreadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedTargetThreadId) Then
