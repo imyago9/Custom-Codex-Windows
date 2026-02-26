@@ -21,6 +21,7 @@ Namespace CodexNativeAgent.Ui
         Private _transcriptChunkScrollChangedHandlerAttached As Boolean
         Private _transcriptChunkImmediateLoadDispatchPending As Boolean
         Private _transcriptChunkTriggerCooldownUntilUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _transcriptListVirtualizationConfigured As Boolean
 
         Private NotInheritable Class TranscriptChunkPrependAnchorSnapshot
             Public Property VerticalOffset As Double
@@ -42,6 +43,8 @@ Namespace CodexNativeAgent.Ui
         End Class
 
         Private Sub EnsureTranscriptChunkTopProbeTimerStarted()
+            EnsureTranscriptListVirtualizationConfigured()
+
             If _transcriptChunkTopProbeTimer IsNot Nothing Then
                 If Not _transcriptChunkTopProbeTimer.IsEnabled Then
                     _transcriptChunkTopProbeTimer.Start()
@@ -59,6 +62,26 @@ Namespace CodexNativeAgent.Ui
             _transcriptChunkTopProbeTimer.Start()
             EnsureTranscriptChunkScrollTriggerHandlerAttached()
             DebugTranscriptScroll("chunk_top_probe", $"timer_started intervalMs={TranscriptChunkTopProbeIntervalMs}")
+        End Sub
+
+        Private Sub EnsureTranscriptListVirtualizationConfigured()
+            If _transcriptListVirtualizationConfigured Then
+                Return
+            End If
+
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            Dim transcriptList = WorkspacePaneHost.LstTranscript
+            ScrollViewer.SetCanContentScroll(transcriptList, True)
+            VirtualizingPanel.SetIsVirtualizing(transcriptList, True)
+            VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Recycling)
+            VirtualizingPanel.SetScrollUnit(transcriptList, ScrollUnit.Pixel)
+            _transcriptListVirtualizationConfigured = True
+
+            DebugTranscriptScroll("chunk_virtualization",
+                                  "configured list virtualization=true mode=recycling scrollUnit=pixel")
         End Sub
 
         Private Sub TryDispatchDeferredTranscriptChunkPrependFromRuntimeUpdate()
