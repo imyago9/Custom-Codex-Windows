@@ -1437,6 +1437,7 @@ Namespace CodexNativeAgent.Ui
             RefreshThreadRuntimeIndicatorsIfNeeded()
             Dim renderedDisplayCount = If(initialChunkPlan Is Nothing, projection.DisplayEntries.Count, initialChunkPlan.SelectedEntryCount)
             Dim totalProjectionCount = projection.DisplayEntries.Count
+            EnsureTranscriptChunkTopProbeTimerStarted()
             TraceTranscriptChunkSession("rebuild_complete",
                                         $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={renderedDisplayCount}; totalProjectionCount={totalProjectionCount}")
             ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
