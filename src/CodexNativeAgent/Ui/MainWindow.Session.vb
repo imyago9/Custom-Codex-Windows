@@ -36,6 +36,11 @@ Namespace CodexNativeAgent.Ui
             _currentTurnId = String.Empty
         End Sub
 
+        Private Sub ClearVisibleSelection()
+            ClearVisibleThreadId()
+            ClearVisibleTurnId()
+        End Sub
+
         Private Function GetActiveTurnIdForThread(threadId As String,
                                                   Optional fallbackTurnId As String = Nothing) As String
             If _sessionNotificationCoordinator Is Nothing Then
@@ -372,8 +377,7 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub ResetWorkspaceTransientStateCore(clearModelPicker As Boolean)
-            ClearVisibleThreadId()
-            ClearVisibleTurnId()
+            ClearVisibleSelection()
             _notificationRuntimeThreadId = String.Empty
             _notificationRuntimeTurnId = String.Empty
             _currentThreadCwd = String.Empty
