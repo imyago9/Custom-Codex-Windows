@@ -49,7 +49,10 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
 
         Public ReadOnly Property ActiveBadgeVisibility As Visibility
             Get
-                Return If(HasActiveRuntimeTurn, Visibility.Visible, Visibility.Collapsed)
+                ' When hidden updates are pending, the compact updates dot takes precedence.
+                Return If(HasActiveRuntimeTurn AndAlso Not HasPendingRuntimeUpdates,
+                          Visibility.Visible,
+                          Visibility.Collapsed)
             End Get
         End Property
 
