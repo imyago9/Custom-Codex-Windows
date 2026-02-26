@@ -162,7 +162,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If Not forceReload AndAlso
-               StringComparer.Ordinal.Equals(selectedThreadId, _currentThreadId) AndAlso
+               StringComparer.Ordinal.Equals(selectedThreadId, GetVisibleThreadId()) AndAlso
                Not _threadContentLoading Then
                 Return False
             End If
@@ -271,8 +271,9 @@ Namespace CodexNativeAgent.Ui
                     If Not payload.HasTurns AndAlso _viewModel.TranscriptPanel.Items.Count = 0 Then
                         AppendSystemMessage("No historical turns loaded for this thread.")
                     End If
-                    AppendSystemMessage($"Loaded thread {_currentThreadId} from history.")
-                    ShowStatus($"Loaded thread {_currentThreadId}.")
+                    Dim visibleThreadId = GetVisibleThreadId()
+                    AppendSystemMessage($"Loaded thread {visibleThreadId} from history.")
+                    ShowStatus($"Loaded thread {visibleThreadId}.")
                     Return Task.CompletedTask
                 End Function).ConfigureAwait(False)
         End Function
@@ -680,14 +681,14 @@ Namespace CodexNativeAgent.Ui
 
             SetPendingNewThreadFirstPromptSelectionActive(False)
 
-            Dim visibleEntry = FindVisibleThreadListEntryById(_currentThreadId)
+            Dim visibleEntry = FindVisibleThreadListEntryById(GetVisibleThreadId())
             If visibleEntry IsNot Nothing Then
                 SelectThreadEntry(visibleEntry, suppressAutoLoad:=True)
             End If
         End Sub
 
         Private Async Function EnsurePendingDraftThreadCreatedAsync() As Task
-            If Not _pendingNewThreadFirstPromptSelection OrElse Not String.IsNullOrWhiteSpace(_currentThreadId) Then
+            If Not _pendingNewThreadFirstPromptSelection OrElse Not String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
                 Return
             End If
 
@@ -702,7 +703,7 @@ Namespace CodexNativeAgent.Ui
             ' Seed an empty historical baseline for brand-new threads before the first turn starts.
             ' This prevents the first re-open during an in-flight turn from using a partial snapshot
             ' as the baseline and duplicating prompt/output when overlay replay runs.
-            PersistThreadSelectionSnapshotToLiveRegistry(_currentThreadId, New ThreadTranscriptSnapshot())
+            PersistThreadSelectionSnapshotToLiveRegistry(GetVisibleThreadId(), New ThreadTranscriptSnapshot())
         End Function
 
         Private Shared Function FindVisualAncestor(Of T As DependencyObject)(start As DependencyObject) As T
@@ -729,10 +730,10 @@ Namespace CodexNativeAgent.Ui
                 AddressOf ApplyCurrentThreadFromThreadObject,
                 AddressOf RenderThreadObject,
                 Sub(ignoredMessage)
-                    AppendSystemMessage($"Forked into new thread {_currentThreadId}.")
+                    AppendSystemMessage($"Forked into new thread {GetVisibleThreadId()}.")
                 End Sub,
                 Sub(ignoredMessage, isError, displayToast)
-                    ShowStatus($"Forked thread {_currentThreadId}.", isError:=isError, displayToast:=displayToast)
+                    ShowStatus($"Forked thread {GetVisibleThreadId()}.", isError:=isError, displayToast:=displayToast)
                 End Sub,
                 AddressOf RefreshThreadsAsync)
         End Function
@@ -778,7 +779,7 @@ Namespace CodexNativeAgent.Ui
 
             filtered.Sort(AddressOf CompareThreadEntries)
 
-            Dim selectedThreadId As String = If(_pendingNewThreadFirstPromptSelection, String.Empty, _currentThreadId)
+            Dim selectedThreadId As String = If(_pendingNewThreadFirstPromptSelection, String.Empty, GetVisibleThreadId())
             If Not _pendingNewThreadFirstPromptSelection Then
                 Dim selectedEntry = TryCast(_viewModel.ThreadsPanel.SelectedListItem, ThreadListEntry)
                 If selectedEntry IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(selectedEntry.Id) Then
@@ -869,7 +870,7 @@ Namespace CodexNativeAgent.Ui
             Dim runtimeStore = If(_sessionNotificationCoordinator Is Nothing,
                                   Nothing,
                                   _sessionNotificationCoordinator.RuntimeStore)
-            Dim visibleThreadId = If(_currentThreadId, String.Empty).Trim()
+            Dim visibleThreadId = GetVisibleThreadId()
             Dim changed = False
 
             For Each entry In _threadEntries
@@ -1940,7 +1941,7 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub EnsureThreadSelected()
-            If String.IsNullOrWhiteSpace(_currentThreadId) Then
+            If String.IsNullOrWhiteSpace(GetVisibleThreadId()) Then
                 Throw New InvalidOperationException("No active thread selected.")
             End If
         End Sub
