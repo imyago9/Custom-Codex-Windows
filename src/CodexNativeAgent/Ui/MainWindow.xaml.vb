@@ -3406,7 +3406,7 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            If IsScrollViewerNearBottom(scroller) Then
+            If IsScrollViewerAtBottomExtreme(scroller) Then
                 _transcriptAutoScrollEnabled = True
                 Return
             End If
@@ -3660,14 +3660,17 @@ Namespace CodexNativeAgent.Ui
             WorkspacePaneHost.ImgTimeToBuildEmptyState.Visibility = If(showEmptyState, Visibility.Visible, Visibility.Collapsed)
         End Sub
 
-        Private Shared Function IsScrollViewerNearBottom(scroller As ScrollViewer) As Boolean
+        Private Shared Function IsScrollViewerAtBottomExtreme(scroller As ScrollViewer) As Boolean
             If scroller Is Nothing Then
                 Return True
             End If
 
-            ' Keep this threshold effectively exact so any user scroll-up disables auto-follow.
-            Const bottomEpsilon As Double = 0.01
-            Return scroller.VerticalOffset >= Math.Max(0, scroller.ScrollableHeight - bottomEpsilon)
+            If scroller.ScrollableHeight <= 0 Then
+                Return True
+            End If
+
+            ' Use the ScrollViewer's actual bottom extreme rather than a "near bottom" pixel heuristic.
+            Return scroller.VerticalOffset >= scroller.ScrollableHeight
         End Function
 
         Private Sub ScrollTranscriptToBottom()
@@ -3686,7 +3689,7 @@ Namespace CodexNativeAgent.Ui
             If transcriptList IsNot Nothing Then
                 Dim scroller = ResolveTranscriptScrollViewer()
                 If turnInProgress AndAlso Not _transcriptAutoScrollEnabled Then
-                    If scroller IsNot Nothing AndAlso IsScrollViewerNearBottom(scroller) Then
+                    If scroller IsNot Nothing AndAlso IsScrollViewerAtBottomExtreme(scroller) Then
                         _transcriptAutoScrollEnabled = True
                     Else
                         ScrollTextBoxToBottom(WorkspacePaneHost.TxtTranscript)
