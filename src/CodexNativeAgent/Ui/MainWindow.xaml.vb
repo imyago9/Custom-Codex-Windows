@@ -390,6 +390,8 @@ Namespace CodexNativeAgent.Ui
         Private Shared ReadOnly PendingUserEchoMaxAge As TimeSpan = TimeSpan.FromSeconds(30)
 
         Private _client As CodexAppServerClient
+        ' Visible UI selection only. Multi-thread runtime state is tracked separately in the
+        ' runtime store/registry and can include active turns in non-visible threads.
         Private _currentThreadId As String = String.Empty
         Private _currentTurnId As String = String.Empty
         Private _notificationRuntimeThreadId As String = String.Empty

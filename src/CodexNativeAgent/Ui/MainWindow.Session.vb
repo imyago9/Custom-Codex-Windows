@@ -12,6 +12,11 @@ Imports CodexNativeAgent.Ui.Coordinators
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
+        ' Visible selection helpers (Phase 7 scaffold):
+        ' `_currentThreadId` / `_currentTurnId` represent the currently selected thread/turn in the UI.
+        ' They are not the global source of truth for active runtime state across all threads.
+        ' Runtime truth lives in TurnFlowRuntimeStore + ThreadLiveSessionRegistry.
+        ' Prefer these helpers over direct field access so visible-vs-global semantics stay explicit.
         Private Function GetVisibleThreadId() As String
             Return If(_currentThreadId, String.Empty).Trim()
         End Function
