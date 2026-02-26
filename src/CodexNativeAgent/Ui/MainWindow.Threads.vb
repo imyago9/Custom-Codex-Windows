@@ -1334,6 +1334,46 @@ Namespace CodexNativeAgent.Ui
                                                       GetVisibleTurnId())
         End Sub
 
+        Private Sub RecordInitialTranscriptChunkRenderState(threadId As String,
+                                                            chunkSessionGeneration As Integer,
+                                                            chunkPlan As ThreadTranscriptDisplayChunkPlan)
+            If chunkSessionGeneration <= 0 OrElse chunkPlan Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            If Not _threadTranscriptChunkSessionCoordinator.IsActiveSessionGeneration(normalizedThreadId, chunkSessionGeneration) Then
+                Return
+            End If
+
+            Dim activeSession = _threadTranscriptChunkSessionCoordinator.ActiveSession
+            If activeSession Is Nothing Then
+                Return
+            End If
+
+            activeSession.IsLoadingOlderChunk = False
+            activeSession.PendingPrependRequest = False
+            activeSession.HasMoreOlderChunks = chunkPlan.HasMoreOlderEntries
+
+            If chunkPlan.SelectedEntryCount > 0 Then
+                activeSession.LoadedRangeStart = chunkPlan.LoadedRangeStart
+                activeSession.LoadedRangeEnd = chunkPlan.LoadedRangeEnd
+            Else
+                activeSession.LoadedRangeStart = Nothing
+                activeSession.LoadedRangeEnd = Nothing
+            End If
+
+            activeSession.LastUpdatedUtc = DateTimeOffset.UtcNow
+            activeSession.LastLifecycleReason = "initial_chunk_render"
+
+            TraceTranscriptChunkSession("initial_chunk_render",
+                                        $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; total={chunkPlan.TotalEntryCount}; selected={chunkPlan.SelectedEntryCount}; rangeStart={chunkPlan.LoadedRangeStart}; rangeEnd={chunkPlan.LoadedRangeEnd}; hasMoreOlder={chunkPlan.HasMoreOlderEntries}; weight={chunkPlan.TotalSelectedRenderWeight}")
+        End Sub
+
         Private Sub RebuildVisibleTranscriptForThread(threadId As String)
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
@@ -1369,10 +1409,24 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            Const initialChunkMaxRows As Integer = 140
+            Const initialChunkMaxRenderWeight As Integer = 280
+            Dim initialChunkPlan As ThreadTranscriptDisplayChunkPlan = Nothing
+            Dim visibleEntriesToRender As IEnumerable(Of TranscriptEntryDescriptor) = projection.DisplayEntries
+
+            If chunkSessionGeneration > 0 AndAlso
+               StringComparer.Ordinal.Equals(normalizedThreadId, GetVisibleThreadId()) Then
+                initialChunkPlan = ThreadTranscriptChunkPlanner.BuildLatestDisplayChunk(projection.DisplayEntries,
+                                                                                        initialChunkMaxRows,
+                                                                                        initialChunkMaxRenderWeight)
+                visibleEntriesToRender = initialChunkPlan.DisplayEntries
+                RecordInitialTranscriptChunkRenderState(normalizedThreadId, chunkSessionGeneration, initialChunkPlan)
+            End If
+
             ClearPendingUserEchoTracking()
             _viewModel.TranscriptPanel.ClearTranscript()
             _viewModel.TranscriptPanel.SetTranscriptSnapshot(projection.RawText)
-            _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(projection.DisplayEntries)
+            _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(visibleEntriesToRender)
 
             ApplyLiveRuntimeOverlayForThread(normalizedThreadId,
                                             _sessionNotificationCoordinator.RuntimeStore,
@@ -1381,8 +1435,10 @@ Namespace CodexNativeAgent.Ui
             _threadLiveSessionRegistry.MarkBound(normalizedThreadId, GetVisibleTurnId())
             _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
             RefreshThreadRuntimeIndicatorsIfNeeded()
+            Dim renderedDisplayCount = If(initialChunkPlan Is Nothing, projection.DisplayEntries.Count, initialChunkPlan.SelectedEntryCount)
+            Dim totalProjectionCount = projection.DisplayEntries.Count
             TraceTranscriptChunkSession("rebuild_complete",
-                                        $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={projection.DisplayEntries.Count}")
+                                        $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={renderedDisplayCount}; totalProjectionCount={totalProjectionCount}")
             ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
         End Sub
 
