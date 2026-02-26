@@ -3665,7 +3665,8 @@ Namespace CodexNativeAgent.Ui
                 Return True
             End If
 
-            Const bottomEpsilon As Double = 2.0
+            ' Keep this threshold effectively exact so any user scroll-up disables auto-follow.
+            Const bottomEpsilon As Double = 0.01
             Return scroller.VerticalOffset >= Math.Max(0, scroller.ScrollableHeight - bottomEpsilon)
         End Function
 
