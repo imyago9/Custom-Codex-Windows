@@ -36,6 +36,7 @@ Namespace CodexNativeAgent.Ui
             Public Property ThreadObject As JsonObject
             Public Property HasTurns As Boolean
             Public Property TranscriptSnapshot As ThreadTranscriptSnapshot
+            Public Property InitialDisplayChunkPlan As ThreadTranscriptDisplayChunkPlan
         End Class
 
         Private Function StartThreadAsync() As Task
@@ -220,9 +221,11 @@ Namespace CodexNativeAgent.Ui
 
             Dim hasTurns = ThreadObjectHasTurns(snapshotSourceThread)
             Dim transcriptSnapshot As ThreadTranscriptSnapshot = Nothing
+            Dim initialDisplayChunkPlan As ThreadTranscriptDisplayChunkPlan = Nothing
             If hasTurns Then
                 transcriptSnapshot = Await Task.Run(Function() BuildThreadTranscriptSnapshot(snapshotSourceThread), cancellationToken).ConfigureAwait(False)
                 cancellationToken.ThrowIfCancellationRequested()
+                initialDisplayChunkPlan = BuildInitialVisibleTranscriptChunkPlan(transcriptSnapshot.DisplayEntries)
             Else
                 transcriptSnapshot = New ThreadTranscriptSnapshot()
             End If
@@ -242,7 +245,8 @@ Namespace CodexNativeAgent.Ui
             Return New ThreadSelectionLoadPayload() With {
                 .ThreadObject = threadObject,
                 .HasTurns = hasTurns,
-                .TranscriptSnapshot = transcriptSnapshot
+                .TranscriptSnapshot = transcriptSnapshot,
+                .InitialDisplayChunkPlan = initialDisplayChunkPlan
             }
         End Function
 
@@ -279,7 +283,9 @@ Namespace CodexNativeAgent.Ui
                         Return
                     End If
 
-                    RebuildVisibleTranscriptForThread(request.ThreadId)
+                    If Not TryFastBindVisibleTranscriptFromThreadSelectionPayload(request.ThreadId, payload) Then
+                        RebuildVisibleTranscriptForThread(request.ThreadId)
+                    End If
                     If Not payload.HasTurns AndAlso _viewModel.TranscriptPanel.Items.Count = 0 Then
                         AppendSystemMessage("No historical turns loaded for this thread.")
                     End If
@@ -287,6 +293,105 @@ Namespace CodexNativeAgent.Ui
                     AppendSystemMessage($"Loaded thread {visibleThreadId} from history.")
                     ShowStatus($"Loaded thread {visibleThreadId}.")
                 End Function).ConfigureAwait(False)
+        End Function
+
+        Private Function TryFastBindVisibleTranscriptFromThreadSelectionPayload(threadId As String,
+                                                                                payload As ThreadSelectionLoadPayload) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse payload Is Nothing Then
+                Return False
+            End If
+
+            Dim snapshot = payload.TranscriptSnapshot
+            If snapshot Is Nothing Then
+                Return False
+            End If
+
+            If Not CanUseFastThreadSelectionTranscriptBind(normalizedThreadId) Then
+                Return False
+            End If
+
+            Dim initialChunkPlan = payload.InitialDisplayChunkPlan
+            If initialChunkPlan Is Nothing Then
+                initialChunkPlan = BuildInitialVisibleTranscriptChunkPlan(snapshot.DisplayEntries)
+            End If
+
+            Dim chunkSessionGeneration = 0
+            Dim chunkSession = _threadTranscriptChunkSessionCoordinator.ActivateVisibleThread(normalizedThreadId,
+                                                                                              "selection_fast_bind_activate")
+            If chunkSession IsNot Nothing Then
+                chunkSession = _threadTranscriptChunkSessionCoordinator.BumpActiveSessionGeneration("selection_fast_bind")
+                If chunkSession IsNot Nothing Then
+                    chunkSessionGeneration = chunkSession.GenerationId
+                End If
+
+                TraceTranscriptChunkSession("rebuild_fast_begin",
+                                            $"thread={normalizedThreadId}; generation={chunkSessionGeneration}")
+            End If
+
+            If chunkSessionGeneration > 0 AndAlso
+               Not _threadTranscriptChunkSessionCoordinator.IsActiveSessionGeneration(normalizedThreadId, chunkSessionGeneration) Then
+                TraceTranscriptChunkSession("rebuild_fast_stale_skip",
+                                            $"thread={normalizedThreadId}; generation={chunkSessionGeneration}")
+                Return False
+            End If
+
+            Dim visibleEntriesToRender As IEnumerable(Of TranscriptEntryDescriptor) = snapshot.DisplayEntries
+            If initialChunkPlan IsNot Nothing Then
+                visibleEntriesToRender = initialChunkPlan.DisplayEntries
+            End If
+
+            If chunkSessionGeneration > 0 AndAlso
+               StringComparer.Ordinal.Equals(normalizedThreadId, GetVisibleThreadId()) AndAlso
+               initialChunkPlan IsNot Nothing Then
+                RecordInitialTranscriptChunkRenderState(normalizedThreadId, chunkSessionGeneration, initialChunkPlan)
+            End If
+
+            ClearPendingUserEchoTracking()
+            _viewModel.TranscriptPanel.ClearTranscript()
+            _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
+            _viewModel.TranscriptPanel.SetTranscriptDisplaySnapshot(visibleEntriesToRender)
+
+            ApplyLiveRuntimeOverlayForThread(normalizedThreadId,
+                                            _sessionNotificationCoordinator.RuntimeStore,
+                                            Nothing)
+
+            _threadLiveSessionRegistry.MarkBound(normalizedThreadId, GetVisibleTurnId())
+            _threadLiveSessionRegistry.SetPendingRebuild(normalizedThreadId, False)
+            RefreshThreadRuntimeIndicatorsIfNeeded()
+
+            Dim renderedDisplayCount = If(initialChunkPlan Is Nothing,
+                                          snapshot.DisplayEntries.Count,
+                                          initialChunkPlan.SelectedEntryCount)
+            EnsureTranscriptChunkTopProbeTimerStarted()
+            TraceTranscriptChunkSession("rebuild_fast_complete",
+                                        $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={renderedDisplayCount}; totalProjectionCount={snapshot.DisplayEntries.Count}")
+            ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
+            Return True
+        End Function
+
+        Private Function CanUseFastThreadSelectionTranscriptBind(threadId As String) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            Dim runtimeStore = If(_sessionNotificationCoordinator Is Nothing,
+                                  Nothing,
+                                  _sessionNotificationCoordinator.RuntimeStore)
+            If runtimeStore Is Nothing Then
+                Return True
+            End If
+
+            Return ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore).Count = 0
+        End Function
+
+        Private Shared Function BuildInitialVisibleTranscriptChunkPlan(entries As IReadOnlyList(Of TranscriptEntryDescriptor)) As ThreadTranscriptDisplayChunkPlan
+            Const initialChunkMaxRows As Integer = 140
+            Const initialChunkMaxRenderWeight As Integer = 280
+            Return ThreadTranscriptChunkPlanner.BuildLatestDisplayChunk(entries,
+                                                                        initialChunkMaxRows,
+                                                                        initialChunkMaxRenderWeight)
         End Function
 
         Private Sub HandleThreadSelectionLoadFailureUi(request As ThreadSelectionLoadRequest, ex As Exception)
