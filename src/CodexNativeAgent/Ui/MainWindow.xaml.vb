@@ -476,6 +476,12 @@ Namespace CodexNativeAgent.Ui
         Private _transcriptScrollQueuedReasons As TranscriptScrollRequestReason = TranscriptScrollRequestReason.None
         Private _transcriptScrollQueuedInteractionEpoch As Integer
         Private _transcriptScrollRequestGeneration As Integer
+        Private _transcriptVirtualizationAppliedCanContentScroll As Boolean?
+        Private _transcriptVirtualizationAppliedIsVirtualizing As Boolean?
+        Private _transcriptVirtualizationAppliedMode As VirtualizationMode?
+        Private _transcriptVirtualizationAppliedScrollUnit As ScrollUnit?
+        Private _transcriptVirtualizationAppliedCacheLengthUnit As VirtualizationCacheLengthUnit?
+        Private _transcriptVirtualizationAppliedCacheLength As VirtualizationCacheLength?
         Private _pendingNewThreadFirstPromptSelection As Boolean
         Private _threadsPanelHintBubbleHintKey As String = String.Empty
         Private _threadsPanelHintBubbleDismissedForCurrentHint As Boolean
@@ -3163,6 +3169,7 @@ Namespace CodexNativeAgent.Ui
             RefreshThreadPanelControlState(session)
             RefreshWorkspaceHintState(connected, authenticated)
             RefreshPostStateSyncUi()
+            UpdateTranscriptVirtualizationRuntimePolicy()
             UpdateWorkspaceEmptyStateVisibility()
         End Sub
 
@@ -3459,6 +3466,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _transcriptScrollViewer = scroller
+            UpdateTranscriptVirtualizationRuntimePolicy()
 
             If _transcriptScrollProgrammaticMoveInProgress Then
                 DebugTranscriptScroll("scroll_changed", "skip=programmatic_move", scroller, e)
@@ -3910,20 +3918,116 @@ Namespace CodexNativeAgent.Ui
             Dim transcriptList = WorkspacePaneHost.LstTranscript
             Select Case TranscriptVirtualizationRollout
                 Case TranscriptVirtualizationRolloutMode.EnabledTestMode
-                    ScrollViewer.SetCanContentScroll(transcriptList, True)
-                    VirtualizingPanel.SetIsVirtualizing(transcriptList, True)
-                    VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Standard)
-                    transcriptList.SetValue(VirtualizingPanel.ScrollUnitProperty, ScrollUnit.Pixel)
-                    transcriptList.SetValue(VirtualizingPanel.CacheLengthUnitProperty, VirtualizationCacheLengthUnit.Page)
-                    transcriptList.SetValue(VirtualizingPanel.CacheLengthProperty, New VirtualizationCacheLength(1.0R, 1.0R))
+                    ApplyTranscriptVirtualizationSettings(
+                        transcriptList,
+                        canContentScroll:=True,
+                        isVirtualizing:=True,
+                        virtualizationMode:=VirtualizationMode.Standard,
+                        scrollUnit:=ScrollUnit.Pixel,
+                        cacheLengthUnit:=VirtualizationCacheLengthUnit.Page,
+                        cacheLength:=New VirtualizationCacheLength(1.0R, 1.0R))
                 Case Else
-                    ScrollViewer.SetCanContentScroll(transcriptList, False)
-                    VirtualizingPanel.SetIsVirtualizing(transcriptList, False)
-                    VirtualizingPanel.SetVirtualizationMode(transcriptList, VirtualizationMode.Standard)
-                    transcriptList.ClearValue(VirtualizingPanel.ScrollUnitProperty)
-                    transcriptList.ClearValue(VirtualizingPanel.CacheLengthUnitProperty)
-                    transcriptList.ClearValue(VirtualizingPanel.CacheLengthProperty)
+                    ApplyTranscriptVirtualizationSettings(
+                        transcriptList,
+                        canContentScroll:=False,
+                        isVirtualizing:=False,
+                        virtualizationMode:=VirtualizationMode.Standard,
+                        scrollUnit:=Nothing,
+                        cacheLengthUnit:=Nothing,
+                        cacheLength:=Nothing)
             End Select
+        End Sub
+
+        Private Sub UpdateTranscriptVirtualizationRuntimePolicy()
+            If WorkspacePaneHost Is Nothing OrElse WorkspacePaneHost.LstTranscript Is Nothing Then
+                Return
+            End If
+
+            If TranscriptVirtualizationRollout <> TranscriptVirtualizationRolloutMode.EnabledTestMode Then
+                Return
+            End If
+
+            Dim transcriptList = WorkspacePaneHost.LstTranscript
+            Dim hasVisibleActiveTurn = HasActiveRuntimeTurnForCurrentThread()
+            Dim shouldDisableVirtualizationForStreamingTail = hasVisibleActiveTurn AndAlso IsTranscriptFollowBottomEnabled()
+
+            If shouldDisableVirtualizationForStreamingTail Then
+                ApplyTranscriptVirtualizationSettings(
+                    transcriptList,
+                    canContentScroll:=False,
+                    isVirtualizing:=False,
+                    virtualizationMode:=VirtualizationMode.Standard,
+                    scrollUnit:=Nothing,
+                    cacheLengthUnit:=Nothing,
+                    cacheLength:=Nothing)
+            Else
+                ApplyTranscriptVirtualizationSettings(
+                    transcriptList,
+                    canContentScroll:=True,
+                    isVirtualizing:=True,
+                    virtualizationMode:=VirtualizationMode.Standard,
+                    scrollUnit:=ScrollUnit.Pixel,
+                    cacheLengthUnit:=VirtualizationCacheLengthUnit.Page,
+                    cacheLength:=New VirtualizationCacheLength(1.0R, 1.0R))
+            End If
+        End Sub
+
+        Private Sub ApplyTranscriptVirtualizationSettings(transcriptList As ListBox,
+                                                          canContentScroll As Boolean,
+                                                          isVirtualizing As Boolean,
+                                                          virtualizationMode As VirtualizationMode,
+                                                          scrollUnit As ScrollUnit?,
+                                                          cacheLengthUnit As VirtualizationCacheLengthUnit?,
+                                                          cacheLength As VirtualizationCacheLength?)
+            If transcriptList Is Nothing Then
+                Return
+            End If
+
+            Dim sameCanContentScroll = _transcriptVirtualizationAppliedCanContentScroll.HasValue AndAlso
+                                       _transcriptVirtualizationAppliedCanContentScroll.Value = canContentScroll
+            Dim sameIsVirtualizing = _transcriptVirtualizationAppliedIsVirtualizing.HasValue AndAlso
+                                     _transcriptVirtualizationAppliedIsVirtualizing.Value = isVirtualizing
+            Dim sameMode = _transcriptVirtualizationAppliedMode.HasValue AndAlso
+                           _transcriptVirtualizationAppliedMode.Value = virtualizationMode
+            Dim sameScrollUnit = Nullable.Equals(_transcriptVirtualizationAppliedScrollUnit, scrollUnit)
+            Dim sameCacheUnit = Nullable.Equals(_transcriptVirtualizationAppliedCacheLengthUnit, cacheLengthUnit)
+            Dim sameCacheLength = (Not _transcriptVirtualizationAppliedCacheLength.HasValue AndAlso Not cacheLength.HasValue) OrElse
+                                  (_transcriptVirtualizationAppliedCacheLength.HasValue AndAlso cacheLength.HasValue AndAlso
+                                   Math.Abs(_transcriptVirtualizationAppliedCacheLength.Value.CacheBeforeViewport - cacheLength.Value.CacheBeforeViewport) <= 0.001R AndAlso
+                                   Math.Abs(_transcriptVirtualizationAppliedCacheLength.Value.CacheAfterViewport - cacheLength.Value.CacheAfterViewport) <= 0.001R)
+
+            If sameCanContentScroll AndAlso sameIsVirtualizing AndAlso sameMode AndAlso sameScrollUnit AndAlso sameCacheUnit AndAlso sameCacheLength Then
+                Return
+            End If
+
+            ScrollViewer.SetCanContentScroll(transcriptList, canContentScroll)
+            VirtualizingPanel.SetIsVirtualizing(transcriptList, isVirtualizing)
+            VirtualizingPanel.SetVirtualizationMode(transcriptList, virtualizationMode)
+
+            If scrollUnit.HasValue Then
+                transcriptList.SetValue(VirtualizingPanel.ScrollUnitProperty, scrollUnit.Value)
+            Else
+                transcriptList.ClearValue(VirtualizingPanel.ScrollUnitProperty)
+            End If
+
+            If cacheLengthUnit.HasValue Then
+                transcriptList.SetValue(VirtualizingPanel.CacheLengthUnitProperty, cacheLengthUnit.Value)
+            Else
+                transcriptList.ClearValue(VirtualizingPanel.CacheLengthUnitProperty)
+            End If
+
+            If cacheLength.HasValue Then
+                transcriptList.SetValue(VirtualizingPanel.CacheLengthProperty, cacheLength.Value)
+            Else
+                transcriptList.ClearValue(VirtualizingPanel.CacheLengthProperty)
+            End If
+
+            _transcriptVirtualizationAppliedCanContentScroll = canContentScroll
+            _transcriptVirtualizationAppliedIsVirtualizing = isVirtualizing
+            _transcriptVirtualizationAppliedMode = virtualizationMode
+            _transcriptVirtualizationAppliedScrollUnit = scrollUnit
+            _transcriptVirtualizationAppliedCacheLengthUnit = cacheLengthUnit
+            _transcriptVirtualizationAppliedCacheLength = cacheLength
         End Sub
 
         Private Sub ScrollTranscriptToBottom(Optional force As Boolean = False,
