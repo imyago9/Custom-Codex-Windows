@@ -551,6 +551,8 @@ Namespace CodexNativeAgent.Ui
                 Sub(sender, e)
                     UpdateWorkspaceEmptyStateVisibility()
                 End Sub
+            AddHandler _viewModel.TranscriptPanel.LeadingEntriesTrimmed,
+                AddressOf OnTranscriptLeadingEntriesTrimmed
             AddHandler _viewModel.ThreadsPanel.PropertyChanged,
                 Sub(sender, e)
                     If e Is Nothing OrElse
@@ -3174,6 +3176,7 @@ Namespace CodexNativeAgent.Ui
             If Not hasActiveTurn AndAlso session.HasCurrentTurn AndAlso Not RuntimeHasTurnHistoryForCurrentThread() Then
                 hasActiveTurn = True
             End If
+            _viewModel.TranscriptPanel.SetActiveTurnRetentionEnabled(hasActiveTurn)
             Dim authenticatedAndInteractive = authenticated AndAlso
                                              Not _logoutUiTransitionInProgress AndAlso
                                              Not _disconnectUiTransitionInProgress

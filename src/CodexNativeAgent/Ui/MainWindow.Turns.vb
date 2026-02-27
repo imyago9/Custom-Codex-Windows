@@ -516,18 +516,14 @@ Namespace CodexNativeAgent.Ui
 
             Dim usedTokens As Long? = Nothing
             Dim maxTokens As Long? = Nothing
-            Dim inferredCompactions As Long? = Nothing
-            Dim rawUsedTokens As Long? = Nothing
             Dim contextResolution As String = String.Empty
             Dim contextPercent = ResolveContextUsagePercent(tokenUsage,
                                                            usedTokens,
                                                            maxTokens,
-                                                           contextResolution,
-                                                           inferredCompactions,
-                                                           rawUsedTokens)
+                                                           contextResolution)
             If Not contextPercent.HasValue Then
                 TraceContextUsageDebug("context_indicator_unresolved",
-                                       $"turn={If(turnId, String.Empty).Trim()}; used={FormatNullableLong(usedTokens)}; max={FormatNullableLong(maxTokens)}; compactions={FormatNullableLong(inferredCompactions)}; rawUsed={FormatNullableLong(rawUsedTokens)}; resolution={If(contextResolution, String.Empty)}; keys={DescribeJsonObjectKeys(tokenUsage)}")
+                                       $"turn={If(turnId, String.Empty).Trim()}; used={FormatNullableLong(usedTokens)}; max={FormatNullableLong(maxTokens)}; resolution={If(contextResolution, String.Empty)}; keys={DescribeJsonObjectKeys(tokenUsage)}")
                 _viewModel.TurnComposer.SetContextUsageIndicator(Nothing, String.Empty)
                 Return
             End If
@@ -536,20 +532,16 @@ Namespace CodexNativeAgent.Ui
             Dim tooltipText = BuildContextUsageTooltipText(turnId,
                                                            normalizedPercent,
                                                            usedTokens,
-                                                           maxTokens,
-                                                           inferredCompactions,
-                                                           rawUsedTokens)
+                                                           maxTokens)
             TraceContextUsageDebug("context_indicator_applied",
-                                   $"turn={If(turnId, String.Empty).Trim()}; percent={normalizedPercent.ToString("0.###", CultureInfo.InvariantCulture)}; used={FormatNullableLong(usedTokens)}; max={FormatNullableLong(maxTokens)}; compactions={FormatNullableLong(inferredCompactions)}; rawUsed={FormatNullableLong(rawUsedTokens)}; resolution={If(contextResolution, String.Empty)}")
+                                   $"turn={If(turnId, String.Empty).Trim()}; percent={normalizedPercent.ToString("0.###", CultureInfo.InvariantCulture)}; used={FormatNullableLong(usedTokens)}; max={FormatNullableLong(maxTokens)}; resolution={If(contextResolution, String.Empty)}")
             _viewModel.TurnComposer.SetContextUsageIndicator(normalizedPercent, tooltipText)
         End Sub
 
         Private Shared Function BuildContextUsageTooltipText(turnId As String,
                                                              contextPercent As Double,
                                                              usedTokens As Long?,
-                                                             maxTokens As Long?,
-                                                             inferredCompactions As Long?,
-                                                             rawUsedTokens As Long?) As String
+                                                             maxTokens As Long?) As String
             Dim lines As New List(Of String)()
             lines.Add($"Thread context used: {contextPercent.ToString("0.#", CultureInfo.InvariantCulture)}%")
 
@@ -559,13 +551,6 @@ Namespace CodexNativeAgent.Ui
                 lines.Add($"Context window: {maxTokens.Value.ToString(CultureInfo.InvariantCulture)} tokens")
             ElseIf usedTokens.HasValue Then
                 lines.Add($"Context tokens used: {usedTokens.Value.ToString(CultureInfo.InvariantCulture)}")
-            End If
-
-            If inferredCompactions.HasValue AndAlso inferredCompactions.Value > 0 Then
-                lines.Add($"Compactions inferred: {inferredCompactions.Value.ToString(CultureInfo.InvariantCulture)}")
-                If rawUsedTokens.HasValue Then
-                    lines.Add($"Raw context tokens seen: {rawUsedTokens.Value.ToString(CultureInfo.InvariantCulture)}")
-                End If
             End If
 
             Dim normalizedTurnId = If(turnId, String.Empty).Trim()
@@ -580,13 +565,9 @@ Namespace CodexNativeAgent.Ui
         Private Shared Function ResolveContextUsagePercent(tokenUsage As JsonObject,
                                                            ByRef usedTokens As Long?,
                                                            ByRef maxTokens As Long?,
-                                                           ByRef resolution As String,
-                                                           ByRef inferredCompactions As Long?,
-                                                           ByRef rawUsedTokens As Long?) As Double?
+                                                           ByRef resolution As String) As Double?
             usedTokens = Nothing
             maxTokens = Nothing
-            inferredCompactions = Nothing
-            rawUsedTokens = Nothing
             resolution = String.Empty
 
             If tokenUsage Is Nothing Then
@@ -677,24 +658,14 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If usedResolved AndAlso maxTokens.HasValue AndAlso maxTokens.Value > 0 Then
-                rawUsedTokens = usedForContext
-                Dim effectiveUsedForContext = usedForContext
-                If usedForContext > maxTokens.Value Then
-                    inferredCompactions = usedForContext \ maxTokens.Value
-                    effectiveUsedForContext = usedForContext Mod maxTokens.Value
-                Else
-                    inferredCompactions = 0
-                End If
-
-                usedTokens = effectiveUsedForContext
-                Dim ratio = CDbl(effectiveUsedForContext) / CDbl(maxTokens.Value)
-                resolution = $"ratio_from_{resolvedUsageSummaryLabel}; compactions={inferredCompactions.Value.ToString(CultureInfo.InvariantCulture)}; raw={usedForContext.ToString(CultureInfo.InvariantCulture)}; effective={effectiveUsedForContext.ToString(CultureInfo.InvariantCulture)}"
+                usedTokens = usedForContext
+                Dim ratio = CDbl(usedForContext) / CDbl(maxTokens.Value)
+                resolution = $"ratio_from_{resolvedUsageSummaryLabel}; used={usedForContext.ToString(CultureInfo.InvariantCulture)}; max={maxTokens.Value.ToString(CultureInfo.InvariantCulture)}"
                 Return ClampPercent(ratio * 100.0R)
             End If
 
             If usedResolved AndAlso Not maxTokens.HasValue Then
                 usedTokens = usedForContext
-                rawUsedTokens = usedForContext
                 resolution = $"used_tokens_resolved_but_window_missing source={resolvedUsageSummaryLabel}"
             ElseIf Not usedResolved AndAlso maxTokens.HasValue Then
                 resolution = "window_resolved_but_used_tokens_missing"

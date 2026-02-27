@@ -73,8 +73,21 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Public Property SetTokenUsageTextMs As Long
         End Class
 
+        Public NotInheritable Class TranscriptLeadingEntriesTrimmedEventArgs
+            Inherits EventArgs
+
+            Public Sub New(removedCount As Integer)
+                Me.RemovedCount = Math.Max(0, removedCount)
+            End Sub
+
+            Public ReadOnly Property RemovedCount As Integer
+        End Class
+
         Private Const MaxLogChars As Integer = 500000
         Private Const MaxTranscriptEntries As Integer = 2000
+        Private Const MaxTranscriptEntriesDuringActiveTurn As Integer = 12000
+        Private Const MaxTranscriptEntriesHardCap As Integer = 16000
+        Private Const MaxSoftTrimRemovalsPerPass As Integer = 180
         Private Const EnableFileChangeTurnDiffMergeProtocolDebug As Boolean = True
         Private Shared ReadOnly TurnDiffAddedCountRegex As New Regex("(?<!\w)\+(?<n>\d+)\b", RegexOptions.Compiled Or RegexOptions.CultureInvariant)
         Private Shared ReadOnly TurnDiffRemovedCountRegex As New Regex("(?<!\w)-(?<n>\d+)\b", RegexOptions.Compiled Or RegexOptions.CultureInvariant)
@@ -107,11 +120,20 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _activeReasoningStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
         Private _activeReasoningStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
         Private _lastClearTranscriptTelemetry As New TranscriptClearTelemetrySnapshot()
+        Private _retainExpandedWindowDuringActiveTurn As Boolean
 
         Public Event TranscriptItemsChanged As NotifyCollectionChangedEventHandler
+        Public Event LeadingEntriesTrimmed As EventHandler(Of TranscriptLeadingEntriesTrimmedEventArgs)
 
         Public Sub New()
             AttachTranscriptItemsCollectionChangedForwarder(_items)
+        End Sub
+
+        Public Sub SetActiveTurnRetentionEnabled(value As Boolean)
+            _retainExpandedWindowDuringActiveTurn = value
+            If Not value Then
+                TrimEntriesIfNeeded(onlyHardCap:=True)
+            End If
         End Sub
 
         Public Property TranscriptText As String
@@ -614,7 +636,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 _runtimeEntriesByKey(runtimeKey) = preparedEntries(i)
             Next
 
-            TrimEntriesIfNeeded()
+            TrimEntriesIfNeeded(onlyHardCap:=True)
             Return preparedEntries.Count
         End Function
 
@@ -3968,13 +3990,37 @@ Namespace CodexNativeAgent.Ui.ViewModels
             TranscriptText = TrimLogText(_transcriptText & value)
         End Sub
 
-        Private Sub TrimEntriesIfNeeded()
-            While _items.Count > MaxTranscriptEntries
+        Private Sub TrimEntriesIfNeeded(Optional onlyHardCap As Boolean = False)
+            Dim trimLimit = ResolveTrimLimit(onlyHardCap)
+            If trimLimit <= 0 Then
+                Return
+            End If
+
+            Dim removedCount = 0
+            Dim maxRemovals = If(onlyHardCap, Integer.MaxValue, MaxSoftTrimRemovalsPerPass)
+            While _items.Count > trimLimit AndAlso removedCount < maxRemovals
                 Dim removed = _items(0)
                 _items.RemoveAt(0)
                 RemoveRuntimeEntryKeyForEntry(removed)
+                removedCount += 1
             End While
+
+            If removedCount > 0 Then
+                RaiseEvent LeadingEntriesTrimmed(Me, New TranscriptLeadingEntriesTrimmedEventArgs(removedCount))
+            End If
         End Sub
+
+        Private Function ResolveTrimLimit(onlyHardCap As Boolean) As Integer
+            If onlyHardCap Then
+                Return MaxTranscriptEntriesHardCap
+            End If
+
+            If _retainExpandedWindowDuringActiveTurn Then
+                Return MaxTranscriptEntriesDuringActiveTurn
+            End If
+
+            Return MaxTranscriptEntries
+        End Function
 
         Private Sub RemoveRuntimeEntryKeyForEntry(entry As TranscriptEntryViewModel)
             If entry Is Nothing OrElse _runtimeEntriesByKey.Count = 0 Then

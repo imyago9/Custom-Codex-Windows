@@ -487,6 +487,41 @@ Namespace CodexNativeAgent.Ui
             Return HasActiveRuntimeTurnForThread(GetVisibleThreadId())
         End Function
 
+        Private Sub OnTranscriptLeadingEntriesTrimmed(sender As Object,
+                                                      e As TranscriptPanelViewModel.TranscriptLeadingEntriesTrimmedEventArgs)
+            If e Is Nothing OrElse e.RemovedCount <= 0 Then
+                Return
+            End If
+
+            Dim activeSession = _threadTranscriptChunkSessionCoordinator.ActiveSession
+            If activeSession Is Nothing Then
+                Return
+            End If
+
+            Dim visibleThreadId = GetVisibleThreadId()
+            Dim sessionThreadId = If(activeSession.ThreadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(visibleThreadId) OrElse
+               Not StringComparer.Ordinal.Equals(sessionThreadId, visibleThreadId) Then
+                Return
+            End If
+
+            If activeSession.LoadedRangeStart.HasValue Then
+                activeSession.LoadedRangeStart = Math.Max(0, activeSession.LoadedRangeStart.Value + e.RemovedCount)
+            End If
+
+            If activeSession.LoadedRangeEnd.HasValue AndAlso
+               activeSession.LoadedRangeStart.HasValue AndAlso
+               activeSession.LoadedRangeEnd.Value < activeSession.LoadedRangeStart.Value Then
+                activeSession.LoadedRangeEnd = activeSession.LoadedRangeStart.Value
+            End If
+
+            activeSession.LastUpdatedUtc = DateTimeOffset.UtcNow
+            activeSession.LastLifecycleReason = "leading_trim_adjust_range"
+
+            TraceTranscriptChunkSession("leading_trim_adjust_range",
+                                        $"thread={sessionThreadId}; removed={e.RemovedCount}; rangeStart={If(activeSession.LoadedRangeStart.HasValue, activeSession.LoadedRangeStart.Value.ToString(CultureInfo.InvariantCulture), "none")}; rangeEnd={If(activeSession.LoadedRangeEnd.HasValue, activeSession.LoadedRangeEnd.Value.ToString(CultureInfo.InvariantCulture), "none")}")
+        End Sub
+
         Private Function RuntimeHasTurnHistoryForCurrentThread() As Boolean
             If _sessionNotificationCoordinator Is Nothing Then
                 Return False
