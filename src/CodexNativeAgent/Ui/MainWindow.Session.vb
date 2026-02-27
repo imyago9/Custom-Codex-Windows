@@ -1,11 +1,13 @@
 Imports System.Diagnostics
 Imports System.Collections.Generic
+Imports System.Globalization
 Imports System.Security.Cryptography
 Imports System.Text
 Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports System.Threading.Tasks
 Imports System.Windows
+Imports System.Windows.Media
 Imports System.Windows.Threading
 Imports CodexNativeAgent.AppServer
 Imports CodexNativeAgent.Services
@@ -16,11 +18,15 @@ Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
         Private Const TranscriptChunkSessionDebugInstrumentationEnabled As Boolean = False
         Private Const TranscriptDocumentCacheMaxInactiveEntries As Integer = 3
+        Private Const RateLimitAutoRefreshMinIntervalSeconds As Integer = 45
         Private ReadOnly _threadTranscriptChunkSessionCoordinator As New ThreadTranscriptChunkSessionCoordinator()
         Private ReadOnly _inactiveTranscriptDocumentsByThreadId As New Dictionary(Of String, CachedTranscriptDocumentState)(StringComparer.Ordinal)
+        Private ReadOnly _rateLimitStatesByLimitId As New Dictionary(Of String, RateLimitLimitState)(StringComparer.OrdinalIgnoreCase)
         Private _activeTranscriptDocumentThreadId As String = String.Empty
         Private _activeTranscriptDocumentContentFingerprint As String = String.Empty
         Private _activeTranscriptDocumentUpdatedAtUnix As Long = Long.MinValue
+        Private _rateLimitAutoRefreshInProgress As Boolean
+        Private _lastRateLimitAutoRefreshAttemptUtc As DateTimeOffset = DateTimeOffset.MinValue
 
         Private NotInheritable Class CachedTranscriptDocumentState
             Public Property ThreadId As String = String.Empty
@@ -28,6 +34,19 @@ Namespace CodexNativeAgent.Ui
             Public Property LastUsedUtc As DateTimeOffset = DateTimeOffset.UtcNow
             Public Property ContentFingerprint As String = String.Empty
             Public Property ThreadUpdatedAtUnix As Long = Long.MinValue
+        End Class
+
+        Private NotInheritable Class RateLimitBucketState
+            Public Property UsedPercent As Double?
+            Public Property WindowDurationMins As Integer?
+            Public Property ResetsAtUnix As Long?
+        End Class
+
+        Private NotInheritable Class RateLimitLimitState
+            Public Property LimitId As String = String.Empty
+            Public Property LimitName As String = String.Empty
+            Public Property Primary As RateLimitBucketState
+            Public Property Secondary As RateLimitBucketState
         End Class
 
         ' Visible selection helpers (Phase 7 scaffold):
@@ -743,6 +762,7 @@ Namespace CodexNativeAgent.Ui
             _turnWorkflowCoordinator.ResetApprovalState()
             _viewModel.ThreadsPanel.Items.Clear()
             _viewModel.ThreadsPanel.SelectedListItem = Nothing
+            ClearTurnComposerRateLimitStateUi()
             If clearModelPicker Then
                 WorkspacePaneHost.CmbModel.Items.Clear()
             End If
@@ -782,7 +802,451 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub NotifyRateLimitsUpdatedUi(response As JsonNode)
             _viewModel.SettingsPanel.RateLimitsText = PrettyJson(response)
+            MergeRateLimitsPayloadIntoComposerState(response)
+            SyncTurnComposerRateLimitBars()
         End Sub
+
+        Private Sub MergeRateLimitsPayloadIntoComposerState(response As JsonNode)
+            Dim rootObject = TryCast(response, JsonObject)
+            If rootObject Is Nothing Then
+                Return
+            End If
+
+            MergeRateLimitPayloadObject(rootObject)
+            MergeRateLimitPayloadObject(GetPropertyObject(rootObject, "result"))
+            MergeRateLimitPayloadObject(GetPropertyObject(rootObject, "params"))
+        End Sub
+
+        Private Sub MergeRateLimitPayloadObject(payload As JsonObject)
+            If payload Is Nothing Then
+                Return
+            End If
+
+            Dim byLimitId = GetPropertyObject(payload, "rateLimitsByLimitId")
+            If byLimitId IsNot Nothing Then
+                For Each entry In byLimitId
+                    Dim limitObject = TryCast(entry.Value, JsonObject)
+                    If limitObject Is Nothing Then
+                        Continue For
+                    End If
+
+                    UpsertRateLimitState(limitObject, entry.Key)
+                Next
+            End If
+
+            Dim singleLimit = GetPropertyObject(payload, "rateLimits")
+            If singleLimit IsNot Nothing Then
+                UpsertRateLimitState(singleLimit, String.Empty)
+            End If
+        End Sub
+
+        Private Sub UpsertRateLimitState(limitObject As JsonObject, fallbackLimitId As String)
+            If limitObject Is Nothing Then
+                Return
+            End If
+
+            Dim limitId = GetPropertyString(limitObject, "limitId")
+            If String.IsNullOrWhiteSpace(limitId) Then
+                limitId = If(fallbackLimitId, String.Empty)
+            End If
+
+            limitId = limitId.Trim()
+            If String.IsNullOrWhiteSpace(limitId) Then
+                Return
+            End If
+
+            Dim state As RateLimitLimitState = Nothing
+            If Not _rateLimitStatesByLimitId.TryGetValue(limitId, state) Then
+                state = New RateLimitLimitState() With {
+                    .LimitId = limitId
+                }
+                _rateLimitStatesByLimitId(limitId) = state
+            End If
+
+            state.LimitId = limitId
+
+            Dim limitNameNode As JsonNode = Nothing
+            If limitObject.TryGetPropertyValue("limitName", limitNameNode) Then
+                state.LimitName = If(limitNameNode Is Nothing, String.Empty, GetPropertyString(limitObject, "limitName").Trim())
+            End If
+
+            Dim primaryNode As JsonNode = Nothing
+            If limitObject.TryGetPropertyValue("primary", primaryNode) Then
+                If primaryNode Is Nothing Then
+                    state.Primary = Nothing
+                Else
+                    Dim primaryObject = TryCast(primaryNode, JsonObject)
+                    If primaryObject IsNot Nothing Then
+                        state.Primary = MergeRateLimitBucketState(state.Primary, primaryObject)
+                    End If
+                End If
+            End If
+
+            Dim secondaryNode As JsonNode = Nothing
+            If limitObject.TryGetPropertyValue("secondary", secondaryNode) Then
+                If secondaryNode Is Nothing Then
+                    state.Secondary = Nothing
+                Else
+                    Dim secondaryObject = TryCast(secondaryNode, JsonObject)
+                    If secondaryObject IsNot Nothing Then
+                        state.Secondary = MergeRateLimitBucketState(state.Secondary, secondaryObject)
+                    End If
+                End If
+            End If
+        End Sub
+
+        Private Shared Function MergeRateLimitBucketState(existing As RateLimitBucketState,
+                                                          bucketObject As JsonObject) As RateLimitBucketState
+            Dim state = If(existing, New RateLimitBucketState())
+
+            Dim usedPercent As Double
+            If TryReadJsonDouble(bucketObject, usedPercent, "usedPercent", "used_percent") Then
+                state.UsedPercent = ClampPercent(usedPercent)
+            End If
+
+            Dim windowDurationMinutes As Integer
+            If TryReadJsonInteger(bucketObject, windowDurationMinutes, "windowDurationMins", "window_duration_mins") Then
+                state.WindowDurationMins = Math.Max(0, windowDurationMinutes)
+            End If
+
+            Dim resetsAtUnix As Long
+            If TryReadJsonLong(bucketObject, resetsAtUnix, "resetsAt", "resets_at") Then
+                state.ResetsAtUnix = resetsAtUnix
+            End If
+
+            Return state
+        End Function
+
+        Private Sub SyncTurnComposerRateLimitBars()
+            If _viewModel Is Nothing OrElse _viewModel.TurnComposer Is Nothing Then
+                Return
+            End If
+
+            Dim orderedStates As New List(Of RateLimitLimitState)(_rateLimitStatesByLimitId.Values)
+            orderedStates.Sort(AddressOf CompareRateLimitStatesForUi)
+
+            Dim bars As New List(Of TurnComposerRateLimitBarViewModel)()
+            For Each state In orderedStates
+                If state Is Nothing Then
+                    Continue For
+                End If
+
+                AppendRateLimitBar(bars, state, "primary", state.Primary)
+                AppendRateLimitBar(bars, state, "secondary", state.Secondary)
+            Next
+
+            _viewModel.TurnComposer.SetRateLimitBars(bars)
+        End Sub
+
+        Private Shared Function CompareRateLimitStatesForUi(left As RateLimitLimitState, right As RateLimitLimitState) As Integer
+            Dim leftPriority = If(StringComparer.OrdinalIgnoreCase.Equals(If(left?.LimitId, String.Empty), "codex"), 0, 1)
+            Dim rightPriority = If(StringComparer.OrdinalIgnoreCase.Equals(If(right?.LimitId, String.Empty), "codex"), 0, 1)
+            If leftPriority <> rightPriority Then
+                Return leftPriority.CompareTo(rightPriority)
+            End If
+
+            Return StringComparer.OrdinalIgnoreCase.Compare(If(left?.LimitId, String.Empty), If(right?.LimitId, String.Empty))
+        End Function
+
+        Private Sub AppendRateLimitBar(target As List(Of TurnComposerRateLimitBarViewModel),
+                                       state As RateLimitLimitState,
+                                       bucketLabel As String,
+                                       bucket As RateLimitBucketState)
+            If target Is Nothing OrElse state Is Nothing OrElse bucket Is Nothing OrElse Not bucket.UsedPercent.HasValue Then
+                Return
+            End If
+
+            Dim usedPercent = ClampPercent(bucket.UsedPercent.Value)
+            Dim remainingPercent = ClampPercent(100.0R - usedPercent)
+            Dim windowText = If(bucket.WindowDurationMins.HasValue,
+                                $"{bucket.WindowDurationMins.Value.ToString(CultureInfo.InvariantCulture)} min",
+                                "unknown")
+            Dim resetText = FormatRateLimitResetTime(bucket.ResetsAtUnix)
+            Dim displayName = ResolveRateLimitDisplayName(state)
+            Dim tooltip = $"{displayName} ({bucketLabel}){Environment.NewLine}" &
+                          $"Remaining: {remainingPercent.ToString("0.#", CultureInfo.InvariantCulture)}%{Environment.NewLine}" &
+                          $"Used: {usedPercent.ToString("0.#", CultureInfo.InvariantCulture)}%{Environment.NewLine}" &
+                          $"Window: {windowText}{Environment.NewLine}" &
+                          $"Resets: {resetText}"
+
+            target.Add(New TurnComposerRateLimitBarViewModel() With {
+                .BarId = $"{state.LimitId}:{bucketLabel}",
+                .RemainingPercent = remainingPercent,
+                .UsedPercent = usedPercent,
+                .TooltipText = tooltip,
+                .BarBrush = ResolveRateLimitBarBrush(remainingPercent)
+            })
+        End Sub
+
+        Private Shared Function ResolveRateLimitDisplayName(state As RateLimitLimitState) As String
+            If state Is Nothing Then
+                Return "rate-limit"
+            End If
+
+            If Not String.IsNullOrWhiteSpace(state.LimitName) Then
+                Return state.LimitName
+            End If
+
+            If Not String.IsNullOrWhiteSpace(state.LimitId) Then
+                Return state.LimitId
+            End If
+
+            Return "rate-limit"
+        End Function
+
+        Private Function ResolveRateLimitBarBrush(remainingPercent As Double) As Brush
+            Dim resourceKey As String
+            If remainingPercent <= 20.0R Then
+                resourceKey = "DangerBrush"
+            ElseIf remainingPercent <= 45.0R Then
+                resourceKey = "WarningBrush"
+            Else
+                resourceKey = "SuccessBrush"
+            End If
+
+            Dim resolved = TryCast(TryFindResource(resourceKey), Brush)
+            If resolved IsNot Nothing Then
+                Return resolved
+            End If
+
+            Return TryCast(TryFindResource("AccentBrush"), Brush)
+        End Function
+
+        Private Shared Function FormatRateLimitResetTime(resetsAtUnix As Long?) As String
+            If Not resetsAtUnix.HasValue Then
+                Return "unknown"
+            End If
+
+            Try
+                Dim unix = resetsAtUnix.Value
+                Dim resetTime =
+                    If(Math.Abs(unix) > 9_999_999_999L,
+                       DateTimeOffset.FromUnixTimeMilliseconds(unix),
+                       DateTimeOffset.FromUnixTimeSeconds(unix))
+                Return resetTime.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+            Catch
+                Return resetsAtUnix.Value.ToString(CultureInfo.InvariantCulture)
+            End Try
+        End Function
+
+        Private Sub ClearTurnComposerRateLimitStateUi()
+            _rateLimitStatesByLimitId.Clear()
+            _rateLimitAutoRefreshInProgress = False
+            _lastRateLimitAutoRefreshAttemptUtc = DateTimeOffset.MinValue
+
+            If _viewModel IsNot Nothing AndAlso _viewModel.TurnComposer IsNot Nothing Then
+                _viewModel.TurnComposer.SetRateLimitBars(Nothing)
+            End If
+        End Sub
+
+        Private Async Function RefreshRateLimitsForComposerIfNeededAsync(force As Boolean,
+                                                                         reason As String) As Task
+            If _accountService Is Nothing OrElse _viewModel Is Nothing OrElse _viewModel.SessionState Is Nothing Then
+                Return
+            End If
+
+            If Not _viewModel.SessionState.CanReadRateLimits OrElse Not IsClientRunning() Then
+                Return
+            End If
+
+            If _rateLimitAutoRefreshInProgress Then
+                Return
+            End If
+
+            Dim nowUtc = DateTimeOffset.UtcNow
+            If Not force Then
+                Dim elapsed = nowUtc - _lastRateLimitAutoRefreshAttemptUtc
+                If elapsed.TotalSeconds < RateLimitAutoRefreshMinIntervalSeconds Then
+                    Return
+                End If
+            End If
+
+            _rateLimitAutoRefreshInProgress = True
+            _lastRateLimitAutoRefreshAttemptUtc = nowUtc
+            Try
+                Dim response = Await _accountService.ReadRateLimitsAsync(CancellationToken.None).ConfigureAwait(True)
+                NotifyRateLimitsUpdatedUi(response)
+            Catch ex As Exception
+                AppendProtocol("debug",
+                               $"rate_limits_auto_refresh_failed reason={If(reason, String.Empty)} error={ex.Message}")
+            Finally
+                _rateLimitAutoRefreshInProgress = False
+            End Try
+        End Function
+
+        Private Shared Function ClampPercent(value As Double) As Double
+            If Double.IsNaN(value) OrElse Double.IsInfinity(value) Then
+                Return 0.0R
+            End If
+
+            If value < 0.0R Then
+                Return 0.0R
+            End If
+
+            If value > 100.0R Then
+                Return 100.0R
+            End If
+
+            Return value
+        End Function
+
+        Private Shared Function TryReadJsonDouble(source As JsonObject,
+                                                  ByRef result As Double,
+                                                  ParamArray propertyNames() As String) As Boolean
+            result = 0.0R
+            If source Is Nothing OrElse propertyNames Is Nothing Then
+                Return False
+            End If
+
+            For Each propertyName In propertyNames
+                If String.IsNullOrWhiteSpace(propertyName) Then
+                    Continue For
+                End If
+
+                Dim node As JsonNode = Nothing
+                If Not source.TryGetPropertyValue(propertyName, node) OrElse node Is Nothing Then
+                    Continue For
+                End If
+
+                Dim jsonValue = TryCast(node, JsonValue)
+                If jsonValue Is Nothing Then
+                    Continue For
+                End If
+
+                Dim doubleValue As Double
+                If jsonValue.TryGetValue(Of Double)(doubleValue) Then
+                    result = doubleValue
+                    Return True
+                End If
+
+                Dim integerValue As Integer
+                If jsonValue.TryGetValue(Of Integer)(integerValue) Then
+                    result = integerValue
+                    Return True
+                End If
+
+                Dim longValue As Long
+                If jsonValue.TryGetValue(Of Long)(longValue) Then
+                    result = longValue
+                    Return True
+                End If
+
+                Dim stringValue As String = Nothing
+                If jsonValue.TryGetValue(Of String)(stringValue) AndAlso
+                   Double.TryParse(stringValue, NumberStyles.Float, CultureInfo.InvariantCulture, doubleValue) Then
+                    result = doubleValue
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function TryReadJsonInteger(source As JsonObject,
+                                                   ByRef result As Integer,
+                                                   ParamArray propertyNames() As String) As Boolean
+            result = 0
+            If source Is Nothing OrElse propertyNames Is Nothing Then
+                Return False
+            End If
+
+            For Each propertyName In propertyNames
+                If String.IsNullOrWhiteSpace(propertyName) Then
+                    Continue For
+                End If
+
+                Dim node As JsonNode = Nothing
+                If Not source.TryGetPropertyValue(propertyName, node) OrElse node Is Nothing Then
+                    Continue For
+                End If
+
+                Dim jsonValue = TryCast(node, JsonValue)
+                If jsonValue Is Nothing Then
+                    Continue For
+                End If
+
+                Dim parsedInteger As Integer
+                If jsonValue.TryGetValue(Of Integer)(parsedInteger) Then
+                    result = parsedInteger
+                    Return True
+                End If
+
+                Dim parsedLong As Long
+                If jsonValue.TryGetValue(Of Long)(parsedLong) Then
+                    If parsedLong >= Integer.MinValue AndAlso parsedLong <= Integer.MaxValue Then
+                        result = CInt(parsedLong)
+                        Return True
+                    End If
+                End If
+
+                Dim parsedDouble As Double
+                If jsonValue.TryGetValue(Of Double)(parsedDouble) Then
+                    result = CInt(Math.Round(parsedDouble, MidpointRounding.AwayFromZero))
+                    Return True
+                End If
+
+                Dim stringValue As String = Nothing
+                If jsonValue.TryGetValue(Of String)(stringValue) AndAlso
+                   Integer.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, parsedInteger) Then
+                    result = parsedInteger
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function TryReadJsonLong(source As JsonObject,
+                                                ByRef result As Long,
+                                                ParamArray propertyNames() As String) As Boolean
+            result = 0
+            If source Is Nothing OrElse propertyNames Is Nothing Then
+                Return False
+            End If
+
+            For Each propertyName In propertyNames
+                If String.IsNullOrWhiteSpace(propertyName) Then
+                    Continue For
+                End If
+
+                Dim node As JsonNode = Nothing
+                If Not source.TryGetPropertyValue(propertyName, node) OrElse node Is Nothing Then
+                    Continue For
+                End If
+
+                Dim jsonValue = TryCast(node, JsonValue)
+                If jsonValue Is Nothing Then
+                    Continue For
+                End If
+
+                Dim parsedLong As Long
+                If jsonValue.TryGetValue(Of Long)(parsedLong) Then
+                    result = parsedLong
+                    Return True
+                End If
+
+                Dim parsedInteger As Integer
+                If jsonValue.TryGetValue(Of Integer)(parsedInteger) Then
+                    result = parsedInteger
+                    Return True
+                End If
+
+                Dim parsedDouble As Double
+                If jsonValue.TryGetValue(Of Double)(parsedDouble) Then
+                    result = CLng(Math.Round(parsedDouble, MidpointRounding.AwayFromZero))
+                    Return True
+                End If
+
+                Dim stringValue As String = Nothing
+                If jsonValue.TryGetValue(Of String)(stringValue) AndAlso
+                   Long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, parsedLong) Then
+                    result = parsedLong
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
 
         Private Sub NotifyApiKeyLoginSubmittedUi()
             AppendAndShowSystemMessage("API key login submitted.", displayToast:=True)
@@ -2038,7 +2502,12 @@ Namespace CodexNativeAgent.Ui
 
             If hasAccount Then
                 ClearAuthRequiredNoticeState()
-                If ShouldInitializeWorkspaceAfterAuthentication(wasAuthenticated) Then
+                Dim shouldInitializeWorkspace = ShouldInitializeWorkspaceAfterAuthentication(wasAuthenticated)
+                Dim hasCachedRateLimits = _rateLimitStatesByLimitId.Count > 0
+                Await RefreshRateLimitsForComposerIfNeededAsync(force:=(shouldInitializeWorkspace OrElse Not hasCachedRateLimits),
+                                                                 reason:="auth_ready")
+
+                If shouldInitializeWorkspace Then
                     Await InitializeWorkspaceAfterAuthenticationAsync()
                 End If
 

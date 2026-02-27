@@ -1,6 +1,9 @@
+Imports System.Collections.Generic
+Imports System.Collections.ObjectModel
 Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Input
+Imports System.Windows.Media
 Imports CodexNativeAgent.Ui.Mvvm
 
 Namespace CodexNativeAgent.Ui.ViewModels
@@ -24,10 +27,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _canInterruptTurn As Boolean
         Private _startTurnVisibility As Visibility = Visibility.Visible
         Private _interruptTurnVisibility As Visibility = Visibility.Collapsed
+        Private _rateLimitBarsVisibility As Visibility = Visibility.Collapsed
 
         Private _startTurnCommand As AsyncRelayCommand
         Private _steerTurnCommand As AsyncRelayCommand
         Private _interruptTurnCommand As AsyncRelayCommand
+        Private ReadOnly _rateLimitBars As New ObservableCollection(Of TurnComposerRateLimitBarViewModel)()
 
         Public Sub New()
             _startTurnCommand = New AsyncRelayCommand(Function() Task.CompletedTask, Function() False)
@@ -176,6 +181,21 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public ReadOnly Property RateLimitBars As ObservableCollection(Of TurnComposerRateLimitBarViewModel)
+            Get
+                Return _rateLimitBars
+            End Get
+        End Property
+
+        Public Property RateLimitBarsVisibility As Visibility
+            Get
+                Return _rateLimitBarsVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_rateLimitBarsVisibility, value)
+            End Set
+        End Property
+
         Public ReadOnly Property StartTurnCommand As ICommand
             Get
                 Return _startTurnCommand
@@ -207,6 +227,21 @@ Namespace CodexNativeAgent.Ui.ViewModels
             RaiseTurnCommandCanExecuteChanged()
         End Sub
 
+        Public Sub SetRateLimitBars(items As IEnumerable(Of TurnComposerRateLimitBarViewModel))
+            _rateLimitBars.Clear()
+            If items IsNot Nothing Then
+                For Each item In items
+                    If item Is Nothing Then
+                        Continue For
+                    End If
+
+                    _rateLimitBars.Add(item)
+                Next
+            End If
+
+            RateLimitBarsVisibility = If(_rateLimitBars.Count > 0, Visibility.Visible, Visibility.Collapsed)
+        End Sub
+
         Private Sub RaiseTurnCommandCanExecuteChanged()
             If _startTurnCommand IsNot Nothing Then
                 _startTurnCommand.RaiseCanExecuteChanged()
@@ -220,5 +255,13 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 _interruptTurnCommand.RaiseCanExecuteChanged()
             End If
         End Sub
+    End Class
+
+    Public NotInheritable Class TurnComposerRateLimitBarViewModel
+        Public Property BarId As String = String.Empty
+        Public Property RemainingPercent As Double
+        Public Property UsedPercent As Double
+        Public Property TooltipText As String = String.Empty
+        Public Property BarBrush As Brush = Brushes.Transparent
     End Class
 End Namespace

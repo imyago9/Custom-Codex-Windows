@@ -13,7 +13,7 @@
                         <RowDefinition Height="*" MinHeight="260" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition x:Name="TurnComposerHostRow"
-                                       Height="Auto"
+                                       Height="136"
                                        MinHeight="136" />
                     </Grid.RowDefinitions>
 
@@ -1274,8 +1274,27 @@
                                 </Grid>
                             </Border>
 
-                            <Grid Grid.Row="1"
+                            <Grid x:Name="TurnComposerInputHost"
+                                  Grid.Row="1"
                                   MinHeight="56">
+                                <Grid.Resources>
+                                    <Style x:Key="TurnInputTextBoxStyle"
+                                           TargetType="TextBox"
+                                           BasedOn="{StaticResource {x:Type TextBox}}">
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Style.Triggers>
+                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="BorderBrush" Value="Transparent" />
+                                                <Setter Property="BorderThickness" Value="0" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Resources>
                                 <TextBox x:Name="TxtTurnInput"
                                          MinHeight="56"
                                          MinLines="2"
@@ -1284,10 +1303,7 @@
                                          VerticalScrollBarVisibility="Auto"
                                          Text="{Binding TurnComposer.InputText, UpdateSourceTrigger=PropertyChanged}"
                                          IsEnabled="{Binding TurnComposer.IsInputEnabled}"
-                                         Background="Transparent"
-                                         BorderBrush="Transparent"
-                                         BorderThickness="0"
-                                         Padding="0" />
+                                         Style="{StaticResource TurnInputTextBoxStyle}" />
 
                                 <TextBlock Text="Type a prompt for Codex..."
                                            Margin="2,1,14,0"
@@ -1307,7 +1323,9 @@
                                 </TextBlock>
                             </Grid>
 
-                            <Grid Grid.Row="2" Margin="0,10,0,0">
+                            <Grid x:Name="TurnComposerControlsHost"
+                                  Grid.Row="2"
+                                  Margin="0,10,0,0">
                                 <Grid.Resources>
                                     <Style x:Key="TurnComposerIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}">
                                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -1348,56 +1366,89 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <WrapPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <Border x:Name="TurnComposerPickersContainer"
-                                            Width="434"
-                                            Margin="0,0,0,0"
-                                            VerticalAlignment="Center"
-                                            ClipToBounds="True"
-                                            Background="Transparent">
-                                        <StackPanel x:Name="TurnComposerPickersContent"
-                                                    Orientation="Horizontal"
-                                                    VerticalAlignment="Center">
-                                            <ComboBox x:Name="CmbModel"
-                                                      Width="260"
-                                                      Margin="0,0,12,6"
-                                                      IsEnabled="{Binding TurnComposer.IsModelEnabled}"
-                                                      SelectedValuePath="Id"
-                                                      SelectedValue="{Binding TurnComposer.SelectedModelId, Mode=TwoWay}" />
+                                <Grid Grid.Column="0"
+                                      VerticalAlignment="Center">
+                                    <WrapPanel VerticalAlignment="Center">
+                                        <Border x:Name="TurnComposerPickersContainer"
+                                                Width="434"
+                                                Margin="0,0,0,0"
+                                                VerticalAlignment="Center"
+                                                ClipToBounds="True"
+                                                Background="Transparent">
+                                            <StackPanel x:Name="TurnComposerPickersContent"
+                                                        Orientation="Vertical"
+                                                        VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal"
+                                                            VerticalAlignment="Center">
+                                                    <ComboBox x:Name="CmbModel"
+                                                              Width="260"
+                                                              Margin="0,0,12,6"
+                                                              IsEnabled="{Binding TurnComposer.IsModelEnabled}"
+                                                              SelectedValuePath="Id"
+                                                              SelectedValue="{Binding TurnComposer.SelectedModelId, Mode=TwoWay}" />
 
-                                            <ComboBox x:Name="CmbReasoningEffort"
-                                                      Width="150"
-                                                      Margin="0,0,12,6"
-                                                      IsEnabled="{Binding TurnComposer.IsReasoningEnabled}"
-                                                      SelectedValuePath="Content"
-                                                      SelectedValue="{Binding TurnComposer.SelectedReasoningEffort, Mode=TwoWay}">
-                                                <ComboBoxItem Content="minimal" />
-                                                <ComboBoxItem Content="low" />
-                                                <ComboBoxItem Content="medium" />
-                                                <ComboBoxItem Content="high" />
-                                                <ComboBoxItem Content="xhigh" />
-                                            </ComboBox>
-                                        </StackPanel>
-                                    </Border>
+                                                    <ComboBox x:Name="CmbReasoningEffort"
+                                                              Width="150"
+                                                              Margin="0,0,12,6"
+                                                              IsEnabled="{Binding TurnComposer.IsReasoningEnabled}"
+                                                              SelectedValuePath="Content"
+                                                              SelectedValue="{Binding TurnComposer.SelectedReasoningEffort, Mode=TwoWay}">
+                                                        <ComboBoxItem Content="minimal" />
+                                                        <ComboBoxItem Content="low" />
+                                                        <ComboBoxItem Content="medium" />
+                                                        <ComboBoxItem Content="high" />
+                                                        <ComboBoxItem Content="xhigh" />
+                                                    </ComboBox>
+                                                </StackPanel>
 
-                                    <Button x:Name="BtnTurnComposerPickersToggle"
-                                            Style="{StaticResource TurnComposerIconButtonStyle}"
-                                            Width="34"
-                                            MinWidth="34"
-                                            Padding="0"
-                                            Margin="0,0,8,6"
-                                            ToolTip="Collapse model and reasoning">
-                                        <TextBlock x:Name="TxtTurnComposerPickersToggleGlyph"
-                                                   Text="&#xE76C;"
-                                                   FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="14"
-                                                   LineHeight="14"
-                                                   LineStackingStrategy="BlockLineHeight"
-                                                   TextAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   HorizontalAlignment="Center" />
-                                    </Button>
-                                </WrapPanel>
+                                                <ItemsControl Margin="0,0,12,2"
+                                                              Visibility="{Binding TurnComposer.RateLimitBarsVisibility}"
+                                                              ItemsSource="{Binding TurnComposer.RateLimitBars}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Height="12"
+                                                                    Background="Transparent"
+                                                                    ToolTip="{Binding TooltipText}"
+                                                                    ToolTipService.InitialShowDelay="80"
+                                                                    ToolTipService.BetweenShowDelay="50"
+                                                                    ToolTipService.ShowDuration="45000">
+                                                                <Grid VerticalAlignment="Center">
+                                                                    <ProgressBar Height="3"
+                                                                                 VerticalAlignment="Center"
+                                                                                 Minimum="0"
+                                                                                 Maximum="100"
+                                                                                 Value="{Binding RemainingPercent}"
+                                                                                 Foreground="{Binding BarBrush}"
+                                                                                 Background="{DynamicResource BorderBrush}"
+                                                                                 BorderThickness="0"
+                                                                                 IsHitTestVisible="False" />
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Button x:Name="BtnTurnComposerPickersToggle"
+                                                Style="{StaticResource TurnComposerIconButtonStyle}"
+                                                Width="34"
+                                                MinWidth="34"
+                                                Padding="0"
+                                                Margin="0,0,8,6"
+                                                ToolTip="Collapse model and reasoning">
+                                            <TextBlock x:Name="TxtTurnComposerPickersToggleGlyph"
+                                                       Text="&#xE76C;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="14"
+                                                       LineHeight="14"
+                                                       LineStackingStrategy="BlockLineHeight"
+                                                       TextAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       HorizontalAlignment="Center" />
+                                        </Button>
+                                    </WrapPanel>
+                                </Grid>
 
                                 <WrapPanel Grid.Column="1" VerticalAlignment="Center">
                                     <Button x:Name="BtnTurnSteer"
