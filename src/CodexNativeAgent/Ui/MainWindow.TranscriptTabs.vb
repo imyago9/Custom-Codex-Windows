@@ -257,7 +257,9 @@ Namespace CodexNativeAgent.Ui
 
                 _transcriptTabStripBorder = New Border() With {
                     .BorderThickness = New Thickness(0, 0, 0, 2),
-                    .Opacity = 0.82,
+                    .Opacity = 1.0R,
+                    .Padding = New Thickness(0, 2, 0, 1),
+                    .Background = Brushes.Transparent,
                     .Visibility = Visibility.Collapsed,
                     .Child = _transcriptTabStripScrollViewer
                 }
@@ -368,7 +370,9 @@ Namespace CodexNativeAgent.Ui
 
             Dim tabButton As Button = Nothing
             Dim tabCloseButton As Button = Nothing
-            Dim tabChipBorder = CreateTranscriptTabChip(normalizedThreadId, tabButton, tabCloseButton)
+            Dim tabChipBorder = CreateTranscriptTabChip(normalizedThreadId,
+                                                        tabButton,
+                                                        tabCloseButton)
 
             Dim handle As New TranscriptTabSurfaceHandle() With {
                 .ThreadId = normalizedThreadId,
@@ -453,13 +457,23 @@ Namespace CodexNativeAgent.Ui
         Private Shared Function CreateContentOnlyButtonTemplate(horizontalAlignment As HorizontalAlignment,
                                                                 verticalAlignment As VerticalAlignment) As ControlTemplate
             Dim template As New ControlTemplate(GetType(Button))
+            Dim chrome As New FrameworkElementFactory(GetType(Border))
+            chrome.SetValue(Border.BackgroundProperty,
+                            New TemplateBindingExtension(Control.BackgroundProperty))
+            chrome.SetValue(Border.BorderBrushProperty,
+                            New TemplateBindingExtension(Control.BorderBrushProperty))
+            chrome.SetValue(Border.BorderThicknessProperty,
+                            New TemplateBindingExtension(Control.BorderThicknessProperty))
+
             Dim presenterFactory As New FrameworkElementFactory(GetType(ContentPresenter))
             presenterFactory.SetValue(System.Windows.Controls.ContentPresenter.HorizontalAlignmentProperty, horizontalAlignment)
             presenterFactory.SetValue(System.Windows.Controls.ContentPresenter.VerticalAlignmentProperty, verticalAlignment)
             presenterFactory.SetValue(System.Windows.Controls.ContentPresenter.RecognizesAccessKeyProperty, True)
             presenterFactory.SetValue(System.Windows.Controls.ContentPresenter.MarginProperty,
                                       New TemplateBindingExtension(Control.PaddingProperty))
-            template.VisualTree = presenterFactory
+
+            chrome.AppendChild(presenterFactory)
+            template.VisualTree = chrome
             Return template
         End Function
 
@@ -491,11 +505,11 @@ Namespace CodexNativeAgent.Ui
                                                  ByRef closeButton As Button) As Border
             tabButton = New Button() With {
                 .Tag = threadId,
-                .Padding = New Thickness(12, 6, 8, 6),
-                .MinHeight = 30,
+                .Padding = New Thickness(12, 7, 8, 7),
+                .MinHeight = 32,
                 .MinWidth = 96,
                 .MaxWidth = 320,
-                .FontSize = 12.9R,
+                .FontSize = 12.6R,
                 .Cursor = Cursors.Hand,
                 .FocusVisualStyle = Nothing,
                 .Template = CreateContentOnlyButtonTemplate(HorizontalAlignment.Left, VerticalAlignment.Center),
@@ -513,7 +527,7 @@ Namespace CodexNativeAgent.Ui
                 .Height = 20,
                 .MinWidth = 20,
                 .MinHeight = 20,
-                .Margin = New Thickness(0, 0, 8, 0),
+                .Margin = New Thickness(0, 0, 6, 0),
                 .Padding = New Thickness(0),
                 .Cursor = Cursors.Hand,
                 .FocusVisualStyle = Nothing,
@@ -547,9 +561,9 @@ Namespace CodexNativeAgent.Ui
 
             Dim chipBorder As New Border() With {
                 .Tag = threadId,
-                .CornerRadius = New CornerRadius(10, 10, 0, 0),
-                .BorderThickness = New Thickness(1),
-                .Margin = New Thickness(0, 5, 6, 0),
+                .CornerRadius = New CornerRadius(6, 6, 0, 0),
+                .BorderThickness = New Thickness(0),
+                .Margin = New Thickness(0, 2, 4, 0),
                 .Child = contentGrid
             }
 
@@ -565,7 +579,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            Dim threadId = TryCast(button.Tag, String)
+            Await ActivateTranscriptTabAsync(TryCast(button.Tag, String)).ConfigureAwait(True)
+        End Sub
+
+        Private Async Function ActivateTranscriptTabAsync(threadId As String) As Task
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
                 Return
@@ -583,7 +600,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             SelectThreadEntry(entry, suppressAutoLoad:=False)
-        End Sub
+        End Function
 
         Private Sub OnTranscriptTabChipMouseEnter(sender As Object, e As MouseEventArgs)
             Dim chipBorder = TryCast(sender, Border)
@@ -1522,28 +1539,25 @@ Namespace CodexNativeAgent.Ui
             Dim activeHoverBackground = TryCast(TryFindResource("SurfaceRaisedBrush"), Brush)
             Dim inactiveBackground = TryCast(TryFindResource("SurfaceContrastBrush"), Brush)
             Dim inactiveHoverBackground = TryCast(TryFindResource("TabHoverBackgroundBrush"), Brush)
-            Dim activeBorder = TryCast(TryFindResource("TabSelectedBorderBrush"), Brush)
-            Dim inactiveBorder = TryCast(TryFindResource("BorderBrush"), Brush)
-            Dim hoverBorder = TryCast(TryFindResource("TabHoverBorderBrush"), Brush)
             Dim activeForeground = TryCast(TryFindResource("TextPrimaryBrush"), Brush)
-            Dim inactiveForeground = TryCast(TryFindResource("TextSecondaryBrush"), Brush)
+            Dim inactiveForeground = TryCast(TryFindResource("TextTertiaryBrush"), Brush)
 
             If chipBorder IsNot Nothing Then
-                chipBorder.CornerRadius = New CornerRadius(10, 10, 0, 0)
+                chipBorder.CornerRadius = New CornerRadius(6, 6, 0, 0)
                 If isActive Then
                     chipBorder.Background = If(If(isHover, activeHoverBackground, activeBackground), Brushes.Transparent)
-                    chipBorder.BorderBrush = If(activeBorder, If(hoverBorder, Brushes.Transparent))
-                    chipBorder.BorderThickness = New Thickness(1)
-                    chipBorder.Margin = New Thickness(0, 5, 6, 0)
+                    chipBorder.BorderBrush = Brushes.Transparent
+                    chipBorder.BorderThickness = New Thickness(0)
+                    chipBorder.Margin = New Thickness(0, 2, 4, 0)
                     chipBorder.Opacity = 1.0R
                     Panel.SetZIndex(chipBorder, 20)
                 Else
                     chipBorder.Background = If(If(isHover, inactiveHoverBackground, inactiveBackground), Brushes.Transparent)
-                    chipBorder.BorderBrush = If(If(isHover, hoverBorder, inactiveBorder), Brushes.Transparent)
-                    chipBorder.BorderThickness = New Thickness(1)
-                    chipBorder.Margin = New Thickness(0, 5, 6, 0)
-                    chipBorder.Opacity = If(isHover, 1.0R, 0.97R)
-                    Panel.SetZIndex(chipBorder, If(isHover, 12, 6))
+                    chipBorder.BorderBrush = Brushes.Transparent
+                    chipBorder.BorderThickness = New Thickness(0)
+                    chipBorder.Margin = New Thickness(0, 2, 4, 0)
+                    chipBorder.Opacity = If(isHover, 0.92R, 0.72R)
+                    Panel.SetZIndex(chipBorder, If(isHover, 12, 8))
                 End If
             End If
 
@@ -1578,14 +1592,12 @@ Namespace CodexNativeAgent.Ui
             closeButton.IsEnabled = isClosable
             closeButton.Foreground = If(foreground, Brushes.Black)
             closeButton.ToolTip = If(isClosable, "Close tab", "Keep at least one New thread tab open")
-            closeButton.BorderThickness = If(closeButton.IsMouseOver AndAlso showClose, New Thickness(1), New Thickness(0))
+            closeButton.BorderThickness = New Thickness(0)
             closeButton.Background = If(closeButton.IsMouseOver AndAlso showClose,
-                                        If(TryCast(TryFindResource("TabHoverBackgroundBrush"), Brush), Brushes.Transparent),
+                                        If(TryCast(TryFindResource("ButtonHoverBrush"), Brush), Brushes.Transparent),
                                         Brushes.Transparent)
-            closeButton.BorderBrush = If(closeButton.IsMouseOver AndAlso showClose,
-                                         If(TryCast(TryFindResource("TabHoverBorderBrush"), Brush), Brushes.Transparent),
-                                         Brushes.Transparent)
-            closeButton.Opacity = If(showClose, If(closeButton.IsMouseOver, 1.0R, 0.88R), 0.0R)
+            closeButton.BorderBrush = Brushes.Transparent
+            closeButton.Opacity = If(showClose, If(closeButton.IsMouseOver, 1.0R, 0.72R), 0.0R)
 
             Dim closeGlyph = TryCast(closeButton.Content, TextBlock)
             If closeGlyph IsNot Nothing Then
