@@ -674,7 +674,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     AppendDescriptor(New TranscriptEntryDescriptor() With {
                         .Kind = "fileChange",
                         .TimestampText = FormatLiveTimestamp(),
-                        .RoleText = "Files",
+                        .RoleText = "Edited",
                         .BodyText = normalizedText
                     }, appendToRaw:=False)
 
@@ -1057,7 +1057,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             AppendDescriptor(New TranscriptEntryDescriptor() With {
                 .Kind = "fileChange",
                 .TimestampText = FormatLiveTimestamp(),
-                .RoleText = "Files",
+                .RoleText = "Edited",
                 .BodyText = summary,
                 .DetailsText = If(details, String.Empty).Trim(),
                 .AddedLineCount = SanitizeOptionalLineCount(addedLineCount),
@@ -1838,7 +1838,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
                 Case "filechange"
                     descriptor.Kind = "fileChange"
-                    descriptor.RoleText = "Files"
+                    descriptor.RoleText = "Edited"
                     descriptor.BodyText = BuildFileChangeBody(itemState)
                     descriptor.SecondaryText = BuildFileChangeSecondaryText(itemState)
                     descriptor.FileChangeItems = BuildFileChangeInlineItems(itemState)

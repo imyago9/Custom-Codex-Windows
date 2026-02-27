@@ -51,6 +51,13 @@
     <SolidColorBrush x:Key="TurnInputGlassOuterBackgroundBrush" Color="#40FFFFFF" />
     <SolidColorBrush x:Key="TurnInputGlassOuterBorderBrush" Color="#B8C6DD" />
     <SolidColorBrush x:Key="TurnInputGlassInnerBorderBrush" Color="#1EFFFFFF" />
+    <SolidColorBrush x:Key="TranscriptBubbleGlassBrush" Color="#D6EAF0F8" />
+    <SolidColorBrush x:Key="TranscriptBubbleGlassStrongBrush" Color="#E0EAF0F8" />
+    <SolidColorBrush x:Key="TranscriptBubbleGlassInsetBrush" Color="#CCEAF0F8" />
+    <SolidColorBrush x:Key="TranscriptBubbleGlassAccentBrush" Color="#D7E4ECF8" />
+    <SolidColorBrush x:Key="TranscriptBubbleGlassErrorBrush" Color="#DDEFE4E2" />
+    <SolidColorBrush x:Key="TranscriptActivityGlassBrush" Color="#CFEAF0F8" />
+    <SolidColorBrush x:Key="TranscriptActivityGlassAccentBrush" Color="#D9E2EBF8" />
 
     <LinearGradientBrush x:Key="WorkspaceHeaderGlassFillBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#D8FFFFFF" Offset="0" />
@@ -144,4 +151,5 @@
                       ShadowDepth="0"
                       Direction="270"
                       Color="#22000000" />
+
 </ResourceDictionary>

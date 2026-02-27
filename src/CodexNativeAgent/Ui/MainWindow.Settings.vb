@@ -61,10 +61,22 @@ Namespace CodexNativeAgent.Ui
             AppAppearanceManager.ApplyDensity(_currentDensity)
             AppAppearanceManager.ApplyTheme(_currentTheme)
             SyncAppearanceControls()
+            RefreshAppearanceDependentTabVisuals()
 
             If persist Then
                 SaveSettings()
             End If
+        End Sub
+
+        Private Sub RefreshAppearanceDependentTabVisuals()
+            UpdateTranscriptTabButtonVisuals()
+
+            ApplyGitPanelTabButtonState(If(GitPaneHost, Nothing)?.BtnGitTabChanges,
+                                        StringComparer.Ordinal.Equals(_gitPanelActiveTab, "changes"))
+            ApplyGitPanelTabButtonState(If(GitPaneHost, Nothing)?.BtnGitTabHistory,
+                                        StringComparer.Ordinal.Equals(_gitPanelActiveTab, "history"))
+            ApplyGitPanelTabButtonState(If(GitPaneHost, Nothing)?.BtnGitTabBranches,
+                                        StringComparer.Ordinal.Equals(_gitPanelActiveTab, "branches"))
         End Sub
 
         Private Sub SyncAppearanceControls()

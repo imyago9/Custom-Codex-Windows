@@ -392,9 +392,9 @@
                                                         MaxWidth="{Binding DataContext.TranscriptPanel.TranscriptBubbleMaxWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                         Padding="12,10"
                                                         CornerRadius="14"
-                                                        Background="{DynamicResource SurfaceMutedBrush}"
-                                                        BorderBrush="{DynamicResource BorderBrush}"
-                                                        BorderThickness="1">
+                                                        Background="{DynamicResource TranscriptBubbleGlassBrush}"
+                                                        BorderBrush="Transparent"
+                                                        BorderThickness="0">
                                                     <StackPanel>
                                                         <DockPanel LastChildFill="False" Margin="0,0,0,5">
                                                             <TextBox Text="{Binding TimestampText}"
@@ -439,9 +439,9 @@
                                                                 Visibility="{Binding DetailsVisibility}"
                                                                 Margin="0,8,0,0"
                                                                 Padding="10,8"
-                                                                Background="{DynamicResource SurfaceBrush}"
-                                                                BorderBrush="{DynamicResource BorderBrush}"
-                                                                BorderThickness="1"
+                                                                Background="{DynamicResource TranscriptBubbleGlassInsetBrush}"
+                                                                BorderBrush="Transparent"
+                                                                BorderThickness="0"
                                                                 CornerRadius="10">
                                                             <TextBox Text="{Binding DetailsText}"
                                                                      Style="{StaticResource TranscriptSelectableTextBoxStyle}"
@@ -454,7 +454,7 @@
 
                                             <Grid x:Name="ActivityRow" Visibility="Collapsed" Margin="2,0,0,0">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="18" />
+                                                    <ColumnDefinition x:Name="ActivityGutterColumn" Width="18" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
 
@@ -479,9 +479,9 @@
                                                         Grid.Column="1"
                                                         Padding="10,8"
                                                         CornerRadius="10"
-                                                        Background="Transparent"
+                                                        Background="{DynamicResource TranscriptActivityGlassBrush}"
                                                         BorderBrush="Transparent"
-                                                        BorderThickness="1"
+                                                        BorderThickness="0"
                                                         MaxWidth="{Binding DataContext.TranscriptPanel.TranscriptActivityMaxWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                                         HorizontalAlignment="Left">
                                                     <StackPanel>
@@ -566,9 +566,9 @@
                                                                     Visibility="{Binding ActivityBodyChipVisibility}"
                                                                     Padding="8,6"
                                                                     CornerRadius="8"
-                                                                    Background="{DynamicResource SurfaceMutedBrush}"
-                                                                    BorderBrush="{DynamicResource BorderBrush}"
-                                                                    BorderThickness="1">
+                                                                    Background="{DynamicResource TranscriptBubbleGlassInsetBrush}"
+                                                                    BorderBrush="Transparent"
+                                                                    BorderThickness="0">
                                                                 <TextBox x:Name="ActivityBodyChipText"
                                                                          Text="{Binding BodyText}"
                                                                          Style="{StaticResource TranscriptSelectableBodyTextBoxStyle}"
@@ -591,9 +591,9 @@
                                                                         <Grid Margin="0,0,0,4" HorizontalAlignment="Stretch">
                                                                             <Border x:Name="ActivityFileChangePathChip"
                                                                                     Visibility="{Binding PathVisibility}"
-                                                                                    Background="{DynamicResource SurfaceMutedBrush}"
-                                                                                    BorderBrush="{DynamicResource BorderBrush}"
-                                                                                    BorderThickness="1"
+                                                                                    Background="{DynamicResource TranscriptBubbleGlassInsetBrush}"
+                                                                                    BorderBrush="Transparent"
+                                                                                    BorderThickness="0"
                                                                                     CornerRadius="8"
                                                                                     Padding="8,6"
                                                                                     HorizontalAlignment="Stretch"
@@ -741,9 +741,9 @@
                                                                 Visibility="{Binding DetailsVisibility}"
                                                                 Margin="0,8,0,0"
                                                                 Padding="10,8"
-                                                                Background="{DynamicResource SurfaceBrush}"
-                                                                BorderBrush="{DynamicResource BorderBrush}"
-                                                                BorderThickness="1"
+                                                                Background="{DynamicResource TranscriptBubbleGlassInsetBrush}"
+                                                                BorderBrush="Transparent"
+                                                                BorderThickness="0"
                                                                 CornerRadius="10">
                                                             <Grid>
                                                                 <TextBox x:Name="ActivityDetailsTextBox"
@@ -813,10 +813,10 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
-                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
-                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource TranscriptBubbleGlassInsetBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivitySecondaryText" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityDetailsToggleButton" Property="Visibility" Value="Collapsed" />
                                             </DataTrigger>
@@ -860,12 +860,12 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivitySecondaryText" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityDetailsToggleButton" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityDetailsTextBox" Property="Visibility" Value="Collapsed" />
-                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassInsetBrush}" />
                                             </DataTrigger>
                                             <MultiDataTrigger>
                                                 <MultiDataTrigger.Conditions>
@@ -886,8 +886,8 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassAccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
                                                 <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
@@ -896,25 +896,29 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
-                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
-                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="Background" Value="{DynamicResource TranscriptBubbleGlassInsetBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivityBodyChip" Property="Opacity" Value="0.9" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="reasoningCard">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityRow" Property="Margin" Value="0" />
+                                                <Setter TargetName="ActivityGutterColumn" Property="Width" Value="0" />
+                                                <Setter TargetName="ActivityLine" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityDot" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivityRoleText" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityInlineBodyText" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityBodyChip" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
                                                 <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
-                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="Transparent" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassInsetBrush}" />
                                                 <Setter TargetName="ActivityDetailsChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
@@ -922,32 +926,32 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="toolCollab">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource SuccessBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="toolWebSearch">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="toolImageView">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="system">
@@ -977,7 +981,7 @@
                                                 <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivityBodyChip" Property="Background" Value="Transparent" />
-                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityBodyChip" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="turnMarker">
@@ -999,35 +1003,35 @@
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassAccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="turnPlan">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassAccentBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="unknownItem">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
-                                                <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
-                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="Background" Value="{DynamicResource TranscriptActivityGlassBrush}" />
+                                                <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <!-- Conversation bubbles -->
                                             <DataTrigger Binding="{Binding Kind}" Value="assistant">
-                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="assistantFinal">
-                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
-                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="assistantCommentary">
@@ -1047,19 +1051,19 @@
 
                                             <DataTrigger Binding="{Binding RoleText}" Value="You">
                                                 <Setter TargetName="BubbleChrome" Property="HorizontalAlignment" Value="Right" />
-                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassAccentBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding RoleText}" Value="Steer">
                                                 <Setter TargetName="BubbleChrome" Property="HorizontalAlignment" Value="Right" />
-                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
-                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassAccentBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="error">
-                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource ToastErrorBackgroundBrush}" />
-                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource ToastErrorBorderBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassErrorBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>

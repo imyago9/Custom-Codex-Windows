@@ -411,6 +411,7 @@
                                          ItemsSource="{Binding ThreadsPanel.Items}"
                                          SelectedItem="{Binding ThreadsPanel.SelectedListItem, Mode=TwoWay}"
                                          IsEnabled="{Binding ThreadsPanel.IsThreadListEnabled}"
+                                         ItemContainerStyle="{DynamicResource ThreadListItemContainerStyle}"
                                          HorizontalContentAlignment="Stretch"
                                          BorderThickness="0"
                                          Background="Transparent"
@@ -538,6 +539,72 @@
                                                     <Setter Property="Margin" Value="2,0,2,0" />
                                                 </Trigger>
                                             </Style.Triggers>
+                                        </Style>
+
+                                        <Style x:Key="ThreadListItemContainerStyle" TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="{DynamicResource ListItemPadding}" />
+                                            <Setter Property="Margin" Value="{DynamicResource ListItemMargin}" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="ItemChrome"
+                                                                Background="Transparent"
+                                                                BorderBrush="Transparent"
+                                                                BorderThickness="1"
+                                                                CornerRadius="10">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+
+                                                                <Border x:Name="SelectedTopLine"
+                                                                        Grid.Row="0"
+                                                                        Height="1"
+                                                                        Margin="14,4,14,0"
+                                                                        HorizontalAlignment="Stretch"
+                                                                        Background="{DynamicResource ListItemSelectedBorderBrush}"
+                                                                        Opacity="0"
+                                                                        RenderTransformOrigin="0.5,0.5">
+                                                                    <Border.RenderTransform>
+                                                                        <ScaleTransform ScaleX="0.5" ScaleY="1" />
+                                                                    </Border.RenderTransform>
+                                                                </Border>
+
+                                                                <ContentPresenter Grid.Row="1"
+                                                                                  Margin="{TemplateBinding Padding}" />
+
+                                                                <Border x:Name="SelectedBottomLine"
+                                                                        Grid.Row="2"
+                                                                        Height="1"
+                                                                        Margin="14,0,14,4"
+                                                                        HorizontalAlignment="Stretch"
+                                                                        Background="{DynamicResource ListItemSelectedBorderBrush}"
+                                                                        Opacity="0"
+                                                                        RenderTransformOrigin="0.5,0.5">
+                                                                    <Border.RenderTransform>
+                                                                        <ScaleTransform ScaleX="0.5" ScaleY="1" />
+                                                                    </Border.RenderTransform>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource TabHoverBackgroundBrush}" />
+                                                                <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
+                                                                <Setter TargetName="ItemChrome" Property="BorderThickness" Value="0" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                                                <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
+                                                                <Setter TargetName="ItemChrome" Property="BorderThickness" Value="0" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
                                         </Style>
                                     </ListBox.Resources>
                                     <ListBox.ContextMenu>
