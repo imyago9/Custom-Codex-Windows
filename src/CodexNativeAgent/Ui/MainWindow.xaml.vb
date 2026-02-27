@@ -51,7 +51,7 @@ Namespace CodexNativeAgent.Ui
             ForceJump = 2
         End Enum
 
-        Private Const TranscriptScrollDebugInstrumentationEnabled As Boolean = True
+        Private Const TranscriptScrollDebugInstrumentationEnabled As Boolean = False
 
         Private NotInheritable Class ModelListEntry
             Public Property Id As String = String.Empty
@@ -386,6 +386,8 @@ Namespace CodexNativeAgent.Ui
             Public Property DisableThreadsPanelHints As Boolean
             Public Property ShowEventDotsInTranscript As Boolean
             Public Property ShowSystemDotsInTranscript As Boolean
+            Public Property PlayUiSounds As Boolean = True
+            Public Property UiSoundVolumePercent As Double = 100.0R
             Public Property FilterThreadsByWorkingDir As Boolean
             Public Property EncryptedApiKey As String = String.Empty
             Public Property ThemeMode As String = AppAppearanceManager.LightTheme
@@ -733,6 +735,9 @@ Namespace CodexNativeAgent.Ui
                     SaveSettings()
                     ApplyTranscriptTimelineDotVisibilitySettings()
                 End Sub
+            AddHandler SidebarPaneHost.ChkPlayUiSounds.Checked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.ChkPlayUiSounds.Unchecked, Sub(sender, e) SaveSettings()
+            AddHandler SidebarPaneHost.SldUiSoundVolume.ValueChanged, Sub(sender, e) SaveSettings()
 
             AddHandler SidebarPaneHost.ChkRememberApiKey.Checked, Sub(sender, e) SaveSettings()
             AddHandler SidebarPaneHost.ChkRememberApiKey.Unchecked, Sub(sender, e) SaveSettings()
@@ -2906,6 +2911,7 @@ Namespace CodexNativeAgent.Ui
             _reconnectUiTimer.Stop()
             CancelReconnect()
             CancelActiveThreadSelectionLoad()
+            StopAndDisposeUiSoundPlayers()
             SaveSettings()
 
             ShutdownClientForAppClose()
@@ -3315,6 +3321,8 @@ Namespace CodexNativeAgent.Ui
             settingsObject("disableThreadsPanelHints") = _viewModel.SettingsPanel.DisableThreadsPanelHints
             settingsObject("showEventDotsInTranscript") = _viewModel.SettingsPanel.ShowEventDotsInTranscript
             settingsObject("showSystemDotsInTranscript") = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
+            settingsObject("playUiSounds") = _viewModel.SettingsPanel.PlayUiSounds
+            settingsObject("uiSoundVolumePercent") = _viewModel.SettingsPanel.UiSoundVolumePercent
             settingsObject("theme") = _currentTheme
             settingsObject("density") = _currentDensity
             settingsObject("apiKeyMasked") = MaskSecret(_viewModel.SettingsPanel.ApiKey.Trim(), 4)

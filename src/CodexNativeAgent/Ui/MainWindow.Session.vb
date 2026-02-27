@@ -14,7 +14,7 @@ Imports CodexNativeAgent.Ui.ViewModels
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
-        Private Const TranscriptChunkSessionDebugInstrumentationEnabled As Boolean = True
+        Private Const TranscriptChunkSessionDebugInstrumentationEnabled As Boolean = False
         Private Const TranscriptDocumentCacheMaxInactiveEntries As Integer = 3
         Private ReadOnly _threadTranscriptChunkSessionCoordinator As New ThreadTranscriptChunkSessionCoordinator()
         Private ReadOnly _inactiveTranscriptDocumentsByThreadId As New Dictionary(Of String, CachedTranscriptDocumentState)(StringComparer.Ordinal)
@@ -1283,6 +1283,10 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
+                If IsTurnLifecycleCompletionStatus(lifecycleMessage.Status) Then
+                    PlayTurnDoneSoundIfEnabled(resolvedThreadId, resolvedTurnId)
+                End If
+
                 If Not HandleRuntimeEventForThreadVisibility(resolvedThreadId,
                                                              resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
@@ -1375,6 +1379,15 @@ Namespace CodexNativeAgent.Ui
 
             TryDispatchDeferredTranscriptChunkPrependFromRuntimeUpdate()
         End Sub
+
+        Private Shared Function IsTurnLifecycleCompletionStatus(status As String) As Boolean
+            Select Case If(status, String.Empty).Trim().ToLowerInvariant()
+                Case "", "completed", "complete", "succeeded", "success", "ok", "done", "failed", "error", "canceled", "cancelled", "interrupted", "aborted", "stopped"
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
 
         Private Sub UpdateNotificationRuntimeContextFromDispatch(dispatch As SessionNotificationCoordinator.NotificationDispatchResult)
             If dispatch Is Nothing Then

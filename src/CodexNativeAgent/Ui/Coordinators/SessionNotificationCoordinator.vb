@@ -8,6 +8,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
     Public NotInheritable Class SessionNotificationCoordinator
         Private ReadOnly _runtimeStore As New TurnFlowRuntimeStore()
         Private ReadOnly _reportedUnknownMethods As New HashSet(Of String)(StringComparer.Ordinal)
+        Private Const EmitPerDeltaProtocolDebugLogs As Boolean = False
 
         Public ReadOnly Property RuntimeStore As TurnFlowRuntimeStore
             Get
@@ -514,7 +515,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                              $"item_first_seen threadId={updatedItem.ThreadId} turnId={updatedItem.TurnId} itemId={updatedItem.ItemId} type={updatedItem.ItemType} phase={updatedItem.AgentMessagePhase}")
                 End If
 
-                If TypeOf parsedEvent Is ItemDeltaEvent Then
+                If EmitPerDeltaProtocolDebugLogs AndAlso TypeOf parsedEvent Is ItemDeltaEvent Then
                     Dim deltaEvent = DirectCast(parsedEvent, ItemDeltaEvent)
                     LogDebug(appendProtocol,
                              $"item_delta method={deltaEvent.MethodName} threadId={updatedItem.ThreadId} turnId={updatedItem.TurnId} itemId={updatedItem.ItemId} delta_len={reduceResult.DeltaAppendedLength.ToString(CultureInfo.InvariantCulture)} preview={reduceResult.DeltaPreview}")

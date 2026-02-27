@@ -83,20 +83,76 @@
                             </Button>
 
                             <Grid Margin="8,12,8,0"
-                                  Height="10">
+                                  Height="12"
+                                  ClipToBounds="False">
                                 <Border Style="{x:Null}"
                                         Height="1"
                                         VerticalAlignment="Center"
                                         Background="{DynamicResource BorderBrush}"
                                         Opacity="0.8" />
-                                <Border Style="{x:Null}"
-                                        Width="34"
-                                        Height="2"
-                                        CornerRadius="1"
-                                        HorizontalAlignment="Center"
+                                <Border x:Name="SidebarThreadsRefreshPulseLine"
+                                        Height="3"
+                                        CornerRadius="2"
                                         VerticalAlignment="Center"
-                                        Background="{DynamicResource AccentBrush}"
-                                        Opacity="0.55" />
+                                        HorizontalAlignment="Stretch"
+                                        Opacity="0"
+                                        IsHitTestVisible="False"
+                                        RenderTransformOrigin="0.5,0.5">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0.5"
+                                                             EndPoint="1,0.5">
+                                            <GradientStop Color="#00FFFFFF" Offset="0" />
+                                            <GradientStop Color="#B8FFFFFF" Offset="0.2" />
+                                            <GradientStop Color="#FFFFFFFF" Offset="0.5" />
+                                            <GradientStop Color="#B8FFFFFF" Offset="0.8" />
+                                            <GradientStop Color="#00FFFFFF" Offset="1" />
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#E8FFFFFF"
+                                                          BlurRadius="10"
+                                                          ShadowDepth="0"
+                                                          Opacity="1" />
+                                    </Border.Effect>
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ThreadsPanel.IsLoading}"
+                                                             Value="True">
+                                                    <DataTrigger.EnterActions>
+                                                        <BeginStoryboard x:Name="BeginSidebarThreadsRefreshPulse">
+                                                            <Storyboard RepeatBehavior="Forever"
+                                                                        AutoReverse="True">
+                                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.38"
+                                                                                 To="1"
+                                                                                 Duration="0:0:0.42" />
+                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                                 From="0.55"
+                                                                                 To="1.06"
+                                                                                 Duration="0:0:0.42" />
+                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                                 From="0.84"
+                                                                                 To="1.45"
+                                                                                 Duration="0:0:0.42" />
+                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
+                                                                                 From="10"
+                                                                                 To="22"
+                                                                                 Duration="0:0:0.42" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </DataTrigger.EnterActions>
+                                                    <DataTrigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="BeginSidebarThreadsRefreshPulse" />
+                                                    </DataTrigger.ExitActions>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Border.RenderTransform>
+                                        <ScaleTransform ScaleX="0.55" ScaleY="0.84" />
+                                    </Border.RenderTransform>
+                                </Border>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -833,6 +889,22 @@
                                                 <CheckBox x:Name="ChkShowSystemDotsInTranscript"
                                                           Content="Show System dots in dialogue flow"
                                                           IsChecked="{Binding SettingsPanel.ShowSystemDotsInTranscript, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkPlayUiSounds"
+                                                          Margin="0,8,0,0"
+                                                          Content="Play UI sounds"
+                                                          IsChecked="{Binding SettingsPanel.PlayUiSounds, Mode=TwoWay}" />
+                                                <StackPanel Margin="0,6,0,0">
+                                                    <TextBlock Text="{Binding SettingsPanel.UiSoundVolumePercent, StringFormat=Sound volume: {0:F0}%}"
+                                                               Margin="0,0,0,4"
+                                                               Style="{StaticResource CaptionTextStyle}" />
+                                                    <Slider x:Name="SldUiSoundVolume"
+                                                            Minimum="0"
+                                                            Maximum="100"
+                                                            TickFrequency="5"
+                                                            IsSnapToTickEnabled="True"
+                                                            IsEnabled="{Binding SettingsPanel.PlayUiSounds}"
+                                                            Value="{Binding SettingsPanel.UiSoundVolumePercent, Mode=TwoWay}" />
+                                                </StackPanel>
                                             </StackPanel>
                                         </Grid>
                                     </GroupBox>

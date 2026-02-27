@@ -88,6 +88,10 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub SaveSettings()
+            If _settings Is Nothing Then
+                _settings = New AppSettings()
+            End If
+
             CaptureSettingsFromControls()
 
             If Not _settings.RememberApiKey Then
@@ -112,6 +116,8 @@ Namespace CodexNativeAgent.Ui
             _settings.DisableThreadsPanelHints = _viewModel.SettingsPanel.DisableThreadsPanelHints
             _settings.ShowEventDotsInTranscript = _viewModel.SettingsPanel.ShowEventDotsInTranscript
             _settings.ShowSystemDotsInTranscript = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
+            _settings.PlayUiSounds = _viewModel.SettingsPanel.PlayUiSounds
+            _settings.UiSoundVolumePercent = _viewModel.SettingsPanel.UiSoundVolumePercent
             _settings.TranscriptScaleIndex = NormalizeTranscriptScaleIndex(_viewModel.SettingsPanel.TranscriptScaleIndex)
             _settings.FilterThreadsByWorkingDir = _viewModel.ThreadsPanel.FilterByWorkingDir
             _settings.ThemeMode = _currentTheme
@@ -167,6 +173,8 @@ Namespace CodexNativeAgent.Ui
             _viewModel.SettingsPanel.DisableThreadsPanelHints = _settings.DisableThreadsPanelHints
             _viewModel.SettingsPanel.ShowEventDotsInTranscript = _settings.ShowEventDotsInTranscript
             _viewModel.SettingsPanel.ShowSystemDotsInTranscript = _settings.ShowSystemDotsInTranscript
+            _viewModel.SettingsPanel.PlayUiSounds = _settings.PlayUiSounds
+            _viewModel.SettingsPanel.UiSoundVolumePercent = _settings.UiSoundVolumePercent
             _suppressTranscriptScaleUiChange = True
             Try
                 _viewModel.SettingsPanel.TranscriptScaleIndex = NormalizeTranscriptScaleIndex(_settings.TranscriptScaleIndex)

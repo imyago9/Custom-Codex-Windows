@@ -17,6 +17,10 @@ Imports CodexNativeAgent.Ui.ViewModels.Threads
 
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
+        Private Const HeaderLoadingSheenMinimumRunMs As Integer = 680
+        Private _headerLoadingSheenStartedUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _headerLoadingSheenHideTimer As DispatcherTimer
+
         Private NotInheritable Class ThreadSelectionLoadRequest
             Public Property ThreadId As String = String.Empty
             Public Property LoadVersion As Integer
@@ -102,6 +106,7 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub BeginThreadsRefreshUi(Optional silent As Boolean = False)
+            PlayLoadThreadSoundIfEnabled()
             _threadsLoading = True
             UpdateThreadsPanelInteractionState()
             _viewModel.ThreadsPanel.BeginThreadsRefreshState()
@@ -218,11 +223,17 @@ Namespace CodexNativeAgent.Ui
 
         Private Function BeginThreadSelectionLoadRequest(selectedThreadId As String) As ThreadSelectionLoadRequest
             TryRemoveEmptyPendingNewThreadDraftTabOnExistingSelection(selectedThreadId)
+            Dim previouslyVisibleThreadId = GetVisibleThreadId()
 
             Dim request As New ThreadSelectionLoadRequest() With {
                 .ThreadId = If(selectedThreadId, String.Empty).Trim()
             }
             request.PerfStopwatch = Stopwatch.StartNew()
+
+            If Not String.IsNullOrWhiteSpace(request.ThreadId) AndAlso
+               Not StringComparer.Ordinal.Equals(request.ThreadId, previouslyVisibleThreadId) Then
+                PlayThreadSelectionSoundIfEnabled()
+            End If
 
             request.LoadVersion = BeginThreadSelectionLoadUiState(request.ThreadId)
             CancelActiveThreadSelectionLoad()
@@ -235,6 +246,7 @@ Namespace CodexNativeAgent.Ui
             request.UsedCachedPreview = showedCachedPreview
             If showedCachedPreview Then
                 SetTranscriptLoadingState(False)
+                SetHeaderLoadingSheenState(True)
                 ShowStatus("Refreshing selected thread...")
                 TraceThreadSelectionPerformance("cached_preview_show",
                                                 $"thread={request.ThreadId}; loadVersion={request.LoadVersion}")
@@ -843,9 +855,73 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub SetTranscriptLoadingState(isLoading As Boolean, Optional loadingText As String = "Loading thread...")
             _viewModel.TranscriptPanel.LoadingOverlayVisibility = If(isLoading, Visibility.Visible, Visibility.Collapsed)
+            SetHeaderLoadingSheenState(isLoading, enforceMinimumRun:=Not isLoading)
             _viewModel.TranscriptPanel.LoadingText = If(isLoading, loadingText, "Loading thread...")
             UpdateWorkspaceHintOverlayVisibility()
             UpdateWorkspaceEmptyStateVisibility()
+        End Sub
+
+        Private Sub SetHeaderLoadingSheenState(isVisible As Boolean, Optional enforceMinimumRun As Boolean = False)
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
+                Return
+            End If
+
+            EnsureHeaderLoadingSheenHideTimer()
+
+            If isVisible Then
+                _headerLoadingSheenStartedUtc = DateTimeOffset.UtcNow
+                If _headerLoadingSheenHideTimer IsNot Nothing Then
+                    _headerLoadingSheenHideTimer.Stop()
+                End If
+
+                _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Visible
+                Return
+            End If
+
+            If Not enforceMinimumRun OrElse _headerLoadingSheenStartedUtc = DateTimeOffset.MinValue Then
+                If _headerLoadingSheenHideTimer IsNot Nothing Then
+                    _headerLoadingSheenHideTimer.Stop()
+                End If
+
+                _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Collapsed
+                Return
+            End If
+
+            Dim elapsedMs = CLng(Math.Max(0, (DateTimeOffset.UtcNow - _headerLoadingSheenStartedUtc).TotalMilliseconds))
+            Dim remainingMs = HeaderLoadingSheenMinimumRunMs - elapsedMs
+            If remainingMs <= 0 Then
+                If _headerLoadingSheenHideTimer IsNot Nothing Then
+                    _headerLoadingSheenHideTimer.Stop()
+                End If
+
+                _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Collapsed
+                Return
+            End If
+
+            _headerLoadingSheenHideTimer.Stop()
+            _headerLoadingSheenHideTimer.Interval = TimeSpan.FromMilliseconds(remainingMs)
+            _headerLoadingSheenHideTimer.Start()
+        End Sub
+
+        Private Sub EnsureHeaderLoadingSheenHideTimer()
+            If _headerLoadingSheenHideTimer IsNot Nothing Then
+                Return
+            End If
+
+            _headerLoadingSheenHideTimer = New DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+            AddHandler _headerLoadingSheenHideTimer.Tick, AddressOf OnHeaderLoadingSheenHideTimerTick
+        End Sub
+
+        Private Sub OnHeaderLoadingSheenHideTimerTick(sender As Object, e As EventArgs)
+            If _headerLoadingSheenHideTimer IsNot Nothing Then
+                _headerLoadingSheenHideTimer.Stop()
+            End If
+
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
+                Return
+            End If
+
+            _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Collapsed
         End Sub
 
         Private Sub OnThreadsPreviewMouseRightButtonDown(sender As Object, e As MouseButtonEventArgs)

@@ -20,5 +20,9 @@
     <Resource Include="..\..\assets\*.ico">
       <Link>Assets\%(Filename)%(Extension)</Link>
     </Resource>
+    <Content Include="..\..\assets\sounds\*.mp3">
+      <Link>Assets\sounds\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

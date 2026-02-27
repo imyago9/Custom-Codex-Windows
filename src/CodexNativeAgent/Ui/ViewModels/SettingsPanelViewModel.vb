@@ -27,6 +27,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _disableThreadsPanelHints As Boolean
         Private _showEventDotsInTranscript As Boolean
         Private _showSystemDotsInTranscript As Boolean
+        Private _playUiSounds As Boolean = True
+        Private _uiSoundVolumePercent As Double = 100.0R
         Private _areConnectionFieldsEditable As Boolean = True
 
         Private _reconnectCountdownText As String = "Reconnect: not scheduled."
@@ -233,6 +235,29 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 SetProperty(_showSystemDotsInTranscript, value)
+            End Set
+        End Property
+
+        Public Property PlayUiSounds As Boolean
+            Get
+                Return _playUiSounds
+            End Get
+            Set(value As Boolean)
+                SetProperty(_playUiSounds, value)
+            End Set
+        End Property
+
+        Public Property UiSoundVolumePercent As Double
+            Get
+                Return _uiSoundVolumePercent
+            End Get
+            Set(value As Double)
+                If Double.IsNaN(value) OrElse Double.IsInfinity(value) Then
+                    value = 100.0R
+                End If
+
+                Dim clamped = Math.Max(0.0R, Math.Min(100.0R, value))
+                SetProperty(_uiSoundVolumePercent, clamped)
             End Set
         End Property
 

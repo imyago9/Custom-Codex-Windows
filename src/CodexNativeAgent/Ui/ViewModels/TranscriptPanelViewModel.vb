@@ -87,6 +87,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private ReadOnly _fullProtocolBuilder As New StringBuilder()
         Private _loadingText As String = "Loading thread..."
         Private _loadingOverlayVisibility As Visibility = Visibility.Collapsed
+        Private _headerLoadingSheenVisibility As Visibility = Visibility.Collapsed
         Private _collapseCommandDetailsByDefault As Boolean
         Private _showEventDotsInTranscript As Boolean
         Private _showSystemDotsInTranscript As Boolean
@@ -158,6 +159,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Visibility)
                 SetProperty(_loadingOverlayVisibility, value)
+            End Set
+        End Property
+
+        Public Property HeaderLoadingSheenVisibility As Visibility
+            Get
+                Return _headerLoadingSheenVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_headerLoadingSheenVisibility, value)
             End Set
         End Property
 
@@ -1266,49 +1276,129 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return
             End If
 
-            Dim replacement = CreateEntryFromDescriptor(descriptor)
-            Dim existingIndexBefore = -1
-
             Dim existing As TranscriptEntryViewModel = Nothing
             If _runtimeEntriesByKey.TryGetValue(normalizedKey, existing) AndAlso existing IsNot Nothing Then
                 Dim index = _items.IndexOf(existing)
-                existingIndexBefore = index
                 Dim shouldReposition = normalizedKey.StartsWith("item:", StringComparison.Ordinal) AndAlso
                                        (descriptor.TurnItemStreamSequence.HasValue OrElse
                                         descriptor.TurnItemSortTimestampUtc.HasValue OrElse
                                         descriptor.TurnItemOrderIndex.HasValue)
-                If index >= 0 AndAlso shouldReposition Then
+                Dim kindChanged = Not StringComparer.OrdinalIgnoreCase.Equals(If(existing.Kind, String.Empty),
+                                                                              If(descriptor.Kind, String.Empty))
+                Dim mustReplace = shouldReposition OrElse kindChanged
+
+                If index >= 0 AndAlso mustReplace Then
+                    Dim replacementExisting = CreateEntryFromDescriptor(descriptor)
                     _items.RemoveAt(index)
                     Dim repositionInsertIndex = ResolveRuntimeInsertIndex(normalizedKey, descriptor)
                     If repositionInsertIndex >= 0 AndAlso repositionInsertIndex <= _items.Count Then
-                        _items.Insert(repositionInsertIndex, replacement)
+                        _items.Insert(repositionInsertIndex, replacementExisting)
                     Else
-                        _items.Add(replacement)
+                        _items.Add(replacementExisting)
                     End If
 
+                    _runtimeEntriesByKey(normalizedKey) = replacementExisting
+
                 ElseIf index >= 0 Then
-                    _items(index) = replacement
+                    ApplyDescriptorToExistingEntry(existing, descriptor)
+
                 Else
-                    _items.Add(replacement)
+                    Dim replacementMissing = CreateEntryFromDescriptor(descriptor)
+                    _items.Add(replacementMissing)
+                    _runtimeEntriesByKey(normalizedKey) = replacementMissing
                 End If
 
-                _runtimeEntriesByKey(normalizedKey) = replacement
                 TrimEntriesIfNeeded()
                 Return
             End If
 
-            _runtimeEntriesByKey(normalizedKey) = replacement
+            Dim replacementNew = CreateEntryFromDescriptor(descriptor)
+            _runtimeEntriesByKey(normalizedKey) = replacementNew
             Dim runtimeInsertIndex = ResolveRuntimeInsertIndex(normalizedKey, descriptor)
             If runtimeInsertIndex < 0 Then
                 runtimeInsertIndex = ResolveLifecycleInsertIndex(normalizedKey, descriptor)
             End If
             If runtimeInsertIndex >= 0 AndAlso runtimeInsertIndex <= _items.Count Then
-                _items.Insert(runtimeInsertIndex, replacement)
+                _items.Insert(runtimeInsertIndex, replacementNew)
             Else
-                _items.Add(replacement)
+                _items.Add(replacementNew)
             End If
             TrimEntriesIfNeeded()
         End Sub
+
+        Private Sub ApplyDescriptorToExistingEntry(entry As TranscriptEntryViewModel, descriptor As TranscriptEntryDescriptor)
+            If entry Is Nothing OrElse descriptor Is Nothing Then
+                Return
+            End If
+
+            Dim normalizedKind = If(descriptor.Kind, String.Empty).Trim()
+
+            entry.RuntimeKey = If(descriptor.RuntimeKey, String.Empty)
+            entry.ThreadId = If(descriptor.ThreadId, String.Empty)
+            entry.TurnId = If(descriptor.TurnId, String.Empty)
+            entry.TurnItemStreamSequence = descriptor.TurnItemStreamSequence
+            entry.TurnItemOrderIndex = descriptor.TurnItemOrderIndex
+            entry.TurnItemSortTimestampUtc = descriptor.TurnItemSortTimestampUtc
+            entry.TimestampText = If(descriptor.TimestampText, String.Empty)
+            entry.RoleText = If(descriptor.RoleText, String.Empty)
+            entry.StatusText = If(descriptor.StatusText, String.Empty)
+            entry.SecondaryText = If(descriptor.SecondaryText, String.Empty)
+            entry.RowOpacity = If(descriptor.IsMuted, 0.82R, 1.0R)
+            ApplyTimelineDotRowVisibility(entry)
+
+            entry.AddedLinesText = If(descriptor.AddedLineCount.HasValue AndAlso descriptor.AddedLineCount.Value > 0,
+                                      $"+{descriptor.AddedLineCount.Value}",
+                                      String.Empty)
+            entry.RemovedLinesText = If(descriptor.RemovedLineCount.HasValue AndAlso descriptor.RemovedLineCount.Value > 0,
+                                        $"-{descriptor.RemovedLineCount.Value}",
+                                        String.Empty)
+
+            If IsAssistantDescriptorKind(normalizedKind) Then
+                If descriptor.IsStreaming Then
+                    entry.BodyText = If(descriptor.BodyText, String.Empty)
+                    entry.DetailsText = String.Empty
+                Else
+                    ApplyAssistantMarkdownFormatting(entry, If(descriptor.BodyText, String.Empty))
+                End If
+            ElseIf StringComparer.OrdinalIgnoreCase.Equals(normalizedKind, "reasoning") AndAlso
+                   Not descriptor.UseRawReasoningLayout Then
+                Dim reasoningSource = If(String.IsNullOrWhiteSpace(descriptor.DetailsText), descriptor.BodyText, descriptor.DetailsText)
+                If descriptor.IsStreaming Then
+                    entry.BodyText = If(reasoningSource, String.Empty)
+                    entry.DetailsText = String.Empty
+                Else
+                    ApplyReasoningMarkdownFormatting(entry, reasoningSource)
+                End If
+            Else
+                entry.BodyText = If(descriptor.BodyText, String.Empty)
+                entry.DetailsText = If(descriptor.DetailsText, String.Empty)
+            End If
+
+            If StringComparer.OrdinalIgnoreCase.Equals(normalizedKind, "fileChange") Then
+                If descriptor.FileChangeItems IsNot Nothing AndAlso descriptor.FileChangeItems.Count > 0 Then
+                    entry.SetFileChangeItems(descriptor.FileChangeItems)
+                Else
+                    ApplyFileChangeInlineListFormatting(entry)
+                End If
+            End If
+
+            entry.AllowDetailsCollapse = ShouldAllowDetailsCollapse(normalizedKind)
+            If Not entry.AllowDetailsCollapse Then
+                entry.IsDetailsExpanded = True
+            End If
+
+            entry.StreamingIndicatorVisibility = Visibility.Collapsed
+            entry.StreamingIndicatorText = String.Empty
+        End Sub
+
+        Private Shared Function IsAssistantDescriptorKind(kind As String) As Boolean
+            Select Case If(kind, String.Empty).Trim().ToLowerInvariant()
+                Case "assistant", "assistantfinal", "assistantcommentary"
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
 
         Private Function ResolveRuntimeInsertIndex(runtimeKey As String, descriptor As TranscriptEntryDescriptor) As Integer
             Dim normalizedRuntimeKey = If(runtimeKey, String.Empty).Trim()
@@ -3299,11 +3389,20 @@ Namespace CodexNativeAgent.Ui.ViewModels
             If StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "assistant") OrElse
                StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "assistantFinal") OrElse
                StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "assistantCommentary") Then
-                ApplyAssistantMarkdownFormatting(entry, entry.BodyText)
+                If descriptor.IsStreaming Then
+                    entry.DetailsText = String.Empty
+                Else
+                    ApplyAssistantMarkdownFormatting(entry, entry.BodyText)
+                End If
             ElseIf StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "reasoning") AndAlso
                    Not descriptor.UseRawReasoningLayout Then
                 Dim reasoningSource = If(String.IsNullOrWhiteSpace(descriptor.DetailsText), descriptor.BodyText, descriptor.DetailsText)
-                ApplyReasoningMarkdownFormatting(entry, reasoningSource)
+                If descriptor.IsStreaming Then
+                    entry.BodyText = If(reasoningSource, String.Empty)
+                    entry.DetailsText = String.Empty
+                Else
+                    ApplyReasoningMarkdownFormatting(entry, reasoningSource)
+                End If
             End If
 
             If StringComparer.OrdinalIgnoreCase.Equals(entry.Kind, "fileChange") Then
