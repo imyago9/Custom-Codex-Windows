@@ -273,7 +273,7 @@ Namespace CodexNativeAgent.Ui
                 _transcriptTabStripBorder = New Border() With {
                     .BorderThickness = New Thickness(0, 0, 0, 2),
                     .Opacity = 1.0R,
-                    .Padding = New Thickness(0, 2, 0, 1),
+                    .Padding = New Thickness(0, 0, 0, 1),
                     .Background = Brushes.Transparent,
                     .HorizontalAlignment = HorizontalAlignment.Stretch,
                     .Visibility = Visibility.Collapsed,
@@ -287,8 +287,8 @@ Namespace CodexNativeAgent.Ui
 
                 Dim headerDockPanel = FindVisualAncestor(Of DockPanel)(WorkspacePaneHost.LblCurrentThread)
                 If headerDockPanel IsNot Nothing Then
-                    _transcriptTabStripBorder.Margin = New Thickness(8, 2, 8, 2)
-                    _transcriptTabStripBorder.VerticalAlignment = VerticalAlignment.Center
+                    _transcriptTabStripBorder.Margin = New Thickness(8, 0, 8, 2)
+                    _transcriptTabStripBorder.VerticalAlignment = VerticalAlignment.Top
                     headerDockPanel.Children.Add(_transcriptTabStripBorder)
                 Else
                     Dim titleStack = TryCast(WorkspacePaneHost.LblCurrentThread.Parent, StackPanel)
@@ -641,8 +641,8 @@ Namespace CodexNativeAgent.Ui
                                                  ByRef closeButton As Button) As Border
             tabButton = New Button() With {
                 .Tag = threadId,
-                .Padding = New Thickness(12, 7, 8, 7),
-                .MinHeight = 32,
+                .Padding = New Thickness(12, 8, 8, 8),
+                .MinHeight = 34,
                 .MinWidth = 96,
                 .MaxWidth = 320,
                 .FontSize = 12.6R,
@@ -659,10 +659,10 @@ Namespace CodexNativeAgent.Ui
 
             closeButton = New Button() With {
                 .Tag = threadId,
-                .Width = 20,
-                .Height = 20,
-                .MinWidth = 20,
-                .MinHeight = 20,
+                .Width = 22,
+                .Height = 22,
+                .MinWidth = 22,
+                .MinHeight = 22,
                 .Margin = New Thickness(0, 0, 6, 0),
                 .Padding = New Thickness(0),
                 .Cursor = Cursors.Hand,
@@ -699,7 +699,7 @@ Namespace CodexNativeAgent.Ui
                 .Tag = threadId,
                 .CornerRadius = New CornerRadius(6, 6, 0, 0),
                 .BorderThickness = New Thickness(0),
-                .Margin = New Thickness(0, 2, 4, 0),
+                .Margin = New Thickness(0, 0, 4, 0),
                 .Child = contentGrid
             }
 
@@ -1703,14 +1703,14 @@ Namespace CodexNativeAgent.Ui
                     chipBorder.Background = If(If(isHover, activeHoverBackground, activeBackground), Brushes.Transparent)
                     chipBorder.BorderBrush = If(activeOutlineBrush, Brushes.Transparent)
                     chipBorder.BorderThickness = New Thickness(1, 1, 1, 0)
-                    chipBorder.Margin = New Thickness(0, 2, 4, 0)
+                    chipBorder.Margin = New Thickness(0, 0, 4, 0)
                     chipBorder.Opacity = 1.0R
                     Panel.SetZIndex(chipBorder, 20)
                 Else
                     chipBorder.Background = If(If(isHover, inactiveHoverBackground, inactiveBackground), Brushes.Transparent)
                     chipBorder.BorderBrush = Brushes.Transparent
                     chipBorder.BorderThickness = New Thickness(0)
-                    chipBorder.Margin = New Thickness(0, 2, 4, 0)
+                    chipBorder.Margin = New Thickness(0, 0, 4, 0)
                     chipBorder.Opacity = If(isHover, 0.92R, 0.72R)
                     Panel.SetZIndex(chipBorder, If(isHover, 12, 8))
                 End If

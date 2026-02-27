@@ -18,6 +18,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _pendingQueueCount As Integer
         Private _activeMethodName As String = String.Empty
         Private _supportsExecpolicyAmendment As Boolean
+        Private _selectedOptionNumber As Integer = 1
         Private _lastQueuedMethodName As String = String.Empty
         Private _lastResolvedAction As String = String.Empty
         Private _lastResolvedDecision As String = String.Empty
@@ -109,6 +110,16 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Integer)
                 SetProperty(_pendingQueueCount, Math.Max(0, value))
+            End Set
+        End Property
+
+        Public Property SelectedOptionNumber As Integer
+            Get
+                Return _selectedOptionNumber
+            End Get
+            Set(value As Integer)
+                Dim normalized = Math.Max(1, Math.Min(5, value))
+                SetProperty(_selectedOptionNumber, normalized)
             End Set
         End Property
 
@@ -241,6 +252,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             CanDecline = isAuthenticated AndAlso hasActiveApproval
             CanCancel = isAuthenticated AndAlso hasActiveApproval
             CardVisibility = If(hasActiveApproval, Visibility.Visible, Visibility.Collapsed)
+            EnsureSelectedOptionIsValid()
         End Sub
 
         Public Sub SetThreadScopedState(summaryText As String,
@@ -264,6 +276,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             LastErrorText = String.Empty
             LastQueueUpdatedUtc = Nothing
             LastResolvedUtc = Nothing
+            SelectedOptionNumber = 1
             UpdateAvailability(False, False)
         End Sub
 
@@ -310,5 +323,102 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Public Sub RecordError(errorMessage As String)
             LastErrorText = If(errorMessage, String.Empty)
         End Sub
+
+        Public Function MoveSelection(delta As Integer) As Boolean
+            If CardVisibility <> Visibility.Visible Then
+                Return False
+            End If
+
+            Dim selectableOptions = BuildSelectableOptionList()
+            If selectableOptions.Count = 0 Then
+                Return False
+            End If
+
+            Dim currentIndex = selectableOptions.IndexOf(SelectedOptionNumber)
+            If currentIndex < 0 Then
+                currentIndex = 0
+            End If
+
+            Dim stepDirection = If(delta < 0, -1, 1)
+            Dim nextIndex = (currentIndex + stepDirection + selectableOptions.Count) Mod selectableOptions.Count
+            SelectedOptionNumber = selectableOptions(nextIndex)
+            Return True
+        End Function
+
+        Public Function TryExecuteSelectedOption() As Boolean
+            Return TryExecuteOption(SelectedOptionNumber)
+        End Function
+
+        Public Function TryExecuteOption(optionNumber As Integer) As Boolean
+            If CardVisibility <> Visibility.Visible Then
+                Return False
+            End If
+
+            Dim normalizedOption = Math.Max(1, Math.Min(5, optionNumber))
+            SelectedOptionNumber = normalizedOption
+            Select Case normalizedOption
+                Case 1
+                    Return TryExecuteOptionCommand(normalizedOption, AcceptCommand, CanAccept)
+                Case 2
+                    Return TryExecuteOptionCommand(normalizedOption, AcceptSessionCommand, CanAcceptSession)
+                Case 3
+                    Return TryExecuteOptionCommand(normalizedOption,
+                                                   AcceptAmendedCommand,
+                                                   CanAcceptAmended AndAlso AcceptAmendedVisibility = Visibility.Visible)
+                Case 4
+                    Return TryExecuteOptionCommand(normalizedOption, DeclineCommand, CanDecline)
+                Case 5
+                    Return TryExecuteOptionCommand(normalizedOption, CancelCommand, CanCancel)
+                Case Else
+                    Return False
+            End Select
+        End Function
+
+        Private Function TryExecuteOptionCommand(optionNumber As Integer,
+                                                 command As ICommand,
+                                                 isAvailable As Boolean) As Boolean
+            If Not isAvailable OrElse command Is Nothing OrElse Not command.CanExecute(Nothing) Then
+                Return False
+            End If
+
+            SelectedOptionNumber = optionNumber
+            command.Execute(Nothing)
+            Return True
+        End Function
+
+        Private Sub EnsureSelectedOptionIsValid()
+            Dim selectableOptions = BuildSelectableOptionList()
+            If selectableOptions.Count = 0 Then
+                SelectedOptionNumber = 1
+                Return
+            End If
+
+            If selectableOptions.Contains(SelectedOptionNumber) Then
+                Return
+            End If
+
+            SelectedOptionNumber = selectableOptions(0)
+        End Sub
+
+        Private Function BuildSelectableOptionList() As List(Of Integer)
+            Dim options As New List(Of Integer)()
+            If CanAccept Then
+                options.Add(1)
+            End If
+            If CanAcceptSession Then
+                options.Add(2)
+            End If
+            If CanAcceptAmended AndAlso AcceptAmendedVisibility = Visibility.Visible Then
+                options.Add(3)
+            End If
+            If CanDecline Then
+                options.Add(4)
+            End If
+            If CanCancel Then
+                options.Add(5)
+            End If
+
+            Return options
+        End Function
     End Class
 End Namespace

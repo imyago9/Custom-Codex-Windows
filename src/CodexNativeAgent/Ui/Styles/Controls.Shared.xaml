@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib"
+                    xmlns:ui="clr-namespace:CodexNativeAgent.Ui">
     <Style x:Key="FocusVisualStyle" TargetType="Control">
         <Setter Property="Template">
             <Setter.Value>
@@ -350,6 +351,15 @@
                         </Popup>
                     </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="Tag" Value="NoOutlineBubble">
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="Chrome" Property="BorderThickness" Value="0" />
+                            <Setter TargetName="DropGlyphHost" Property="Background" Value="Transparent" />
+                            <Setter TargetName="DropGlyphHost" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="PopupChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                            <Setter TargetName="PopupChrome" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="PopupChrome" Property="BorderThickness" Value="0" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
                             <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource InputFocusedBackgroundBrush}" />
@@ -370,6 +380,39 @@
                             <Setter TargetName="DropGlyphHost" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
                             <Setter TargetName="DropGlyph" Property="Foreground" Value="{DynamicResource AccentBrush}" />
                         </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Tag" Value="NoOutlineBubble" />
+                                <Condition Property="IsMouseOver" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="DropGlyphHost" Property="Background" Value="Transparent" />
+                            <Setter TargetName="DropGlyphHost" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="DropGlyph" Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                        </MultiTrigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Tag" Value="NoOutlineBubble" />
+                                <Condition Property="IsKeyboardFocusWithin" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="DropGlyphHost" Property="Background" Value="Transparent" />
+                            <Setter TargetName="DropGlyphHost" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="DropGlyph" Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                        </MultiTrigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Tag" Value="NoOutlineBubble" />
+                                <Condition Property="IsDropDownOpen" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="DropGlyphHost" Property="Background" Value="Transparent" />
+                            <Setter TargetName="DropGlyphHost" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="DropGlyph" Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                        </MultiTrigger>
                         <Trigger Property="HasItems" Value="False">
                             <Setter TargetName="PopupChrome" Property="MinHeight" Value="0" />
                         </Trigger>
@@ -387,6 +430,20 @@
                 <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
                 <Setter Property="Background" Value="{DynamicResource InputFocusedBackgroundBrush}" />
             </Trigger>
+            <Trigger Property="Tag" Value="NoOutlineBubble">
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+            </Trigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="Tag" Value="NoOutlineBubble" />
+                    <Condition Property="IsKeyboardFocusWithin" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+            </MultiTrigger>
             <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Opacity" Value="0.7" />
             </Trigger>
@@ -414,9 +471,9 @@
                 <ControlTemplate TargetType="Thumb">
                     <Border x:Name="ThumbChrome"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="5"
-                            Margin="2"
-                            Opacity="0.9" />
+                            CornerRadius="1.5"
+                            Margin="1"
+                            Opacity="0.88" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="ThumbChrome" Property="Background" Value="{DynamicResource TextSecondaryBrush}" />
@@ -435,23 +492,29 @@
         </Setter>
     </Style>
 
+    <Style TargetType="ScrollViewer">
+        <Setter Property="ui:ScrollViewerActivityBehavior.EnableAutoHide" Value="True" />
+    </Style>
+
     <Style TargetType="ScrollBar">
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Width" Value="12" />
-        <Setter Property="Margin" Value="0,2,0,2" />
+        <Setter Property="ui:ScrollBarInitialFadeBehavior.EnableInitialFade" Value="True" />
+        <Setter Property="Width" Value="4" />
+        <Setter Property="Opacity" Value="0" />
+        <Setter Property="Margin" Value="0" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
                     <Grid Background="Transparent" SnapsToDevicePixels="True">
                         <Border x:Name="TrackChrome"
-                                Margin="1,2,1,2"
-                                CornerRadius="6"
+                                Margin="1"
+                                CornerRadius="1.5"
                                 Background="{DynamicResource SurfaceRaisedBrush}"
                                 BorderBrush="{DynamicResource BorderBrush}"
-                                BorderThickness="1"
-                                Opacity="0.5" />
+                                BorderThickness="0"
+                                Opacity="0.14" />
                         <Track x:Name="PART_Track"
-                               Margin="1,2,1,2"
+                               Margin="1"
                                IsDirectionReversed="True">
                             <Track.Resources>
                                 <!-- WPF Track clamps thumb length using these system metrics (minimum is ~ half). -->
@@ -476,16 +539,19 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="Orientation" Value="Horizontal">
                             <Setter Property="Width" Value="Auto" />
-                            <Setter Property="Height" Value="12" />
+                            <Setter Property="Height" Value="4" />
                             <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
                             <Setter TargetName="DecreaseButton" Property="Command" Value="ScrollBar.PageLeftCommand" />
                             <Setter TargetName="IncreaseButton" Property="Command" Value="ScrollBar.PageRightCommand" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="TrackChrome" Property="Opacity" Value="0.8" />
+                            <Setter TargetName="TrackChrome" Property="Opacity" Value="0.32" />
+                        </Trigger>
+                        <Trigger Property="IsMouseCaptureWithin" Value="True">
+                            <Setter TargetName="TrackChrome" Property="Opacity" Value="0.52" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="TrackChrome" Property="Opacity" Value="0.2" />
+                            <Setter TargetName="TrackChrome" Property="Opacity" Value="0.18" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -494,8 +560,31 @@
         <Style.Triggers>
             <Trigger Property="Orientation" Value="Horizontal">
                 <Setter Property="Width" Value="Auto" />
-                <Setter Property="Height" Value="12" />
-                <Setter Property="Margin" Value="2,0,2,0" />
+                <Setter Property="Height" Value="4" />
+                <Setter Property="Margin" Value="0" />
+            </Trigger>
+            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=(ui:ScrollViewerActivityBehavior.IsScrollActivityVisible), FallbackValue=False}" Value="True">
+                <DataTrigger.EnterActions>
+                    <BeginStoryboard x:Name="BeginScrollBarFadeIn">
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             To="0.76"
+                                             Duration="0:0:0.14" />
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                    <BeginStoryboard x:Name="BeginScrollBarFadeOut">
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             To="0"
+                                             Duration="0:0:0.22" />
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0" />
             </Trigger>
         </Style.Triggers>
     </Style>

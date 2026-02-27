@@ -5,6 +5,7 @@ Imports System.Threading
 Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Controls
+Imports System.Windows.Media
 Imports System.Windows.Media.Animation
 Imports CodexNativeAgent.AppServer
 Imports CodexNativeAgent.Services
@@ -121,6 +122,7 @@ Namespace CodexNativeAgent.Ui
             Dim toggleButton = WorkspacePaneHost.BtnTurnComposerPickersToggle
             Dim reasoningCombo = WorkspacePaneHost.CmbReasoningEffort
             Dim modelCombo = WorkspacePaneHost.CmbModel
+            Dim turnComposerVm = If(_viewModel?.TurnComposer, Nothing)
 
             If container Is Nothing OrElse toggleButton Is Nothing Then
                 Return
@@ -130,11 +132,16 @@ Namespace CodexNativeAgent.Ui
                 CaptureTurnComposerPickersExpandedWidth()
             End If
 
+            Dim targetExpanded = Not _turnComposerPickersCollapsed
             Dim expandedWidth = ResolveTurnComposerPickersExpandedWidth()
             Dim targetWidth = If(_turnComposerPickersCollapsed, 0.0R, expandedWidth)
             Dim targetOpacity = If(_turnComposerPickersCollapsed, 0.0R, 1.0R)
             Dim currentWidth = EffectiveAnimatedWidth(container, expandedWidth)
             Dim currentOpacity = If(Double.IsNaN(container.Opacity), If(currentWidth <= 0.5R, 0.0R, 1.0R), container.Opacity)
+            Dim pickerTranslate = EnsureTranslateTransform(container)
+            If turnComposerVm IsNot Nothing Then
+                turnComposerVm.ArePickersExpanded = targetExpanded
+            End If
 
             If _turnComposerPickersCollapsed AndAlso
                ((modelCombo IsNot Nothing AndAlso modelCombo.IsKeyboardFocusWithin) OrElse
@@ -146,12 +153,15 @@ Namespace CodexNativeAgent.Ui
 
             container.BeginAnimation(FrameworkElement.WidthProperty, Nothing)
             container.BeginAnimation(UIElement.OpacityProperty, Nothing)
+            pickerTranslate.BeginAnimation(TranslateTransform.XProperty, Nothing)
             container.Visibility = Visibility.Visible
-            container.IsHitTestVisible = Not _turnComposerPickersCollapsed
+            container.IsHitTestVisible = targetExpanded
 
             If Not animated Then
                 container.Width = targetWidth
                 container.Opacity = targetOpacity
+                pickerTranslate.X = If(targetExpanded, 0.0R, -14.0R)
+                pickerTranslate.Y = 0.0R
                 If persist Then
                     SaveSettings()
                 End If
@@ -162,9 +172,13 @@ Namespace CodexNativeAgent.Ui
             ' Set the final base values first so they persist after the animation clock completes.
             container.Width = targetWidth
             container.Opacity = targetOpacity
+            pickerTranslate.X = If(targetExpanded, 0.0R, -14.0R)
+            pickerTranslate.Y = 0.0R
 
-            Dim duration = TimeSpan.FromMilliseconds(170)
+            Dim duration = TimeSpan.FromMilliseconds(210)
             Dim easing As New CubicEase() With {.EasingMode = EasingMode.EaseInOut}
+            Dim fromSlideX = If(targetExpanded, -14.0R, 0.0R)
+            Dim toSlideX = If(targetExpanded, 0.0R, -14.0R)
 
             Dim widthAnimation As New DoubleAnimation() With {
                 .From = currentWidth,
@@ -180,9 +194,17 @@ Namespace CodexNativeAgent.Ui
                 .EasingFunction = easing,
                 .FillBehavior = FillBehavior.Stop
             }
+            Dim slideXAnimation As New DoubleAnimation() With {
+                .From = fromSlideX,
+                .To = toSlideX,
+                .Duration = duration,
+                .EasingFunction = easing,
+                .FillBehavior = FillBehavior.Stop
+            }
 
             container.BeginAnimation(FrameworkElement.WidthProperty, widthAnimation)
             container.BeginAnimation(UIElement.OpacityProperty, opacityAnimation)
+            pickerTranslate.BeginAnimation(TranslateTransform.XProperty, slideXAnimation)
 
             If persist Then
                 SaveSettings()
@@ -277,6 +299,21 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Return Math.Max(width, 0.0R)
+        End Function
+
+        Private Shared Function EnsureTranslateTransform(element As UIElement) As TranslateTransform
+            If element Is Nothing Then
+                Return New TranslateTransform()
+            End If
+
+            Dim existing = TryCast(element.RenderTransform, TranslateTransform)
+            If existing IsNot Nothing Then
+                Return existing
+            End If
+
+            existing = New TranslateTransform()
+            element.RenderTransform = existing
+            Return existing
         End Function
 
         Private Async Function StartTurnAsync() As Task
@@ -548,17 +585,13 @@ Namespace CodexNativeAgent.Ui
             If usedTokens.HasValue AndAlso maxTokens.HasValue AndAlso maxTokens.Value > 0 Then
                 lines.Add($"Usage: {usedTokens.Value.ToString(CultureInfo.InvariantCulture)} / {maxTokens.Value.ToString(CultureInfo.InvariantCulture)} tokens")
             ElseIf maxTokens.HasValue AndAlso maxTokens.Value > 0 Then
-                lines.Add($"Context window: {maxTokens.Value.ToString(CultureInfo.InvariantCulture)} tokens")
+                lines.Add($"Usage: -- / {maxTokens.Value.ToString(CultureInfo.InvariantCulture)} tokens")
             ElseIf usedTokens.HasValue Then
-                lines.Add($"Context tokens used: {usedTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+                lines.Add($"Usage: {usedTokens.Value.ToString(CultureInfo.InvariantCulture)} tokens")
+            Else
+                lines.Add("Usage: unavailable")
             End If
 
-            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
-            If Not String.IsNullOrWhiteSpace(normalizedTurnId) Then
-                lines.Add($"Turn: {normalizedTurnId}")
-            End If
-
-            lines.Add("Source: thread/tokenUsage/updated")
             Return String.Join(Environment.NewLine, lines)
         End Function
 

@@ -2,6 +2,46 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="Transparent">
+            <UserControl.Resources>
+                <Style x:Key="TurnComposerHoverToolTipStyle" TargetType="ToolTip">
+                    <Setter Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="Padding" Value="10,7" />
+                </Style>
+                <Style x:Key="NoOutlineBubbleComboBoxItemStyle"
+                       TargetType="ComboBoxItem"
+                       BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border x:Name="ItemChrome"
+                                        Background="Transparent"
+                                        BorderBrush="Transparent"
+                                        BorderThickness="0"
+                                        CornerRadius="8"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                        <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                        <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
+                                    </Trigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="ItemChrome" Property="Opacity" Value="0.55" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </UserControl.Resources>
             <Border
                     Background="Transparent"
                     BorderThickness="0"
@@ -26,7 +66,7 @@
                             </Grid.RowDefinitions>
 
                             <DockPanel Grid.Row="0"
-                                       Margin="14,12">
+                                       Margin="14,-2,0,0">
                                 <DockPanel.Resources>
                                     <Style x:Key="QuickIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}">
                                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -1124,8 +1164,9 @@
                         </GridSplitter.Template>
                     </GridSplitter>
 
-                    <Grid Grid.Row="4"
-                          Margin="12,0,12,12">
+                    <Grid x:Name="TurnComposerHostContainer"
+                          Grid.Row="4"
+                          Margin="12,0,12,6">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
@@ -1134,17 +1175,25 @@
 
                             <Border x:Name="InlineApprovalCard"
                                     Grid.Row="0"
-                                    BorderBrush="{DynamicResource ApprovalCardBorderBrush}"
+                                    Grid.RowSpan="3"
+                                    BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1"
-                                    Background="{DynamicResource ApprovalCardBackgroundBrush}"
+                                    Background="{DynamicResource SurfaceRaisedBrush}"
+                                    Focusable="True"
                                     CornerRadius="10"
                                     Padding="10"
-                                    Margin="0,0,0,12"
+                                    Margin="0"
+                                    VerticalAlignment="Stretch"
                                     Visibility="{Binding ApprovalPanel.CardVisibility}">
+                                <Border.Resources>
+                                    <SolidColorBrush x:Key="ApprovalOptionNeutralBorderBrush" Color="#70808080" />
+                                    <SolidColorBrush x:Key="ApprovalOptionSelectedBorderBrush" Color="#B09A9A9A" />
+                                    <SolidColorBrush x:Key="ApprovalOptionSelectedBackgroundBrush" Color="#1C808080" />
+                                </Border.Resources>
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
 
                                     <StackPanel Grid.Row="0">
@@ -1152,61 +1201,180 @@
                                                    FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextPrimaryBrush}" />
                                         <TextBlock Margin="0,4,0,0"
-                                                   Text="{Binding ApprovalPanel.SummaryText}"
+                                                   Text="Use Up/Down to select, Enter to confirm, or press 1-5."
                                                    TextWrapping="Wrap"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Visible" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding ApprovalPanel.SummaryText}" Value="">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
                                     </StackPanel>
 
-                                    <WrapPanel Grid.Row="1" Margin="0,10,0,0">
-                                        <Button x:Name="BtnApprovalAccept"
-                                                Content="Accept"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                Margin="0,0,6,6"
-                                                IsEnabled="{Binding ApprovalPanel.CanAccept}"
-                                                Command="{Binding ApprovalPanel.AcceptCommand}" />
-                                        <Button x:Name="BtnApprovalAcceptSession"
-                                                Content="Accept Session"
-                                                Style="{StaticResource ButtonBaseStyle}"
-                                                Margin="0,0,6,6"
-                                                IsEnabled="{Binding ApprovalPanel.CanAcceptSession}"
-                                                Command="{Binding ApprovalPanel.AcceptSessionCommand}" />
-                                        <Button x:Name="BtnApprovalAcceptAmended"
-                                                Content="Accept + Amendment"
-                                                Style="{StaticResource ButtonBaseStyle}"
-                                                Margin="0,0,6,6"
-                                                Visibility="{Binding ApprovalPanel.AcceptAmendedVisibility}"
-                                                IsEnabled="{Binding ApprovalPanel.CanAcceptAmended}"
-                                                Command="{Binding ApprovalPanel.AcceptAmendedCommand}" />
-                                        <Button x:Name="BtnApprovalDecline"
-                                                Content="Decline"
-                                                Style="{StaticResource ButtonBaseStyle}"
-                                                Margin="0,0,6,6"
-                                                IsEnabled="{Binding ApprovalPanel.CanDecline}"
-                                                Command="{Binding ApprovalPanel.DeclineCommand}" />
-                                        <Button x:Name="BtnApprovalCancel"
-                                                Content="Cancel Turn"
-                                                Style="{StaticResource DangerButtonStyle}"
-                                                Margin="0,0,6,6"
-                                                IsEnabled="{Binding ApprovalPanel.CanCancel}"
-                                                Command="{Binding ApprovalPanel.CancelCommand}" />
-                                    </WrapPanel>
+                                    <ScrollViewer Grid.Row="1"
+                                                  Margin="0,10,0,0"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  CanContentScroll="True">
+                                        <StackPanel>
+                                            <TextBlock Margin="0,0,0,10"
+                                                       Text="{Binding ApprovalPanel.SummaryText}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.SummaryText}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+
+                                            <Border Padding="10,8"
+                                                    Margin="0,0,0,6"
+                                                    CornerRadius="8"
+                                                    BorderThickness="1">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="1">
+                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.CanAccept}" Value="False">
+                                                                <Setter Property="Opacity" Value="0.45" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="1. Accept"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           FontSize="11.5"
+                                                           FontWeight="SemiBold" />
+                                            </Border>
+
+                                            <Border Padding="10,8"
+                                                    Margin="0,0,0,6"
+                                                    CornerRadius="8"
+                                                    BorderThickness="1">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="2">
+                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.CanAcceptSession}" Value="False">
+                                                                <Setter Property="Opacity" Value="0.45" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="2. Accept Session"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           FontSize="11.5"
+                                                           FontWeight="SemiBold" />
+                                            </Border>
+
+                                            <Border Padding="10,8"
+                                                    Margin="0,0,0,6"
+                                                    CornerRadius="8"
+                                                    BorderThickness="1">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="3">
+                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.CanAcceptAmended}" Value="False">
+                                                                <Setter Property="Opacity" Value="0.45" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <StackPanel>
+                                                    <TextBlock Text="3. Accept + Amendment"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                                               FontSize="11.5"
+                                                               FontWeight="SemiBold" />
+                                                    <TextBlock Text="Available when an execpolicy amendment is provided."
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               FontSize="10.2" />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Padding="10,8"
+                                                    Margin="0,0,0,6"
+                                                    CornerRadius="8"
+                                                    BorderThickness="1">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="4">
+                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.CanDecline}" Value="False">
+                                                                <Setter Property="Opacity" Value="0.45" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="4. Decline"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           FontSize="11.5"
+                                                           FontWeight="SemiBold" />
+                                            </Border>
+
+                                            <Border Padding="10,8"
+                                                    Margin="0,0,0,4"
+                                                    CornerRadius="8"
+                                                    BorderThickness="1">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="5">
+                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding ApprovalPanel.CanCancel}" Value="False">
+                                                                <Setter Property="Opacity" Value="0.45" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="5. Cancel Turn"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           FontSize="11.5"
+                                                           FontWeight="SemiBold" />
+                                            </Border>
+                                        </StackPanel>
+                                    </ScrollViewer>
                                 </Grid>
                             </Border>
 
                             <Grid x:Name="TurnComposerInputHost"
                                   Grid.Row="1"
                                   MinHeight="56">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ApprovalPanel.CardVisibility}" Value="Visible">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
                                 <Grid.Resources>
                                     <Style x:Key="TurnInputTextBoxStyle"
                                            TargetType="TextBox"
@@ -1256,6 +1424,16 @@
                             <Grid x:Name="TurnComposerControlsHost"
                                   Grid.Row="2"
                                   Margin="0,10,0,0">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ApprovalPanel.CardVisibility}" Value="Visible">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
                                 <Grid.Resources>
                                     <Style x:Key="TurnComposerIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ButtonBaseStyle}">
                                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -1290,13 +1468,27 @@
                                             </Setter.Value>
                                         </Setter>
                                     </Style>
+                                    <Style x:Key="TurnComposerPickerComboBoxStyle"
+                                           TargetType="ComboBox"
+                                           BasedOn="{StaticResource {x:Type ComboBox}}">
+                                        <Setter Property="Tag" Value="NoOutlineBubble" />
+                                        <Setter Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="ItemContainerStyle" Value="{StaticResource NoOutlineBubbleComboBoxItemStyle}" />
+                                    </Style>
                                 </Grid.Resources>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <Grid Grid.Column="0"
+                                <Grid Grid.Row="0"
+                                      Grid.Column="0"
                                       VerticalAlignment="Center">
                                     <WrapPanel VerticalAlignment="Center">
                                         <Border x:Name="TurnComposerPickersContainer"
@@ -1311,6 +1503,7 @@
                                                 <StackPanel Orientation="Horizontal"
                                                             VerticalAlignment="Center">
                                                     <ComboBox x:Name="CmbModel"
+                                                              Style="{StaticResource TurnComposerPickerComboBoxStyle}"
                                                               Width="260"
                                                               Margin="0,0,12,6"
                                                               IsEnabled="{Binding TurnComposer.IsModelEnabled}"
@@ -1318,6 +1511,7 @@
                                                               SelectedValue="{Binding TurnComposer.SelectedModelId, Mode=TwoWay}" />
 
                                                     <ComboBox x:Name="CmbReasoningEffort"
+                                                              Style="{StaticResource TurnComposerPickerComboBoxStyle}"
                                                               Width="150"
                                                               Margin="0,0,12,6"
                                                               IsEnabled="{Binding TurnComposer.IsReasoningEnabled}"
@@ -1330,89 +1524,6 @@
                                                         <ComboBoxItem Content="xhigh" />
                                                     </ComboBox>
                                                 </StackPanel>
-
-                                                <Grid Margin="0,0,12,2"
-                                                      Visibility="{Binding TurnComposer.UsageIndicatorsVisibility}">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-
-                                                    <ItemsControl Grid.Column="0"
-                                                                  Visibility="{Binding TurnComposer.RateLimitBarsVisibility}"
-                                                                  ItemsSource="{Binding TurnComposer.RateLimitBars}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <Border Height="12"
-                                                                        Background="Transparent"
-                                                                        ToolTip="{Binding TooltipText}"
-                                                                        ToolTipService.InitialShowDelay="80"
-                                                                        ToolTipService.BetweenShowDelay="50"
-                                                                        ToolTipService.ShowDuration="45000">
-                                                                    <Grid VerticalAlignment="Center">
-                                                                        <ProgressBar Height="3"
-                                                                                     VerticalAlignment="Center"
-                                                                                     Minimum="0"
-                                                                                     Maximum="100"
-                                                                                     Value="{Binding RemainingPercent}"
-                                                                                     Foreground="{Binding BarBrush}"
-                                                                                     Background="{DynamicResource BorderBrush}"
-                                                                                     BorderThickness="0"
-                                                                                     IsHitTestVisible="False" />
-                                                                    </Grid>
-                                                                </Border>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-
-                                                    <Border Grid.Column="1"
-                                                            Width="36"
-                                                            Height="24"
-                                                            Margin="8,0,0,0"
-                                                            Padding="4,0,4,0"
-                                                            VerticalAlignment="Center"
-                                                            HorizontalAlignment="Right"
-                                                            Background="Transparent"
-                                                            Visibility="{Binding TurnComposer.ContextUsageVisibility}"
-                                                            ToolTipService.InitialShowDelay="60"
-                                                            ToolTipService.BetweenShowDelay="50"
-                                                            ToolTipService.ShowDuration="45000">
-                                                        <Border.ToolTip>
-                                                            <ToolTip>
-                                                                <TextBlock Text="{Binding TurnComposer.ContextUsageTooltipText}"
-                                                                           TextWrapping="Wrap"
-                                                                           MaxWidth="340" />
-                                                            </ToolTip>
-                                                        </Border.ToolTip>
-                                                        <Grid Width="24"
-                                                              Height="24"
-                                                              VerticalAlignment="Center"
-                                                              HorizontalAlignment="Center">
-                                                            <Ellipse Stroke="{DynamicResource BorderBrush}"
-                                                                     StrokeThickness="2.4"
-                                                                     Fill="Transparent" />
-                                                            <Ellipse Stroke="{DynamicResource TextTertiaryBrush}"
-                                                                     StrokeThickness="2.4"
-                                                                     Fill="Transparent"
-                                                                     StrokeDashArray="{Binding TurnComposer.ContextUsageStrokeDashArray}"
-                                                                     StrokeStartLineCap="Round"
-                                                                     StrokeEndLineCap="Round">
-                                                                <Ellipse.RenderTransform>
-                                                                    <RotateTransform Angle="-90"
-                                                                                     CenterX="12"
-                                                                                     CenterY="12" />
-                                                                </Ellipse.RenderTransform>
-                                                            </Ellipse>
-                                                            <TextBlock Text="{Binding TurnComposer.ContextUsagePercentText}"
-                                                                       HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center"
-                                                                       Foreground="{DynamicResource TextTertiaryBrush}"
-                                                                       FontSize="7"
-                                                                       FontWeight="SemiBold"
-                                                                       IsHitTestVisible="False" />
-                                                        </Grid>
-                                                    </Border>
-                                                </Grid>
                                             </StackPanel>
                                         </Border>
 
@@ -1436,8 +1547,17 @@
                                     </WrapPanel>
                                 </Grid>
 
-                                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                <Grid Grid.Row="0"
+                                      Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
                                     <Button x:Name="BtnTurnSteer"
+                                            Grid.Column="0"
                                             Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="42"
                                             MinWidth="42"
@@ -1452,6 +1572,7 @@
                                                Stretch="Uniform" />
                                     </Button>
                                     <Button x:Name="BtnTurnStart"
+                                            Grid.Column="1"
                                             Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="42"
                                             MinWidth="42"
@@ -1466,6 +1587,7 @@
                                                Stretch="Uniform" />
                                     </Button>
                                     <Button x:Name="BtnTurnInterrupt"
+                                            Grid.Column="1"
                                             Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="42"
                                             MinWidth="42"
@@ -1479,7 +1601,230 @@
                                                Height="14"
                                                Stretch="Uniform" />
                                     </Button>
-                                </WrapPanel>
+                                </Grid>
+
+                                <Grid Grid.Row="1"
+                                      Grid.ColumnSpan="2"
+                                      Margin="0,2,0,0"
+                                      VerticalAlignment="Bottom"
+                                      Visibility="{Binding TurnComposer.UsageIndicatorsVisibility}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel x:Name="TurnComposerRateLimitIndicatorsHost"
+                                                Grid.Column="0"
+                                                Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding TurnComposer.RateLimitIndicatorsVisibility}">
+                                        <Border Margin="0,0,0,0"
+                                                Padding="6,4,4,3"
+                                                CornerRadius="7"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="0"
+                                                Background="{DynamicResource TranscriptBubbleGlassStrongBrush}"
+                                                Visibility="{Binding TurnComposer.RegularRateLimitIndicatorsVisibility}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Margin="0,0,7,0"
+                                                           Text="REG"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="9.5"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                <ItemsControl Grid.Column="1"
+                                                              ItemsSource="{Binding TurnComposer.RegularRateLimitBars}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Margin="0,0,8,0"
+                                                                        Orientation="Horizontal"
+                                                                        VerticalAlignment="Center"
+                                                                        ToolTipService.InitialShowDelay="80"
+                                                                        ToolTipService.BetweenShowDelay="50"
+                                                                        ToolTipService.ShowDuration="45000">
+                                                                <StackPanel.ToolTip>
+                                                                    <ToolTip Style="{StaticResource TurnComposerHoverToolTipStyle}"
+                                                                             Content="{Binding TooltipText}" />
+                                                                </StackPanel.ToolTip>
+                                                                <Grid Width="20"
+                                                                      Height="20"
+                                                                      VerticalAlignment="Center"
+                                                                      HorizontalAlignment="Center">
+                                                                    <Ellipse Stroke="{DynamicResource BorderBrush}"
+                                                                             StrokeThickness="2"
+                                                                             Fill="Transparent" />
+                                                                    <Ellipse Stroke="{Binding BarBrush}"
+                                                                             StrokeThickness="2"
+                                                                             Fill="Transparent"
+                                                                             StrokeDashArray="{Binding RemainingStrokeDashArray}"
+                                                                             StrokeStartLineCap="Round"
+                                                                             StrokeEndLineCap="Round">
+                                                                        <Ellipse.RenderTransform>
+                                                                            <RotateTransform Angle="-90"
+                                                                                             CenterX="10"
+                                                                                             CenterY="10" />
+                                                                        </Ellipse.RenderTransform>
+                                                                    </Ellipse>
+                                                                </Grid>
+                                                                <TextBlock Margin="5,0,0,0"
+                                                                           Text="{Binding ShortLabel}"
+                                                                           HorizontalAlignment="Left"
+                                                                           VerticalAlignment="Center"
+                                                                           FontSize="8.5"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </Border>
+
+                                        <Border Width="1"
+                                                Height="28"
+                                                Margin="6,0,6,0"
+                                                Background="{DynamicResource BorderBrush}"
+                                                VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding TurnComposer.RegularRateLimitIndicatorsVisibility}" Value="Visible" />
+                                                                <Condition Binding="{Binding TurnComposer.SparkRateLimitIndicatorsVisibility}" Value="Visible" />
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </MultiDataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                        </Border>
+
+                                        <Border Margin="0,0,0,0"
+                                                Padding="6,4,4,3"
+                                                CornerRadius="7"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="0"
+                                                Background="{DynamicResource TranscriptBubbleGlassStrongBrush}"
+                                                Visibility="{Binding TurnComposer.SparkRateLimitIndicatorsVisibility}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Margin="0,0,7,0"
+                                                           Text="SPK"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="9.5"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                <ItemsControl Grid.Column="1"
+                                                              ItemsSource="{Binding TurnComposer.SparkRateLimitBars}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Margin="0,0,8,0"
+                                                                        Orientation="Horizontal"
+                                                                        VerticalAlignment="Center"
+                                                                        ToolTipService.InitialShowDelay="80"
+                                                                        ToolTipService.BetweenShowDelay="50"
+                                                                        ToolTipService.ShowDuration="45000">
+                                                                <StackPanel.ToolTip>
+                                                                    <ToolTip Style="{StaticResource TurnComposerHoverToolTipStyle}"
+                                                                             Content="{Binding TooltipText}" />
+                                                                </StackPanel.ToolTip>
+                                                                <Grid Width="20"
+                                                                      Height="20"
+                                                                      VerticalAlignment="Center"
+                                                                      HorizontalAlignment="Center">
+                                                                    <Ellipse Stroke="{DynamicResource BorderBrush}"
+                                                                             StrokeThickness="2"
+                                                                             Fill="Transparent" />
+                                                                    <Ellipse Stroke="{Binding BarBrush}"
+                                                                             StrokeThickness="2"
+                                                                             Fill="Transparent"
+                                                                             StrokeDashArray="{Binding RemainingStrokeDashArray}"
+                                                                             StrokeStartLineCap="Round"
+                                                                             StrokeEndLineCap="Round">
+                                                                        <Ellipse.RenderTransform>
+                                                                            <RotateTransform Angle="-90"
+                                                                                             CenterX="10"
+                                                                                             CenterY="10" />
+                                                                        </Ellipse.RenderTransform>
+                                                                    </Ellipse>
+                                                                </Grid>
+                                                                <TextBlock Margin="5,0,0,0"
+                                                                           Text="{Binding ShortLabel}"
+                                                                           HorizontalAlignment="Left"
+                                                                           VerticalAlignment="Center"
+                                                                           FontSize="8.5"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <Border Grid.Column="1"
+                                            Width="24"
+                                            Height="24"
+                                            Margin="8,0,0,0"
+                                            Background="Transparent"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding TurnComposer.ContextUsageVisibility}"
+                                            ToolTipService.InitialShowDelay="60"
+                                            ToolTipService.BetweenShowDelay="50"
+                                            ToolTipService.ShowDuration="45000">
+                                        <Border.ToolTip>
+                                            <ToolTip Style="{StaticResource TurnComposerHoverToolTipStyle}">
+                                                <TextBlock Text="{Binding TurnComposer.ContextUsageTooltipText}"
+                                                           TextWrapping="Wrap"
+                                                           MaxWidth="340" />
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <Grid Width="24"
+                                              Height="24"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Center">
+                                            <Ellipse Stroke="{DynamicResource BorderBrush}"
+                                                     StrokeThickness="2.4"
+                                                     Fill="Transparent" />
+                                            <Ellipse Stroke="{DynamicResource TextTertiaryBrush}"
+                                                     StrokeThickness="2.4"
+                                                     Fill="Transparent"
+                                                     StrokeDashArray="{Binding TurnComposer.ContextUsageStrokeDashArray}"
+                                                     StrokeStartLineCap="Round"
+                                                     StrokeEndLineCap="Round">
+                                                <Ellipse.RenderTransform>
+                                                    <RotateTransform Angle="-90"
+                                                                     CenterX="12"
+                                                                     CenterY="12" />
+                                                </Ellipse.RenderTransform>
+                                            </Ellipse>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
                             </Grid>
                         </Grid>
                 </Grid>

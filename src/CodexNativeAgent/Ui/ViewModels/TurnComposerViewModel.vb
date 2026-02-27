@@ -30,16 +30,24 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _interruptTurnVisibility As Visibility = Visibility.Collapsed
         Private _usageIndicatorsVisibility As Visibility = Visibility.Visible
         Private _rateLimitBarsVisibility As Visibility = Visibility.Collapsed
+        Private _rateLimitIndicatorsVisibility As Visibility = Visibility.Collapsed
+        Private _regularRateLimitBarsVisibility As Visibility = Visibility.Collapsed
+        Private _sparkRateLimitBarsVisibility As Visibility = Visibility.Collapsed
+        Private _regularRateLimitIndicatorsVisibility As Visibility = Visibility.Collapsed
+        Private _sparkRateLimitIndicatorsVisibility As Visibility = Visibility.Collapsed
         Private _contextUsageVisibility As Visibility = Visibility.Visible
+        Private _arePickersExpanded As Boolean = True
         Private _contextUsagePercent As Double
         Private _contextUsagePercentText As String = "--"
-        Private _contextUsageTooltipText As String = "Context usage for this thread is not available yet."
+        Private _contextUsageTooltipText As String = "Thread context used: --" & Environment.NewLine & "Usage: unavailable"
         Private _contextUsageStrokeDashArray As DoubleCollection = BuildContextUsageStrokeDashArray(0.0R)
 
         Private _startTurnCommand As AsyncRelayCommand
         Private _steerTurnCommand As AsyncRelayCommand
         Private _interruptTurnCommand As AsyncRelayCommand
         Private ReadOnly _rateLimitBars As New ObservableCollection(Of TurnComposerRateLimitBarViewModel)()
+        Private ReadOnly _regularRateLimitBars As New ObservableCollection(Of TurnComposerRateLimitBarViewModel)()
+        Private ReadOnly _sparkRateLimitBars As New ObservableCollection(Of TurnComposerRateLimitBarViewModel)()
 
         Private Const ContextUsageRingRadius As Double = 11.0R
         Private Const ContextUsageRingStrokeThickness As Double = 2.4R
@@ -206,6 +214,18 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
         End Property
 
+        Public ReadOnly Property RegularRateLimitBars As ObservableCollection(Of TurnComposerRateLimitBarViewModel)
+            Get
+                Return _regularRateLimitBars
+            End Get
+        End Property
+
+        Public ReadOnly Property SparkRateLimitBars As ObservableCollection(Of TurnComposerRateLimitBarViewModel)
+            Get
+                Return _sparkRateLimitBars
+            End Get
+        End Property
+
         Public Property RateLimitBarsVisibility As Visibility
             Get
                 Return _rateLimitBarsVisibility
@@ -215,12 +235,68 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property RateLimitIndicatorsVisibility As Visibility
+            Get
+                Return _rateLimitIndicatorsVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_rateLimitIndicatorsVisibility, value)
+            End Set
+        End Property
+
+        Public Property RegularRateLimitBarsVisibility As Visibility
+            Get
+                Return _regularRateLimitBarsVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_regularRateLimitBarsVisibility, value)
+            End Set
+        End Property
+
+        Public Property SparkRateLimitBarsVisibility As Visibility
+            Get
+                Return _sparkRateLimitBarsVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_sparkRateLimitBarsVisibility, value)
+            End Set
+        End Property
+
+        Public Property RegularRateLimitIndicatorsVisibility As Visibility
+            Get
+                Return _regularRateLimitIndicatorsVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_regularRateLimitIndicatorsVisibility, value)
+            End Set
+        End Property
+
+        Public Property SparkRateLimitIndicatorsVisibility As Visibility
+            Get
+                Return _sparkRateLimitIndicatorsVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_sparkRateLimitIndicatorsVisibility, value)
+            End Set
+        End Property
+
         Public Property ContextUsageVisibility As Visibility
             Get
                 Return _contextUsageVisibility
             End Get
             Set(value As Visibility)
                 SetProperty(_contextUsageVisibility, value)
+            End Set
+        End Property
+
+        Public Property ArePickersExpanded As Boolean
+            Get
+                Return _arePickersExpanded
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_arePickersExpanded, value) Then
+                    SyncUsageIndicatorsVisibility()
+                End If
             End Set
         End Property
 
@@ -293,6 +369,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Public Sub SetRateLimitBars(items As IEnumerable(Of TurnComposerRateLimitBarViewModel))
             _rateLimitBars.Clear()
+            _regularRateLimitBars.Clear()
+            _sparkRateLimitBars.Clear()
             If items IsNot Nothing Then
                 For Each item In items
                     If item Is Nothing Then
@@ -300,10 +378,18 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     End If
 
                     _rateLimitBars.Add(item)
+                    Dim groupKey = NormalizeRateLimitGroupKey(item.GroupKey)
+                    If StringComparer.Ordinal.Equals(groupKey, "spark") Then
+                        _sparkRateLimitBars.Add(item)
+                    Else
+                        _regularRateLimitBars.Add(item)
+                    End If
                 Next
             End If
 
             RateLimitBarsVisibility = If(_rateLimitBars.Count > 0, Visibility.Visible, Visibility.Collapsed)
+            RegularRateLimitBarsVisibility = If(_regularRateLimitBars.Count > 0, Visibility.Visible, Visibility.Collapsed)
+            SparkRateLimitBarsVisibility = If(_sparkRateLimitBars.Count > 0, Visibility.Visible, Visibility.Collapsed)
             SyncUsageIndicatorsVisibility()
         End Sub
 
@@ -316,7 +402,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                                                                                               CultureInfo.InvariantCulture) & "%"
                 Dim normalizedTooltip = If(tooltipText, String.Empty).Trim()
                 If String.IsNullOrWhiteSpace(normalizedTooltip) Then
-                    normalizedTooltip = "Context usage for the selected thread."
+                    normalizedTooltip = $"Thread context used: {normalizedPercent.ToString("0.#", CultureInfo.InvariantCulture)}%{Environment.NewLine}Usage: unavailable"
                 End If
                 ContextUsageTooltipText = normalizedTooltip
                 ContextUsageStrokeDashArray = BuildContextUsageStrokeDashArray(normalizedPercent)
@@ -324,8 +410,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Else
                 ContextUsagePercent = 0.0R
                 ContextUsagePercentText = "--"
-                ContextUsageTooltipText = "Context usage for this thread is not available yet." & Environment.NewLine &
-                                          "It updates when token usage events arrive."
+                ContextUsageTooltipText = "Thread context used: --" & Environment.NewLine & "Usage: unavailable"
                 ContextUsageStrokeDashArray = BuildContextUsageStrokeDashArray(0.0R)
                 ContextUsageVisibility = Visibility.Visible
             End If
@@ -348,12 +433,36 @@ Namespace CodexNativeAgent.Ui.ViewModels
         End Sub
 
         Private Sub SyncUsageIndicatorsVisibility()
-            Dim hasRateLimitBars = RateLimitBarsVisibility = Visibility.Visible
+            Dim hasRegularRateLimitBars = RegularRateLimitBarsVisibility = Visibility.Visible
+            Dim hasSparkRateLimitBars = SparkRateLimitBarsVisibility = Visibility.Visible
             Dim hasContextUsage = ContextUsageVisibility = Visibility.Visible
-            UsageIndicatorsVisibility = If(hasRateLimitBars OrElse hasContextUsage,
+            RegularRateLimitIndicatorsVisibility = If(hasRegularRateLimitBars,
+                                                      Visibility.Visible,
+                                                      Visibility.Collapsed)
+            SparkRateLimitIndicatorsVisibility = If(hasSparkRateLimitBars,
+                                                    Visibility.Visible,
+                                                    Visibility.Collapsed)
+            RateLimitIndicatorsVisibility = If(RegularRateLimitIndicatorsVisibility = Visibility.Visible OrElse
+                                               SparkRateLimitIndicatorsVisibility = Visibility.Visible,
+                                               Visibility.Visible,
+                                               Visibility.Collapsed)
+            UsageIndicatorsVisibility = If(RateLimitIndicatorsVisibility = Visibility.Visible OrElse hasContextUsage,
                                            Visibility.Visible,
                                            Visibility.Collapsed)
         End Sub
+
+        Private Shared Function NormalizeRateLimitGroupKey(groupKey As String) As String
+            Dim normalized = If(groupKey, String.Empty).Trim()
+            If normalized.Length = 0 Then
+                Return "regular"
+            End If
+
+            If StringComparer.OrdinalIgnoreCase.Equals(normalized, "spark") Then
+                Return "spark"
+            End If
+
+            Return "regular"
+        End Function
 
         Private Shared Function BuildContextUsageStrokeDashArray(percent As Double) As DoubleCollection
             Dim normalizedPercent = ClampPercent(percent)
@@ -387,10 +496,66 @@ Namespace CodexNativeAgent.Ui.ViewModels
     End Class
 
     Public NotInheritable Class TurnComposerRateLimitBarViewModel
+        Private Const RingRadius As Double = 9.0R
+        Private Const RingStrokeThickness As Double = 2.0R
+        Private _remainingPercent As Double
+        Private _remainingStrokeDashArray As DoubleCollection = BuildRemainingStrokeDashArray(0.0R)
+
         Public Property BarId As String = String.Empty
+        Public Property GroupKey As String = "regular"
+        Public Property ShortLabel As String = "--"
+
         Public Property RemainingPercent As Double
+            Get
+                Return _remainingPercent
+            End Get
+            Set(value As Double)
+                _remainingPercent = ClampPercent(value)
+                _remainingStrokeDashArray = BuildRemainingStrokeDashArray(_remainingPercent)
+            End Set
+        End Property
+
+        Public Property RemainingStrokeDashArray As DoubleCollection
+            Get
+                Return _remainingStrokeDashArray
+            End Get
+            Set(value As DoubleCollection)
+                _remainingStrokeDashArray = If(value, BuildRemainingStrokeDashArray(_remainingPercent))
+            End Set
+        End Property
+
         Public Property UsedPercent As Double
         Public Property TooltipText As String = String.Empty
         Public Property BarBrush As Brush = Brushes.Transparent
+
+        Private Shared Function BuildRemainingStrokeDashArray(percent As Double) As DoubleCollection
+            Dim normalizedPercent = ClampPercent(percent)
+            Dim normalizedRatio = normalizedPercent / 100.0R
+            Dim circumference = 2.0R * Math.PI * RingRadius
+            Dim totalDashUnits = circumference / RingStrokeThickness
+            Dim dashUnits = totalDashUnits * normalizedRatio
+            Dim gapUnits = Math.Max(0.001R, totalDashUnits - dashUnits)
+
+            Return New DoubleCollection() From {
+                Math.Max(0.0R, dashUnits),
+                gapUnits
+            }
+        End Function
+
+        Private Shared Function ClampPercent(value As Double) As Double
+            If Double.IsNaN(value) OrElse Double.IsInfinity(value) Then
+                Return 0.0R
+            End If
+
+            If value < 0.0R Then
+                Return 0.0R
+            End If
+
+            If value > 100.0R Then
+                Return 100.0R
+            End If
+
+            Return value
+        End Function
     End Class
 End Namespace

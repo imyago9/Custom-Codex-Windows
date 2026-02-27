@@ -971,6 +971,7 @@ Namespace CodexNativeAgent.Ui
             Next
 
             _viewModel.TurnComposer.SetRateLimitBars(bars)
+            _rateLimitIndicatorsIntroPlayed = bars.Count > 0
         End Sub
 
         Private Shared Function CompareRateLimitStatesForUi(left As RateLimitLimitState, right As RateLimitLimitState) As Integer
@@ -993,19 +994,17 @@ Namespace CodexNativeAgent.Ui
 
             Dim usedPercent = ClampPercent(bucket.UsedPercent.Value)
             Dim remainingPercent = ClampPercent(100.0R - usedPercent)
-            Dim windowText = If(bucket.WindowDurationMins.HasValue,
-                                $"{bucket.WindowDurationMins.Value.ToString(CultureInfo.InvariantCulture)} min",
-                                "unknown")
+            Dim windowShortLabel = FormatRateLimitWindowShortLabel(bucket.WindowDurationMins)
             Dim resetText = FormatRateLimitResetTime(bucket.ResetsAtUnix)
-            Dim displayName = ResolveRateLimitDisplayName(state)
-            Dim tooltip = $"{displayName} ({bucketLabel}){Environment.NewLine}" &
-                          $"Remaining: {remainingPercent.ToString("0.#", CultureInfo.InvariantCulture)}%{Environment.NewLine}" &
+            Dim groupKey = ResolveRateLimitGroupKey(state)
+            Dim tooltip = $"Remaining: {remainingPercent.ToString("0.#", CultureInfo.InvariantCulture)}%{Environment.NewLine}" &
                           $"Used: {usedPercent.ToString("0.#", CultureInfo.InvariantCulture)}%{Environment.NewLine}" &
-                          $"Window: {windowText}{Environment.NewLine}" &
                           $"Resets: {resetText}"
 
             target.Add(New TurnComposerRateLimitBarViewModel() With {
                 .BarId = $"{state.LimitId}:{bucketLabel}",
+                .GroupKey = groupKey,
+                .ShortLabel = windowShortLabel,
                 .RemainingPercent = remainingPercent,
                 .UsedPercent = usedPercent,
                 .TooltipText = tooltip,
@@ -1030,21 +1029,88 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Function ResolveRateLimitBarBrush(remainingPercent As Double) As Brush
-            Dim resourceKey As String
+            Dim useLightThemePalette = StringComparer.OrdinalIgnoreCase.Equals(
+                AppAppearanceManager.NormalizeTheme(_currentTheme),
+                AppAppearanceManager.LightTheme)
+
+            If useLightThemePalette Then
+                If remainingPercent <= 20.0R Then
+                    Return BuildRateLimitRingBrush(Color.FromRgb(&H6A, &H9E, &HFF), Color.FromRgb(&H2C, &H68, &HC8))
+                End If
+
+                If remainingPercent <= 55.0R Then
+                    Return BuildRateLimitRingBrush(Color.FromRgb(&H87, &HB5, &HFF), Color.FromRgb(&H3F, &H81, &HD8))
+                End If
+
+                Return BuildRateLimitRingBrush(Color.FromRgb(&HA3, &HC8, &HFF), Color.FromRgb(&H57, &H97, &HE8))
+            End If
+
             If remainingPercent <= 20.0R Then
-                resourceKey = "DangerBrush"
-            ElseIf remainingPercent <= 45.0R Then
-                resourceKey = "WarningBrush"
-            Else
-                resourceKey = "SuccessBrush"
+                Return BuildRateLimitRingBrush(Color.FromRgb(&H8E, &HB8, &HFF), Color.FromRgb(&H4E, &H7F, &HC8))
             End If
 
-            Dim resolved = TryCast(TryFindResource(resourceKey), Brush)
-            If resolved IsNot Nothing Then
-                Return resolved
+            If remainingPercent <= 55.0R Then
+                Return BuildRateLimitRingBrush(Color.FromRgb(&HC5, &HDE, &HFF), Color.FromRgb(&H6F, &HA9, &HEF))
             End If
 
-            Return TryCast(TryFindResource("AccentBrush"), Brush)
+            Return BuildRateLimitRingBrush(Color.FromRgb(&HEE, &HF6, &HFF), Color.FromRgb(&H9B, &HC7, &HFF))
+        End Function
+
+        Private Shared Function BuildRateLimitRingBrush(startColor As Color, endColor As Color) As Brush
+            Dim brush As New LinearGradientBrush() With {
+                .StartPoint = New Point(0.0R, 0.0R),
+                .EndPoint = New Point(1.0R, 1.0R)
+            }
+            brush.GradientStops.Add(New GradientStop(startColor, 0.0R))
+            brush.GradientStops.Add(New GradientStop(endColor, 1.0R))
+            brush.Freeze()
+            Return brush
+        End Function
+
+        Private Shared Function ResolveRateLimitGroupKey(state As RateLimitLimitState) As String
+            Dim key = If(state?.LimitId, String.Empty)
+            Dim name = If(state?.LimitName, String.Empty)
+            Dim combined = $"{key} {name}".Trim()
+
+            If combined.IndexOf("spark", StringComparison.OrdinalIgnoreCase) >= 0 Then
+                Return "spark"
+            End If
+
+            If StringComparer.OrdinalIgnoreCase.Equals(key, "codex") Then
+                Return "regular"
+            End If
+
+            If combined.IndexOf("_other", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+               combined.IndexOf(" other", StringComparison.OrdinalIgnoreCase) >= 0 Then
+                Return "spark"
+            End If
+
+            Return "regular"
+        End Function
+
+        Private Shared Function FormatRateLimitWindowShortLabel(windowDurationMinutes As Integer?) As String
+            If Not windowDurationMinutes.HasValue Then
+                Return "--"
+            End If
+
+            Dim minutes = Math.Max(0, windowDurationMinutes.Value)
+            If minutes <= 0 Then
+                Return "--"
+            End If
+
+            If minutes Mod 10080 = 0 Then
+                Return $"{(minutes \ 10080).ToString(CultureInfo.InvariantCulture)}w"
+            End If
+
+            If minutes Mod 1440 = 0 Then
+                Return $"{(minutes \ 1440).ToString(CultureInfo.InvariantCulture)}d"
+            End If
+
+            If minutes Mod 60 = 0 Then
+                Return $"{(minutes \ 60).ToString(CultureInfo.InvariantCulture)}h"
+            End If
+
+            Return $"{minutes.ToString(CultureInfo.InvariantCulture)}m"
         End Function
 
         Private Shared Function FormatRateLimitResetTime(resetsAtUnix As Long?) As String
@@ -1068,6 +1134,7 @@ Namespace CodexNativeAgent.Ui
             _rateLimitStatesByLimitId.Clear()
             _rateLimitAutoRefreshInProgress = False
             _lastRateLimitAutoRefreshAttemptUtc = DateTimeOffset.MinValue
+            _rateLimitIndicatorsIntroPlayed = False
 
             If _viewModel IsNot Nothing AndAlso _viewModel.TurnComposer IsNot Nothing Then
                 _viewModel.TurnComposer.SetRateLimitBars(Nothing)

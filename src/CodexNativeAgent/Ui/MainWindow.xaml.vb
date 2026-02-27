@@ -467,6 +467,7 @@ Namespace CodexNativeAgent.Ui
         Private _suppressTranscriptScaleUiChange As Boolean
         Private _turnComposerPickersCollapsed As Boolean
         Private _turnComposerPickersExpandedWidth As Double = 434.0R
+        Private _rateLimitIndicatorsIntroPlayed As Boolean
         Private _transcriptScrollFollowMode As TranscriptScrollFollowMode = TranscriptScrollFollowMode.FollowBottom
         Private _suppressTranscriptScrollTracking As Boolean
         Private _transcriptScrollToBottomPending As Boolean
