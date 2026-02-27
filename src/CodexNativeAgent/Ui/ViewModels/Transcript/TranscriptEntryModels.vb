@@ -292,6 +292,11 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private Const SHGFI_USEFILEATTRIBUTES As UInteger = &H10UI
     End Class
 
+    Public NotInheritable Class TranscriptDiffLineViewModel
+        Public Property Text As String = String.Empty
+        Public Property Kind As String = "context"
+    End Class
+
     Public NotInheritable Class TranscriptEntryViewModel
         Inherits ViewModelBase
 
@@ -337,8 +342,10 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _isDetailsExpanded As Boolean = True
         Private _detailsToggleVisibility As Visibility = Visibility.Collapsed
         Private _detailsToggleText As String = "Show details"
+        Private _detailsDiffLinesVisibility As Visibility = Visibility.Collapsed
         Private ReadOnly _toggleDetailsCommand As ICommand
         Private ReadOnly _fileChangeItems As New ObservableCollection(Of TranscriptFileChangeListItemViewModel)()
+        Private ReadOnly _detailsDiffLines As New ObservableCollection(Of TranscriptDiffLineViewModel)()
 
         Public Sub New()
             _toggleDetailsCommand = New RelayCommand(Sub() ToggleDetails())
@@ -350,6 +357,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Get
             Set(value As String)
                 If SetProperty(_kind, If(value, String.Empty)) Then
+                    RefreshDetailsDiffLines()
                     RefreshDetailsPresentationState()
                 End If
             End Set
@@ -463,6 +471,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Get
             Set(value As String)
                 If SetProperty(_detailsText, If(value, String.Empty)) Then
+                    RefreshDetailsDiffLines()
                     RefreshDetailsPresentationState()
                 End If
             End Set
@@ -745,6 +754,21 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Set
         End Property
 
+        Public Property DetailsDiffLinesVisibility As Visibility
+            Get
+                Return _detailsDiffLinesVisibility
+            End Get
+            Private Set(value As Visibility)
+                SetProperty(_detailsDiffLinesVisibility, value)
+            End Set
+        End Property
+
+        Public ReadOnly Property DetailsDiffLines As ObservableCollection(Of TranscriptDiffLineViewModel)
+            Get
+                Return _detailsDiffLines
+            End Get
+        End Property
+
         Public ReadOnly Property ToggleDetailsCommand As ICommand
             Get
                 Return _toggleDetailsCommand
@@ -801,6 +825,55 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private Function BuildDetailsToggleText() As String
             Dim noun = If(StringComparer.OrdinalIgnoreCase.Equals(_kind, "command"), "result", "details")
             Return If(_isDetailsExpanded, $"Hide {noun}", $"Show {noun}")
+        End Function
+
+        Private Sub RefreshDetailsDiffLines()
+            _detailsDiffLines.Clear()
+
+            If Not StringComparer.OrdinalIgnoreCase.Equals(_kind, "fileChange") OrElse String.IsNullOrWhiteSpace(_detailsText) Then
+                DetailsDiffLinesVisibility = Visibility.Collapsed
+                Return
+            End If
+
+            Dim normalized = _detailsText.Replace(ControlChars.CrLf, ControlChars.Lf).
+                                          Replace(ControlChars.Cr, ControlChars.Lf)
+            Dim lines = normalized.Split(ControlChars.Lf)
+            For Each rawLine In lines
+                Dim lineText = If(rawLine, String.Empty)
+                _detailsDiffLines.Add(New TranscriptDiffLineViewModel() With {
+                    .Text = lineText,
+                    .Kind = ClassifyDiffLineKind(lineText)
+                })
+            Next
+
+            DetailsDiffLinesVisibility = If(_detailsDiffLines.Count > 0, Visibility.Visible, Visibility.Collapsed)
+        End Sub
+
+        Private Shared Function ClassifyDiffLineKind(lineText As String) As String
+            Dim text = If(lineText, String.Empty)
+            If text.StartsWith("diff --git ", StringComparison.Ordinal) OrElse
+               text.StartsWith("index ", StringComparison.Ordinal) OrElse
+               text.StartsWith("@@ ", StringComparison.Ordinal) OrElse
+               text.StartsWith("@@", StringComparison.Ordinal) OrElse
+               text.StartsWith("+++ ", StringComparison.Ordinal) OrElse
+               text.StartsWith("--- ", StringComparison.Ordinal) OrElse
+               text.StartsWith("new file mode ", StringComparison.Ordinal) OrElse
+               text.StartsWith("deleted file mode ", StringComparison.Ordinal) OrElse
+               text.StartsWith("similarity index ", StringComparison.Ordinal) OrElse
+               text.StartsWith("rename from ", StringComparison.Ordinal) OrElse
+               text.StartsWith("rename to ", StringComparison.Ordinal) Then
+                Return "meta"
+            End If
+
+            If text.StartsWith("+", StringComparison.Ordinal) Then
+                Return "added"
+            End If
+
+            If text.StartsWith("-", StringComparison.Ordinal) Then
+                Return "removed"
+            End If
+
+            Return "context"
         End Function
     End Class
 End Namespace

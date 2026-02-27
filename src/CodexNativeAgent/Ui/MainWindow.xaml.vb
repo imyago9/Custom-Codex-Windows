@@ -446,6 +446,7 @@ Namespace CodexNativeAgent.Ui
         Private _modelsLoadedAtLeastOnce As Boolean
         Private _threadsLoadedAtLeastOnce As Boolean
         Private _workspaceBootstrapInProgress As Boolean
+        Private _logoutUiTransitionInProgress As Boolean
         Private _currentTheme As String = AppAppearanceManager.LightTheme
         Private _currentDensity As String = AppAppearanceManager.ComfortableDensity
         Private _suppressAppearanceUiChange As Boolean
@@ -3155,27 +3156,29 @@ Namespace CodexNativeAgent.Ui
             If Not hasActiveTurn AndAlso session.HasCurrentTurn AndAlso Not RuntimeHasTurnHistoryForCurrentThread() Then
                 hasActiveTurn = True
             End If
-            Dim canUseExistingThreadTurnControls = authenticated AndAlso Not _threadContentLoading AndAlso session.HasCurrentThread
-            Dim canStartTurn = authenticated AndAlso Not _threadContentLoading
+            Dim authenticatedAndInteractive = authenticated AndAlso Not _logoutUiTransitionInProgress
+            Dim canUseExistingThreadTurnControls = authenticatedAndInteractive AndAlso Not _threadContentLoading AndAlso session.HasCurrentThread
+            Dim canStartTurn = authenticatedAndInteractive AndAlso Not _threadContentLoading
 
             _viewModel.TurnComposer.CanStartTurn = canStartTurn AndAlso Not hasActiveTurn
             _viewModel.TurnComposer.CanSteerTurn = canUseExistingThreadTurnControls AndAlso hasActiveTurn
             _viewModel.TurnComposer.CanInterruptTurn = canUseExistingThreadTurnControls AndAlso hasActiveTurn
             _viewModel.TurnComposer.StartTurnVisibility = If(_viewModel.TurnComposer.CanInterruptTurn, Visibility.Collapsed, Visibility.Visible)
             _viewModel.TurnComposer.InterruptTurnVisibility = If(_viewModel.TurnComposer.CanInterruptTurn, Visibility.Visible, Visibility.Collapsed)
-            _viewModel.TurnComposer.IsInputEnabled = authenticated
-            _viewModel.TurnComposer.IsModelEnabled = authenticated
-            _viewModel.TurnComposer.IsReasoningEnabled = authenticated
-            _viewModel.TurnComposer.IsApprovalPolicyEnabled = authenticated
-            _viewModel.TurnComposer.IsSandboxEnabled = authenticated
+            _viewModel.TurnComposer.IsInputEnabled = authenticatedAndInteractive
+            _viewModel.TurnComposer.IsModelEnabled = authenticatedAndInteractive
+            _viewModel.TurnComposer.IsReasoningEnabled = authenticatedAndInteractive
+            _viewModel.TurnComposer.IsApprovalPolicyEnabled = authenticatedAndInteractive
+            _viewModel.TurnComposer.IsSandboxEnabled = authenticatedAndInteractive
 
-            _viewModel.IsSidebarNewThreadEnabled = authenticated AndAlso Not _threadContentLoading
+            _viewModel.IsSidebarNewThreadEnabled = authenticatedAndInteractive AndAlso Not _threadContentLoading
             _viewModel.IsSidebarAutomationsEnabled = True
             _viewModel.IsSidebarSkillsEnabled = True
             _viewModel.IsSidebarSettingsEnabled = True
             _viewModel.IsSettingsBackEnabled = True
             _viewModel.IsQuickOpenVscEnabled = True
             _viewModel.IsQuickOpenTerminalEnabled = True
+            SetTranscriptTabInteractionEnabled(authenticatedAndInteractive)
             Dim hasLiveOverlayHistoryForCurrentThread = False
             Dim visibleThreadId = GetVisibleThreadId()
             If Not String.IsNullOrWhiteSpace(visibleThreadId) Then

@@ -6,6 +6,7 @@ Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports System.Threading.Tasks
 Imports System.Windows
+Imports System.Windows.Threading
 Imports CodexNativeAgent.AppServer
 Imports CodexNativeAgent.Services
 Imports CodexNativeAgent.Ui.Coordinators
@@ -820,6 +821,26 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub NotifyLogoutCompletedUi()
             AppendAndShowSystemMessage("Logged out.", displayToast:=True)
+        End Sub
+
+        Private Sub BeginLogoutUiTransition()
+            _logoutUiTransitionInProgress = True
+            RefreshControlStates()
+            ShowStatus("Signing out...")
+        End Sub
+
+        Private Sub EndLogoutUiTransition()
+            _logoutUiTransitionInProgress = False
+            RefreshControlStates()
+        End Sub
+
+        Private Sub EnsureAuthenticationRequiredTranscriptTabStripVisible()
+            If EnsurePendingNewThreadTranscriptTabActivated() Then
+                SetPendingNewThreadFirstPromptSelectionActive(False, clearThreadSelection:=True)
+                Return
+            End If
+
+            EnsureTranscriptTabSurfaceActivatedForThread(String.Empty)
         End Sub
 
         Private Sub NotifyExternalTokensAppliedUi()
@@ -2050,6 +2071,7 @@ Namespace CodexNativeAgent.Ui
         Private Sub ApplyAuthenticationRequiredState(Optional showPrompt As Boolean = False)
             ResetWorkspaceForAuthenticationRequired()
             FinalizeAuthenticationRequiredWorkspaceUi()
+            EnsureAuthenticationRequiredTranscriptTabStripVisible()
             ShowAuthenticationRequiredPromptIfNeeded(showPrompt)
 
             ShowControlCenterTab()
@@ -2107,12 +2129,18 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Async Function LogoutAsync() As Task
-            Await _accountService.LogoutAsync(CancellationToken.None)
-            NotifyLogoutCompletedUi()
-            SetSessionCurrentLoginId(String.Empty)
-            RefreshControlStates()
-            Await RefreshAccountAsync(False)
-            ApplyAuthenticationRequiredState()
+            BeginLogoutUiTransition()
+            Try
+                Await _accountService.LogoutAsync(CancellationToken.None)
+                NotifyLogoutCompletedUi()
+                SetSessionCurrentLoginId(String.Empty)
+                RefreshControlStates()
+                Await RefreshAccountAsync(False)
+                Await Dispatcher.Yield(DispatcherPriority.Render)
+                ApplyAuthenticationRequiredState()
+            Finally
+                EndLogoutUiTransition()
+            End Try
         End Function
 
         Private Async Function LoginExternalTokensAsync() As Task

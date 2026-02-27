@@ -676,11 +676,58 @@
                                                                 BorderBrush="{DynamicResource BorderBrush}"
                                                                 BorderThickness="1"
                                                                 CornerRadius="10">
-                                                            <TextBox x:Name="ActivityDetailsTextBox"
-                                                                     Text="{Binding DetailsText}"
-                                                                     Style="{StaticResource TranscriptSelectableCommandDetailsTextBoxStyle}"
-                                                                     Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                     FontFamily="{Binding DetailsFontFamily}" />
+                                                            <Grid>
+                                                                <TextBox x:Name="ActivityDetailsTextBox"
+                                                                         Text="{Binding DetailsText}"
+                                                                         Style="{StaticResource TranscriptSelectableCommandDetailsTextBoxStyle}"
+                                                                         Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                         FontFamily="{Binding DetailsFontFamily}" />
+
+                                                                <ScrollViewer x:Name="ActivityDiffDetailsViewer"
+                                                                              Visibility="{Binding DetailsDiffLinesVisibility}"
+                                                                              VerticalScrollBarVisibility="Auto"
+                                                                              HorizontalScrollBarVisibility="Auto"
+                                                                              MaxHeight="260">
+                                                                    <ItemsControl ItemsSource="{Binding DetailsDiffLines}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <Border x:Name="ActivityDiffLineBorder"
+                                                                                        Margin="0,0,0,2"
+                                                                                        Padding="8,2"
+                                                                                        CornerRadius="4"
+                                                                                        BorderThickness="0,0,0,0"
+                                                                                        BorderBrush="Transparent"
+                                                                                        Background="Transparent">
+                                                                                    <TextBlock x:Name="ActivityDiffLineText"
+                                                                                               Text="{Binding Text}"
+                                                                                               FontFamily="Cascadia Code"
+                                                                                               FontSize="13.4"
+                                                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                                               TextWrapping="NoWrap" />
+                                                                                </Border>
+                                                                                <DataTemplate.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Kind}" Value="meta">
+                                                                                        <Setter TargetName="ActivityDiffLineText" Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
+                                                                                        <Setter TargetName="ActivityDiffLineText" Property="FontWeight" Value="SemiBold" />
+                                                                                    </DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding Kind}" Value="added">
+                                                                                        <Setter TargetName="ActivityDiffLineBorder" Property="BorderThickness" Value="3,0,0,0" />
+                                                                                        <Setter TargetName="ActivityDiffLineBorder" Property="BorderBrush" Value="{DynamicResource SuccessBrush}" />
+                                                                                        <Setter TargetName="ActivityDiffLineBorder" Property="Background" Value="#1400A000" />
+                                                                                        <Setter TargetName="ActivityDiffLineText" Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+                                                                                    </DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding Kind}" Value="removed">
+                                                                                        <Setter TargetName="ActivityDiffLineBorder" Property="BorderThickness" Value="3,0,0,0" />
+                                                                                        <Setter TargetName="ActivityDiffLineBorder" Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+                                                                                        <Setter TargetName="ActivityDiffLineBorder" Property="Background" Value="#14C02020" />
+                                                                                        <Setter TargetName="ActivityDiffLineText" Property="Foreground" Value="{DynamicResource DangerBrush}" />
+                                                                                    </DataTrigger>
+                                                                                </DataTemplate.Triggers>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </ScrollViewer>
+                                                            </Grid>
                                                         </Border>
                                                     </StackPanel>
                                                 </Border>
@@ -745,9 +792,8 @@
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
                                                 <Setter TargetName="ActivitySecondaryText" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityDetailsToggleButton" Property="Visibility" Value="Collapsed" />
-                                                <Setter TargetName="ActivityDetailsTextBox" Property="TextWrapping" Value="NoWrap" />
-                                                <Setter TargetName="ActivityDetailsTextBox" Property="HorizontalScrollBarVisibility" Value="Auto" />
-                                                <Setter TargetName="ActivityDetailsTextBox" Property="MaxHeight" Value="260" />
+                                                <Setter TargetName="ActivityDetailsTextBox" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
                                             </DataTrigger>
                                             <MultiDataTrigger>
                                                 <MultiDataTrigger.Conditions>

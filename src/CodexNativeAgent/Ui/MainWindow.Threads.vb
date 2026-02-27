@@ -396,6 +396,11 @@ Namespace CodexNativeAgent.Ui
                     If Not TryFastBindVisibleTranscriptFromThreadSelectionPayload(request.ThreadId, payload) Then
                         bindMode = "rebuild"
                         RebuildVisibleTranscriptForThread(request.ThreadId)
+                        If Not String.IsNullOrWhiteSpace(payload.ContentFingerprint) Then
+                            SetActiveTranscriptDocumentContentFingerprint(request.ThreadId,
+                                                                         payload.ContentFingerprint,
+                                                                         payload.ThreadUpdatedAtUnix)
+                        End If
                     End If
                     Dim bindMs = Math.Max(0, uiApplyPerf.ElapsedMilliseconds - bindStartMs)
 
@@ -431,10 +436,21 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim overlayReplayTurnCount = 0
-            If Not CanUseFastThreadSelectionTranscriptBind(normalizedThreadId, overlayReplayTurnCount) Then
+            Dim overlayFastBindReuseEnabled = False
+            Dim overlayFastBindSkipReason = String.Empty
+            If Not CanUseFastThreadSelectionTranscriptBind(normalizedThreadId,
+                                                           overlayReplayTurnCount,
+                                                           overlayFastBindReuseEnabled,
+                                                           overlayFastBindSkipReason) Then
+                Dim skipReason = If(overlayReplayTurnCount > 0, "overlay_replay_present", "guard_failed")
                 TraceThreadSelectionPerformance("fast_bind_skip",
-                                                $"thread={normalizedThreadId}; reason=overlay_replay_present; overlayReplayTurns={overlayReplayTurnCount}")
+                                                $"thread={normalizedThreadId}; reason={skipReason}; overlayReplayTurns={overlayReplayTurnCount}; gateReason={overlayFastBindSkipReason}")
                 Return False
+            End If
+
+            If overlayFastBindReuseEnabled Then
+                TraceThreadSelectionPerformance("fast_bind_overlay_reuse_enabled",
+                                                $"thread={normalizedThreadId}; overlayReplayTurns={overlayReplayTurnCount}")
             End If
 
             Dim chunkPlanLookupStartMs = perf.ElapsedMilliseconds
@@ -484,22 +500,30 @@ Namespace CodexNativeAgent.Ui
             Dim cachedFingerprint As String = String.Empty
             Dim cachedUpdatedAtUnix As Long = Long.MinValue
             Dim cachedVisibleItemCount = _viewModel.TranscriptPanel.Items.Count
-            If TryGetActiveTranscriptDocumentContentFingerprint(normalizedThreadId, cachedFingerprint, cachedUpdatedAtUnix) Then
-                If Not String.IsNullOrWhiteSpace(payload.ContentFingerprint) AndAlso
-                   StringComparer.Ordinal.Equals(payload.ContentFingerprint, cachedFingerprint) Then
-                    ' Safety guard: only skip if the cached tab still looks like the initial bind shape.
-                    ' Expanded/prepended history would need per-tab chunk-session restore to skip safely.
-                    Const maxAllowedExtraCachedRowsForReuse As Integer = 40
-                    If cachedVisibleItemCount <= renderedDisplayCount + maxAllowedExtraCachedRowsForReuse Then
-                        canSkipRebindAsUnchanged = True
+
+            If overlayFastBindReuseEnabled AndAlso Not didSwapTranscriptDoc AndAlso cachedVisibleItemCount > 0 Then
+                canSkipRebindAsUnchanged = True
+                skipRebindReason = "overlay_cached_preview_reuse"
+                TraceThreadSelectionPerformance("fast_bind_overlay_reuse_cached_preview",
+                                                $"thread={normalizedThreadId}; payloadUpdatedAt={payload.ThreadUpdatedAtUnix}; rendered={renderedDisplayCount}; visibleItems={cachedVisibleItemCount}")
+            Else
+                If TryGetActiveTranscriptDocumentContentFingerprint(normalizedThreadId, cachedFingerprint, cachedUpdatedAtUnix) Then
+                    If Not String.IsNullOrWhiteSpace(payload.ContentFingerprint) AndAlso
+                       StringComparer.Ordinal.Equals(payload.ContentFingerprint, cachedFingerprint) Then
+                        ' Safety guard: only skip if the cached tab still looks like the initial bind shape.
+                        ' Expanded/prepended history would need per-tab chunk-session restore to skip safely.
+                        Const maxAllowedExtraCachedRowsForReuse As Integer = 40
+                        If cachedVisibleItemCount <= renderedDisplayCount + maxAllowedExtraCachedRowsForReuse Then
+                            canSkipRebindAsUnchanged = True
+                        Else
+                            skipRebindReason = $"visible_items_exceed_initial:{cachedVisibleItemCount}>{renderedDisplayCount + maxAllowedExtraCachedRowsForReuse}"
+                        End If
                     Else
-                        skipRebindReason = $"visible_items_exceed_initial:{cachedVisibleItemCount}>{renderedDisplayCount + maxAllowedExtraCachedRowsForReuse}"
+                        skipRebindReason = "fingerprint_mismatch"
                     End If
                 Else
-                    skipRebindReason = "fingerprint_mismatch"
+                    skipRebindReason = "no_cached_fingerprint"
                 End If
-            Else
-                skipRebindReason = "no_cached_fingerprint"
             End If
 
             If chunkSessionGeneration > 0 AndAlso
@@ -566,10 +590,16 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Function CanUseFastThreadSelectionTranscriptBind(threadId As String,
-                                                                ByRef overlayReplayTurnCount As Integer) As Boolean
+                                                                ByRef overlayReplayTurnCount As Integer,
+                                                                ByRef overlayFastBindReuseEnabled As Boolean,
+                                                                ByRef overlayFastBindSkipReason As String) As Boolean
             overlayReplayTurnCount = 0
+            overlayFastBindReuseEnabled = False
+            overlayFastBindSkipReason = String.Empty
+
             Dim normalizedThreadId = If(threadId, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                overlayFastBindSkipReason = "thread_missing"
                 Return False
             End If
 
@@ -580,8 +610,38 @@ Namespace CodexNativeAgent.Ui
                 Return True
             End If
 
-            overlayReplayTurnCount = ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore).Count
-            Return overlayReplayTurnCount = 0
+            Dim overlayTurnIds = ResolveOverlayTurnIdsForReplay(normalizedThreadId, runtimeStore)
+            overlayReplayTurnCount = overlayTurnIds.Count
+            If overlayReplayTurnCount = 0 Then
+                Return True
+            End If
+
+            If runtimeStore.HasActiveTurn(normalizedThreadId) Then
+                overlayFastBindSkipReason = "overlay_has_active_turn"
+                Return False
+            End If
+
+            For Each overlayTurnId In overlayTurnIds
+                Dim normalizedOverlayTurnId = If(overlayTurnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalizedOverlayTurnId) Then
+                    Continue For
+                End If
+
+                Dim turnState = runtimeStore.GetTurnState(normalizedThreadId, normalizedOverlayTurnId)
+                If turnState Is Nothing Then
+                    overlayFastBindSkipReason = "overlay_turn_state_missing"
+                    Return False
+                End If
+
+                If Not turnState.IsCompleted Then
+                    overlayFastBindSkipReason = "overlay_turn_incomplete"
+                    Return False
+                End If
+            Next
+
+            overlayFastBindReuseEnabled = True
+            overlayFastBindSkipReason = "overlay_completed_turns"
+            Return True
         End Function
 
         Private Shared Function BuildInitialVisibleTranscriptChunkPlan(entries As IReadOnlyList(Of TranscriptEntryDescriptor)) As ThreadTranscriptDisplayChunkPlan
