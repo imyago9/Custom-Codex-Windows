@@ -1298,6 +1298,17 @@ Namespace CodexNativeAgent.Ui
             RefreshControlStates()
         End Sub
 
+        Private Sub BeginDisconnectUiTransition()
+            _disconnectUiTransitionInProgress = True
+            RefreshControlStates()
+            ShowStatus("Disconnecting...")
+        End Sub
+
+        Private Sub EndDisconnectUiTransition()
+            _disconnectUiTransitionInProgress = False
+            RefreshControlStates()
+        End Sub
+
         Private Sub EnsureAuthenticationRequiredTranscriptTabStripVisible()
             If EnsurePendingNewThreadTranscriptTabActivated() Then
                 SetPendingNewThreadFirstPromptSelectionActive(False, clearThreadSelection:=True)
@@ -1542,16 +1553,24 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Async Function DisconnectAsync() As Task
-            BeginUserDisconnectSessionTransition()
+            BeginDisconnectUiTransition()
+            Try
+                BeginUserDisconnectSessionTransition()
 
-            Dim client = DetachCurrentClient()
-            If client IsNot Nothing Then
-                Await DisconnectClientInternalAsync(client,
-                                                    "Disconnected by user.",
-                                                    CancellationToken.None)
-            End If
+                Dim client = DetachCurrentClient()
+                RefreshControlStates()
+                Await Dispatcher.Yield(DispatcherPriority.Render)
 
-            ResetDisconnectedUiState("Disconnected.", isError:=False, displayToast:=True)
+                If client IsNot Nothing Then
+                    Await DisconnectClientInternalAsync(client,
+                                                        "Disconnected by user.",
+                                                        CancellationToken.None)
+                End If
+
+                ResetDisconnectedUiState("Disconnected.", isError:=False, displayToast:=True)
+            Finally
+                EndDisconnectUiTransition()
+            End Try
         End Function
 
         Private Async Function DisconnectClientInternalAsync(client As CodexAppServerClient,
@@ -1563,7 +1582,10 @@ Namespace CodexNativeAgent.Ui
 
             _disconnecting = True
             Try
-                Await _connectionService.StopAsync(client, reason, cancellationToken)
+                Await Task.Run(
+                    Function()
+                        Return _connectionService.StopAsync(client, reason, cancellationToken)
+                    End Function)
             Finally
                 RemoveHandler client.RawMessage, AddressOf ClientOnRawMessage
                 RemoveHandler client.NotificationReceived, AddressOf ClientOnNotification

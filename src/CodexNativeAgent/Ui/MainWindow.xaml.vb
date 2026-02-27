@@ -449,6 +449,7 @@ Namespace CodexNativeAgent.Ui
         Private _threadsLoadedAtLeastOnce As Boolean
         Private _workspaceBootstrapInProgress As Boolean
         Private _logoutUiTransitionInProgress As Boolean
+        Private _disconnectUiTransitionInProgress As Boolean
         Private _currentTheme As String = AppAppearanceManager.LightTheme
         Private _currentDensity As String = AppAppearanceManager.ComfortableDensity
         Private _suppressAppearanceUiChange As Boolean
@@ -3162,7 +3163,9 @@ Namespace CodexNativeAgent.Ui
             If Not hasActiveTurn AndAlso session.HasCurrentTurn AndAlso Not RuntimeHasTurnHistoryForCurrentThread() Then
                 hasActiveTurn = True
             End If
-            Dim authenticatedAndInteractive = authenticated AndAlso Not _logoutUiTransitionInProgress
+            Dim authenticatedAndInteractive = authenticated AndAlso
+                                             Not _logoutUiTransitionInProgress AndAlso
+                                             Not _disconnectUiTransitionInProgress
             Dim canUseExistingThreadTurnControls = authenticatedAndInteractive AndAlso Not _threadContentLoading AndAlso session.HasCurrentThread
             Dim canStartTurn = authenticatedAndInteractive AndAlso Not _threadContentLoading
 

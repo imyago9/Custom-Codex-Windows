@@ -282,38 +282,10 @@ Namespace CodexNativeAgent.Ui
                 AddHandler _transcriptTabStripScrollViewer.SizeChanged, AddressOf OnTranscriptTabStripSizeChanged
 
                 Dim headerDockPanel = FindVisualAncestor(Of DockPanel)(WorkspacePaneHost.LblCurrentThread)
-                Dim headerHostGrid = TryCast(If(headerDockPanel, Nothing)?.Parent, Grid)
-                If headerDockPanel IsNot Nothing AndAlso headerHostGrid IsNot Nothing Then
-                    Dim headerRow = Grid.GetRow(headerDockPanel)
-                    If headerRow < 0 Then
-                        headerRow = 0
-                    End If
-
-                    headerHostGrid.RowDefinitions.Insert(headerRow, New RowDefinition() With {.Height = GridLength.Auto})
-
-                    For Each child As UIElement In headerHostGrid.Children
-                        If child Is Nothing OrElse ReferenceEquals(child, _transcriptTabStripBorder) Then
-                            Continue For
-                        End If
-
-                        Dim childRow = Grid.GetRow(child)
-                        If childRow >= headerRow Then
-                            Grid.SetRow(child, childRow + 1)
-                        End If
-                    Next
-
-                    Dim headerMargin = headerDockPanel.Margin
-                    Dim centeredHeaderSpacing = If(headerMargin.Bottom > 0,
-                                                   Math.Round(headerMargin.Bottom / 2.0R),
-                                                   6.0R)
-                    _transcriptTabStripBorder.Margin = New Thickness(TranscriptTabStripHorizontalInset, 2, TranscriptTabStripHorizontalInset, 2)
-                    headerDockPanel.Margin = New Thickness(headerMargin.Left,
-                                                           centeredHeaderSpacing,
-                                                           headerMargin.Right,
-                                                           centeredHeaderSpacing)
-
-                    Grid.SetRow(_transcriptTabStripBorder, headerRow)
-                    headerHostGrid.Children.Add(_transcriptTabStripBorder)
+                If headerDockPanel IsNot Nothing Then
+                    _transcriptTabStripBorder.Margin = New Thickness(8, 2, 8, 2)
+                    _transcriptTabStripBorder.VerticalAlignment = VerticalAlignment.Center
+                    headerDockPanel.Children.Add(_transcriptTabStripBorder)
                 Else
                     Dim titleStack = TryCast(WorkspacePaneHost.LblCurrentThread.Parent, StackPanel)
                     If titleStack IsNot Nothing Then
