@@ -1827,7 +1827,146 @@ Namespace CodexNativeAgent.Ui
                                                       snapshot.RawText,
                                                       snapshot.DisplayEntries,
                                                       GetVisibleTurnId())
+            ReconcileOverlayTurnsAfterSnapshotRefresh(normalizedThreadId, snapshot, runtimeStore)
         End Sub
+
+        Private Sub ReconcileOverlayTurnsAfterSnapshotRefresh(threadId As String,
+                                                              snapshot As ThreadTranscriptSnapshot,
+                                                              runtimeStore As TurnFlowRuntimeStore)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse runtimeStore Is Nothing Then
+                Return
+            End If
+
+            Dim overlayTurnIds = _threadLiveSessionRegistry.GetOverlayTurnIds(normalizedThreadId)
+            If overlayTurnIds Is Nothing OrElse overlayTurnIds.Count = 0 Then
+                Return
+            End If
+
+            Dim snapshotRuntimeKeys = BuildSnapshotRuntimeKeyLookup(If(snapshot, New ThreadTranscriptSnapshot()).DisplayEntries)
+            Dim retainedOverlayTurnIds As New HashSet(Of String)(StringComparer.Ordinal)
+
+            For Each overlayTurnId In overlayTurnIds
+                Dim normalizedOverlayTurnId = If(overlayTurnId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalizedOverlayTurnId) Then
+                    Continue For
+                End If
+
+                If ShouldRetainOverlayTurnAfterSnapshotRefresh(normalizedThreadId,
+                                                               normalizedOverlayTurnId,
+                                                               snapshotRuntimeKeys,
+                                                               runtimeStore) Then
+                    retainedOverlayTurnIds.Add(normalizedOverlayTurnId)
+                End If
+            Next
+
+            Dim removedOverlayTurnCount = _threadLiveSessionRegistry.RetainOverlayTurns(normalizedThreadId,
+                                                                                         retainedOverlayTurnIds)
+            If removedOverlayTurnCount > 0 Then
+                TraceThreadSelectionPerformance(
+                    "overlay_reconcile_prune",
+                    $"thread={normalizedThreadId}; overlayBefore={overlayTurnIds.Count}; overlayRetained={retainedOverlayTurnIds.Count}; overlayRemoved={removedOverlayTurnCount}")
+            End If
+        End Sub
+
+        Private Shared Function BuildSnapshotRuntimeKeyLookup(entries As IEnumerable(Of TranscriptEntryDescriptor)) As HashSet(Of String)
+            Dim results As New HashSet(Of String)(StringComparer.Ordinal)
+            If entries Is Nothing Then
+                Return results
+            End If
+
+            For Each descriptor In entries
+                Dim runtimeKey = If(descriptor?.RuntimeKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(runtimeKey) Then
+                    Continue For
+                End If
+
+                results.Add(runtimeKey)
+            Next
+
+            Return results
+        End Function
+
+        Private Function ShouldRetainOverlayTurnAfterSnapshotRefresh(threadId As String,
+                                                                     turnId As String,
+                                                                     snapshotRuntimeKeys As ISet(Of String),
+                                                                     runtimeStore As TurnFlowRuntimeStore) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse
+               String.IsNullOrWhiteSpace(normalizedTurnId) OrElse
+               runtimeStore Is Nothing Then
+                Return False
+            End If
+
+            Dim turnState = runtimeStore.GetTurnState(normalizedThreadId, normalizedTurnId)
+            If turnState Is Nothing Then
+                Return False
+            End If
+
+            If Not turnState.IsCompleted Then
+                Return True
+            End If
+
+            If CompletedOverlayTurnHasUnreconciledRuntimeItems(normalizedThreadId,
+                                                               normalizedTurnId,
+                                                               snapshotRuntimeKeys,
+                                                               runtimeStore) Then
+                Return True
+            End If
+
+            Dim completionRuntimeKey = $"turn:lifecycle:end:{normalizedTurnId}"
+            If Not snapshotRuntimeKeys.Contains(completionRuntimeKey) Then
+                Return True
+            End If
+
+            If Not String.IsNullOrWhiteSpace(turnState.PlanSummary) AndAlso
+               Not snapshotRuntimeKeys.Contains($"turn:meta:plan:{normalizedThreadId}:{normalizedTurnId}") Then
+                Return True
+            End If
+
+            If Not String.IsNullOrWhiteSpace(turnState.DiffSummary) AndAlso
+               Not snapshotRuntimeKeys.Contains($"turn:meta:diff:{normalizedThreadId}:{normalizedTurnId}") Then
+                Return True
+            End If
+
+            Return False
+        End Function
+
+        Private Shared Function CompletedOverlayTurnHasUnreconciledRuntimeItems(threadId As String,
+                                                                                turnId As String,
+                                                                                snapshotRuntimeKeys As ISet(Of String),
+                                                                                runtimeStore As TurnFlowRuntimeStore) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse
+               String.IsNullOrWhiteSpace(normalizedTurnId) OrElse
+               runtimeStore Is Nothing OrElse
+               snapshotRuntimeKeys Is Nothing Then
+                Return False
+            End If
+
+            For Each item In runtimeStore.GetOrderedRuntimeItemsForTurn(normalizedThreadId, normalizedTurnId)
+                If item Is Nothing OrElse item.IsScopeInferred Then
+                    Continue For
+                End If
+
+                If ShouldSkipCompletedTurnSnapshotDuplicatedOverlayItem(item) Then
+                    Continue For
+                End If
+
+                Dim scopedKey = If(item.ScopedItemKey, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(scopedKey) Then
+                    Continue For
+                End If
+
+                If Not snapshotRuntimeKeys.Contains($"item:{scopedKey}") Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
 
         Private Sub RecordInitialTranscriptChunkRenderState(threadId As String,
                                                             chunkSessionGeneration As Integer,

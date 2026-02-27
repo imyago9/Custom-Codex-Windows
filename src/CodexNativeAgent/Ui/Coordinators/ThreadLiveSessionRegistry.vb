@@ -84,9 +84,8 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 state.SnapshotDisplayEntries.Add(descriptor)
             Next
 
-            ' Keep overlay turn tracking across snapshot refreshes so runtime-only bubbles
-            ' (command/file changes/tool activity) remain replayable for turns observed live
-            ' during this app session, even after the turn later completes.
+            ' Overlay turn tracking is retained by default; reconciliation/pruning is handled
+            ' by the caller once it can compare the refreshed snapshot against runtime state.
             state.PendingRebuild = False
 
             Dim normalizedVisibleTurnId = NormalizeIdentifier(visibleTurnId)
@@ -167,6 +166,45 @@ Namespace CodexNativeAgent.Ui.Coordinators
             Next
 
             Return result
+        End Function
+
+        Public Function RetainOverlayTurns(threadId As String,
+                                           retainedTurnIds As IEnumerable(Of String)) As Integer
+            Dim state As ThreadLiveSessionState = Nothing
+            If Not TryGet(threadId, state) OrElse state Is Nothing Then
+                Return 0
+            End If
+
+            Dim retained As New HashSet(Of String)(StringComparer.Ordinal)
+            If retainedTurnIds IsNot Nothing Then
+                For Each turnId In retainedTurnIds
+                    Dim normalizedTurnId = NormalizeIdentifier(turnId)
+                    If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                        Continue For
+                    End If
+
+                    retained.Add(normalizedTurnId)
+                Next
+            End If
+
+            If retained.Count = 0 Then
+                Dim removedAll = state.OverlayTurnIds.Count
+                state.OverlayTurnIds.Clear()
+                Return removedAll
+            End If
+
+            Dim removed As Integer = 0
+            Dim existingTurnIds As New List(Of String)(state.OverlayTurnIds)
+            For Each existingTurnId In existingTurnIds
+                Dim normalizedExistingTurnId = NormalizeIdentifier(existingTurnId)
+                If String.IsNullOrWhiteSpace(normalizedExistingTurnId) OrElse
+                   Not retained.Contains(normalizedExistingTurnId) Then
+                    state.OverlayTurnIds.Remove(existingTurnId)
+                    removed += 1
+                End If
+            Next
+
+            Return removed
         End Function
 
         Public Sub SetPendingRebuild(threadId As String, pendingRebuild As Boolean)
