@@ -1042,6 +1042,8 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub SetPendingNewThreadFirstPromptSelectionActive(isActive As Boolean,
                                                                   Optional clearThreadSelection As Boolean = False)
+            SyncTurnComposerStateForCurrentSelection()
+
             If clearThreadSelection Then
                 _suppressThreadSelectionEvents = True
                 Try
@@ -1056,6 +1058,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _pendingNewThreadFirstPromptSelection = isActive
+            RestoreTurnComposerStateForCurrentSelection("pending_new_thread_toggle")
             UpdateSidebarSelectionState(showSettings:=(_viewModel.SidebarSettingsViewVisibility = Visibility.Visible))
             UpdateThreadTurnLabels()
             UpdateWorkspaceEmptyStateVisibility()
@@ -1155,9 +1158,15 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim threadObject = Await _threadService.StartThreadAsync(options, CancellationToken.None).ConfigureAwait(True)
-            ApplyCurrentThreadFromThreadObject(threadObject, clearPendingNewThreadSelection:=False)
-            Dim createdThreadId = GetVisibleThreadId()
+            Dim createdThreadId = GetPropertyString(threadObject, "id")
             If Not String.IsNullOrWhiteSpace(createdThreadId) Then
+                PromotePendingDraftTurnComposerStateToThread(createdThreadId)
+            End If
+
+            ApplyCurrentThreadFromThreadObject(threadObject, clearPendingNewThreadSelection:=False)
+            createdThreadId = GetVisibleThreadId()
+            If Not String.IsNullOrWhiteSpace(createdThreadId) Then
+                RestoreTurnComposerStateForCurrentSelection("pending_draft_promoted")
                 ' Promote the pending draft tab to the concrete thread id as soon as the thread exists.
                 EnsureTranscriptDocumentActivatedForThread(createdThreadId, "pending_draft_thread_created")
                 SyncThreadListAfterUserPrompt(createdThreadId, String.Empty)
@@ -1366,6 +1375,13 @@ Namespace CodexNativeAgent.Ui
 
                 If entry.HasPendingRuntimeUpdates <> hasPendingRuntimeUpdates Then
                     entry.HasPendingRuntimeUpdates = hasPendingRuntimeUpdates
+                    changed = True
+                End If
+
+                Dim hasPendingApproval = _turnWorkflowCoordinator IsNot Nothing AndAlso
+                                         _turnWorkflowCoordinator.HasPendingApprovalForThread(threadId)
+                If entry.HasPendingApproval <> hasPendingApproval Then
+                    entry.HasPendingApproval = hasPendingApproval
                     changed = True
                 End If
             Next
@@ -1758,14 +1774,15 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Function BuildThreadRequestOptions(includeModel As Boolean) As ThreadRequestOptions
+            Dim composerState = ResolveTurnComposerStateForThread(GetVisibleThreadId(), allowDraftWhenNoThread:=True)
             Dim options As New ThreadRequestOptions() With {
-                .ApprovalPolicy = _viewModel.TurnComposer.SelectedApprovalPolicy,
-                .Sandbox = _viewModel.TurnComposer.SelectedSandbox,
+                .ApprovalPolicy = composerState.ApprovalPolicy,
+                .Sandbox = composerState.Sandbox,
                 .Cwd = EffectiveThreadWorkingDirectory()
             }
 
             If includeModel Then
-                options.Model = _viewModel.TurnComposer.SelectedModelId
+                options.Model = composerState.ModelId
             End If
 
             Return options

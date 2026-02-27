@@ -42,8 +42,6 @@ Namespace CodexNativeAgent.Ui
             Dim normalizedValue = If(value, String.Empty).Trim()
             Dim previousThreadId = GetVisibleThreadId()
 
-            _currentThreadId = normalizedValue
-
             If StringComparer.Ordinal.Equals(previousThreadId, normalizedValue) Then
                 If Not String.IsNullOrWhiteSpace(normalizedValue) Then
                     _threadTranscriptChunkSessionCoordinator.ActivateVisibleThread(normalizedValue, "visible_thread_reaffirmed")
@@ -53,14 +51,19 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            SyncTurnComposerStateForCurrentSelection()
+            _currentThreadId = normalizedValue
+
             If String.IsNullOrWhiteSpace(normalizedValue) Then
                 Dim removedSession = _threadTranscriptChunkSessionCoordinator.ResetActiveSession("visible_thread_cleared")
                 TraceTranscriptChunkSession("visible_thread_cleared", $"previous={previousThreadId}", removedSession)
+                RestoreTurnComposerStateForCurrentSelection("visible_thread_cleared")
                 Return
             End If
 
             _threadTranscriptChunkSessionCoordinator.ActivateVisibleThread(normalizedValue, "visible_thread_changed")
             TraceTranscriptChunkSession("visible_thread_changed", $"previous={previousThreadId}")
+            RestoreTurnComposerStateForCurrentSelection("visible_thread_changed")
         End Sub
 
         Private Sub ClearVisibleThreadId()
@@ -732,6 +735,7 @@ Namespace CodexNativeAgent.Ui
             _workspaceBootstrapInProgress = False
             _threadEntries.Clear()
             _expandedThreadProjectGroups.Clear()
+            ClearTurnComposerThreadStates()
             _threadLiveSessionRegistry.Clear()
             _sessionNotificationCoordinator.ResetStreamingAgentItems()
             _pendingLocalUserEchoes.Clear()

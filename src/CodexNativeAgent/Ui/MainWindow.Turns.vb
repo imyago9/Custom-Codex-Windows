@@ -283,20 +283,20 @@ Namespace CodexNativeAgent.Ui
             Dim shouldRefreshThreadsAfterTurnStart As Boolean = False
             Dim threadIdToRefreshAfterTurnStart As String = String.Empty
 
-            If String.IsNullOrWhiteSpace(_viewModel.TurnComposer.InputText) Then
+            Dim startedFromDraftNewThread = Await EnsureThreadReadyForTurnSubmissionAsync()
+            Dim visibleThreadIdAtDispatch = GetVisibleThreadId()
+            SyncTurnComposerStateForCurrentSelection()
+            Dim composerState = ResolveTurnComposerStateForThread(visibleThreadIdAtDispatch, allowDraftWhenNoThread:=True)
+            If String.IsNullOrWhiteSpace(composerState.InputText) Then
                 Throw New InvalidOperationException("Enter turn input before sending.")
             End If
 
-            Dim startedFromDraftNewThread = Await EnsureThreadReadyForTurnSubmissionAsync()
-
-            Dim visibleThreadIdAtDispatch = GetVisibleThreadId()
-
             Await _turnWorkflowCoordinator.RunStartTurnAsync(
                 visibleThreadIdAtDispatch,
-                _viewModel.TurnComposer.InputText,
-                _viewModel.TurnComposer.SelectedModelId,
-                _viewModel.TurnComposer.SelectedReasoningEffort,
-                _viewModel.TurnComposer.SelectedApprovalPolicy,
+                composerState.InputText,
+                composerState.ModelId,
+                composerState.ReasoningEffort,
+                composerState.ApprovalPolicy,
                 AddressOf EnsureThreadSelected,
                 Sub(inputText)
                     submittedInputText = If(inputText, String.Empty)
@@ -361,10 +361,12 @@ Namespace CodexNativeAgent.Ui
         Private Async Function SteerTurnAsync() As Task
             Dim visibleThreadId = GetVisibleThreadId()
             Dim visibleTurnId = GetVisibleTurnId()
+            SyncTurnComposerStateForCurrentSelection()
+            Dim composerState = ResolveTurnComposerStateForThread(visibleThreadId, allowDraftWhenNoThread:=True)
             Await _turnWorkflowCoordinator.RunSteerTurnAsync(
                 visibleThreadId,
                 visibleTurnId,
-                _viewModel.TurnComposer.InputText,
+                composerState.InputText,
                 AddressOf EnsureThreadSelected,
                 Sub(steerText)
                     AppendTranscript("user (steer)", steerText)
@@ -691,7 +693,9 @@ Namespace CodexNativeAgent.Ui
                 Async Function(serverRequest, code, message)
                     Await CurrentClient().SendErrorAsync(serverRequest.Id, code, message)
                 End Function,
+                AddressOf GetVisibleThreadId,
                 AddressOf RefreshControlStates,
+                AddressOf RefreshThreadRuntimeIndicatorsIfNeeded,
                 AddressOf AppendSystemMessage,
                 Sub(message, isError, displayToast)
                     ShowStatus(message, isError:=isError, displayToast:=displayToast)
@@ -701,10 +705,12 @@ Namespace CodexNativeAgent.Ui
         Private Async Function ResolveApprovalAsync(action As String) As Task
             Await _turnWorkflowCoordinator.ResolveApprovalAsync(
                 action,
+                GetVisibleThreadId(),
                 Async Function(requestId, resultNode)
                     Await CurrentClient().SendResultAsync(requestId, resultNode)
                 End Function,
                 AddressOf RefreshControlStates,
+                AddressOf RefreshThreadRuntimeIndicatorsIfNeeded,
                 AddressOf AppendSystemMessage,
                 Sub(message, isError, displayToast)
                     ShowStatus(message, isError:=isError, displayToast:=displayToast)

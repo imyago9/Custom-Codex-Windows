@@ -580,7 +580,34 @@
                                                                  Height="8"
                                                                  HorizontalAlignment="Center"
                                                                  VerticalAlignment="Center"
-                                                                 Fill="{DynamicResource AccentBrush}"
+                                                         Fill="{DynamicResource AccentBrush}"
+                                                         Stroke="{DynamicResource SurfaceBrush}"
+                                                         StrokeThickness="1"
+                                                         IsHitTestVisible="False" />
+                                                    </Grid>
+
+                                                    <Grid Width="12"
+                                                          Height="12"
+                                                          Margin="0,0,6,0"
+                                                          VerticalAlignment="Center"
+                                                          Visibility="{Binding PendingApprovalBadgeVisibility}"
+                                                          ToolTip="Approval pending">
+                                                        <Ellipse x:Name="ApprovalPulseHalo"
+                                                                 Fill="{DynamicResource WarningBrush}"
+                                                                 Opacity="0"
+                                                                 IsHitTestVisible="False"
+                                                                 RenderTransformOrigin="0.5,0.5">
+                                                            <Ellipse.RenderTransform>
+                                                                <ScaleTransform x:Name="ApprovalPulseHaloScale" ScaleX="0.75" ScaleY="0.75" />
+                                                            </Ellipse.RenderTransform>
+                                                        </Ellipse>
+
+                                                        <Ellipse x:Name="ApprovalPulseCore"
+                                                                 Width="8"
+                                                                 Height="8"
+                                                                 HorizontalAlignment="Center"
+                                                                 VerticalAlignment="Center"
+                                                                 Fill="{DynamicResource WarningBrush}"
                                                                  Stroke="{DynamicResource SurfaceBrush}"
                                                                  StrokeThickness="1"
                                                                  IsHitTestVisible="False" />
@@ -591,7 +618,7 @@
                                                             Height="8"
                                                             Margin="0,0,4,0"
                                                             CornerRadius="4"
-                                                            Background="{DynamicResource WarningBrush}"
+                                                            Background="{DynamicResource SuccessBrush}"
                                                             BorderBrush="{DynamicResource BorderStrongBrush}"
                                                             BorderThickness="1"
                                                             VerticalAlignment="Center"
@@ -640,6 +667,39 @@
                                                     </DataTrigger.EnterActions>
                                                     <DataTrigger.ExitActions>
                                                         <StopStoryboard BeginStoryboardName="BeginThreadActivePulse" />
+                                                    </DataTrigger.ExitActions>
+                                                </DataTrigger>
+
+                                                <DataTrigger Binding="{Binding PendingApprovalBadgeVisibility}" Value="Visible">
+                                                    <DataTrigger.EnterActions>
+                                                        <BeginStoryboard x:Name="BeginThreadApprovalPulse">
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation Storyboard.TargetName="ApprovalPulseHalo"
+                                                                                 Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.62"
+                                                                                 To="0.0"
+                                                                                 Duration="0:0:1.05" />
+                                                                <DoubleAnimation Storyboard.TargetName="ApprovalPulseHaloScale"
+                                                                                 Storyboard.TargetProperty="ScaleX"
+                                                                                 From="0.75"
+                                                                                 To="1.75"
+                                                                                 Duration="0:0:1.05" />
+                                                                <DoubleAnimation Storyboard.TargetName="ApprovalPulseHaloScale"
+                                                                                 Storyboard.TargetProperty="ScaleY"
+                                                                                 From="0.75"
+                                                                                 To="1.75"
+                                                                                 Duration="0:0:1.05" />
+                                                                <DoubleAnimation Storyboard.TargetName="ApprovalPulseCore"
+                                                                                 Storyboard.TargetProperty="Opacity"
+                                                                                 From="0.8"
+                                                                                 To="1"
+                                                                                 Duration="0:0:0.5"
+                                                                                 AutoReverse="True" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </DataTrigger.EnterActions>
+                                                    <DataTrigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="BeginThreadApprovalPulse" />
                                                     </DataTrigger.ExitActions>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>

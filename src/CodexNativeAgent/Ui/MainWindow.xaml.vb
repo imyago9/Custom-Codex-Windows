@@ -545,6 +545,7 @@ Namespace CodexNativeAgent.Ui
 
                     UpdateThreadsPanelStateHintBubbleVisibility()
                 End Sub
+            AddHandler _viewModel.TurnComposer.PropertyChanged, AddressOf OnTurnComposerPropertyChanged
             InitializeSessionCoordinatorBindings()
             _turnWorkflowCoordinator.BindCommands(AddressOf StartTurnAsync,
                                                   AddressOf SteerTurnAsync,
@@ -553,6 +554,7 @@ Namespace CodexNativeAgent.Ui
             InitializeMvvmCommandBindings()
 
             InitializeUiDefaults()
+            SyncTurnComposerStateForCurrentSelection()
             InitializeEventHandlers()
             InitializeStatusUi()
             InitializeReliabilityLayer()
@@ -3184,8 +3186,17 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub RefreshApprovalControlState(authenticated As Boolean)
-            Dim hasActiveApproval = _turnWorkflowCoordinator IsNot Nothing AndAlso _turnWorkflowCoordinator.HasActiveApproval
-            _viewModel.ApprovalPanel.UpdateAvailability(authenticated, hasActiveApproval)
+            Dim visibleThreadId = GetVisibleThreadId()
+            If _turnWorkflowCoordinator Is Nothing Then
+                _viewModel.ApprovalPanel.SetThreadScopedState(String.Empty,
+                                                              String.Empty,
+                                                              supportsExecpolicyAmendment:=False,
+                                                              pendingQueueCount:=0)
+                _viewModel.ApprovalPanel.UpdateAvailability(authenticated, hasActiveApproval:=False)
+                Return
+            End If
+
+            _turnWorkflowCoordinator.RefreshApprovalPanelForThread(visibleThreadId, authenticated)
         End Sub
 
         Private Sub RefreshThreadPanelControlState(session As SessionStateViewModel)

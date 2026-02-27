@@ -7,7 +7,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
     Public NotInheritable Class ApprovalPanelViewModel
         Inherits ViewModelBase
 
-        Private _summaryText As String = "No pending approvals."
+        Private _summaryText As String = String.Empty
         Private _cardVisibility As Visibility = Visibility.Collapsed
         Private _canAccept As Boolean
         Private _canAcceptSession As Boolean
@@ -243,8 +243,18 @@ Namespace CodexNativeAgent.Ui.ViewModels
             CardVisibility = If(hasActiveApproval, Visibility.Visible, Visibility.Collapsed)
         End Sub
 
+        Public Sub SetThreadScopedState(summaryText As String,
+                                        activeMethodName As String,
+                                        supportsExecpolicyAmendment As Boolean,
+                                        pendingQueueCount As Integer)
+            SummaryText = If(summaryText, String.Empty)
+            ActiveMethodName = If(activeMethodName, String.Empty)
+            _supportsExecpolicyAmendment = supportsExecpolicyAmendment
+            PendingQueueCount = Math.Max(0, pendingQueueCount)
+        End Sub
+
         Public Sub ResetLifecycleState()
-            SummaryText = "No pending approvals."
+            SummaryText = String.Empty
             PendingQueueCount = 0
             ActiveMethodName = String.Empty
             _supportsExecpolicyAmendment = False
@@ -270,7 +280,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                                        supportsExecpolicyAmendment As Boolean,
                                        pendingQueueCount As Integer)
             ActiveMethodName = If(methodName, String.Empty)
-            SummaryText = If(summary, "No pending approvals.")
+            SummaryText = If(summary, String.Empty)
             _supportsExecpolicyAmendment = supportsExecpolicyAmendment
             PendingQueueCount = pendingQueueCount
             LastQueueUpdatedUtc = DateTimeOffset.UtcNow
@@ -279,7 +289,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Public Sub OnApprovalQueueEmpty()
             ActiveMethodName = String.Empty
-            SummaryText = "No pending approvals."
+            SummaryText = String.Empty
             _supportsExecpolicyAmendment = False
             PendingQueueCount = 0
             LastQueueUpdatedUtc = DateTimeOffset.UtcNow

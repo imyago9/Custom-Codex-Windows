@@ -12,6 +12,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
         Public Property IsArchived As Boolean
         Public Property HasActiveRuntimeTurn As Boolean
         Public Property HasPendingRuntimeUpdates As Boolean
+        Public Property HasPendingApproval As Boolean
 
         Public ReadOnly Property ListLeftText As String
             Get
@@ -39,7 +40,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
 
         Public ReadOnly Property StatusIndicatorsVisibility As Visibility
             Get
-                If HasActiveRuntimeTurn OrElse HasPendingRuntimeUpdates Then
+                If HasActiveRuntimeTurn OrElse HasPendingRuntimeUpdates OrElse HasPendingApproval Then
                     Return Visibility.Visible
                 End If
 
@@ -50,14 +51,20 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
         Public ReadOnly Property ActiveBadgeVisibility As Visibility
             Get
                 ' A running thread should remain clearly "active" even if hidden updates are pending.
-                Return If(HasActiveRuntimeTurn, Visibility.Visible, Visibility.Collapsed)
+                Return If(HasActiveRuntimeTurn AndAlso Not HasPendingApproval, Visibility.Visible, Visibility.Collapsed)
+            End Get
+        End Property
+
+        Public ReadOnly Property PendingApprovalBadgeVisibility As Visibility
+            Get
+                Return If(HasPendingApproval, Visibility.Visible, Visibility.Collapsed)
             End Get
         End Property
 
         Public ReadOnly Property DirtyBadgeVisibility As Visibility
             Get
                 ' Show pending updates only after the thread is no longer actively running.
-                Return If(HasPendingRuntimeUpdates AndAlso Not HasActiveRuntimeTurn,
+                Return If(HasPendingRuntimeUpdates AndAlso Not HasActiveRuntimeTurn AndAlso Not HasPendingApproval,
                           Visibility.Visible,
                           Visibility.Collapsed)
             End Get
@@ -65,7 +72,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
 
         Public ReadOnly Property DirtyBadgeToolTip As String
             Get
-                Return "Hidden updates pending"
+                Return "Turn finished"
             End Get
         End Property
 
@@ -179,6 +186,12 @@ Namespace CodexNativeAgent.Ui.ViewModels.Threads
         End Property
 
         Public ReadOnly Property ActiveBadgeVisibility As Visibility
+            Get
+                Return Visibility.Collapsed
+            End Get
+        End Property
+
+        Public ReadOnly Property PendingApprovalBadgeVisibility As Visibility
             Get
                 Return Visibility.Collapsed
             End Get
