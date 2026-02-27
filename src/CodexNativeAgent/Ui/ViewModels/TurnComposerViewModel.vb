@@ -1,5 +1,6 @@
 Imports System.Collections.Generic
 Imports System.Collections.ObjectModel
+Imports System.Globalization
 Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Input
@@ -27,12 +28,21 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _canInterruptTurn As Boolean
         Private _startTurnVisibility As Visibility = Visibility.Visible
         Private _interruptTurnVisibility As Visibility = Visibility.Collapsed
+        Private _usageIndicatorsVisibility As Visibility = Visibility.Visible
         Private _rateLimitBarsVisibility As Visibility = Visibility.Collapsed
+        Private _contextUsageVisibility As Visibility = Visibility.Visible
+        Private _contextUsagePercent As Double
+        Private _contextUsagePercentText As String = "--"
+        Private _contextUsageTooltipText As String = "Context usage for this thread is not available yet."
+        Private _contextUsageStrokeDashArray As DoubleCollection = BuildContextUsageStrokeDashArray(0.0R)
 
         Private _startTurnCommand As AsyncRelayCommand
         Private _steerTurnCommand As AsyncRelayCommand
         Private _interruptTurnCommand As AsyncRelayCommand
         Private ReadOnly _rateLimitBars As New ObservableCollection(Of TurnComposerRateLimitBarViewModel)()
+
+        Private Const ContextUsageRingRadius As Double = 11.0R
+        Private Const ContextUsageRingStrokeThickness As Double = 2.4R
 
         Public Sub New()
             _startTurnCommand = New AsyncRelayCommand(Function() Task.CompletedTask, Function() False)
@@ -181,6 +191,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property UsageIndicatorsVisibility As Visibility
+            Get
+                Return _usageIndicatorsVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_usageIndicatorsVisibility, value)
+            End Set
+        End Property
+
         Public ReadOnly Property RateLimitBars As ObservableCollection(Of TurnComposerRateLimitBarViewModel)
             Get
                 Return _rateLimitBars
@@ -193,6 +212,51 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Visibility)
                 SetProperty(_rateLimitBarsVisibility, value)
+            End Set
+        End Property
+
+        Public Property ContextUsageVisibility As Visibility
+            Get
+                Return _contextUsageVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_contextUsageVisibility, value)
+            End Set
+        End Property
+
+        Public Property ContextUsagePercent As Double
+            Get
+                Return _contextUsagePercent
+            End Get
+            Set(value As Double)
+                SetProperty(_contextUsagePercent, value)
+            End Set
+        End Property
+
+        Public Property ContextUsagePercentText As String
+            Get
+                Return _contextUsagePercentText
+            End Get
+            Set(value As String)
+                SetProperty(_contextUsagePercentText, If(value, String.Empty))
+            End Set
+        End Property
+
+        Public Property ContextUsageTooltipText As String
+            Get
+                Return _contextUsageTooltipText
+            End Get
+            Set(value As String)
+                SetProperty(_contextUsageTooltipText, If(value, String.Empty))
+            End Set
+        End Property
+
+        Public Property ContextUsageStrokeDashArray As DoubleCollection
+            Get
+                Return _contextUsageStrokeDashArray
+            End Get
+            Set(value As DoubleCollection)
+                SetProperty(_contextUsageStrokeDashArray, If(value, BuildContextUsageStrokeDashArray(0.0R)))
             End Set
         End Property
 
@@ -240,6 +304,33 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End If
 
             RateLimitBarsVisibility = If(_rateLimitBars.Count > 0, Visibility.Visible, Visibility.Collapsed)
+            SyncUsageIndicatorsVisibility()
+        End Sub
+
+        Public Sub SetContextUsageIndicator(contextPercent As Double?, tooltipText As String)
+            If contextPercent.HasValue Then
+                Dim normalizedPercent = ClampPercent(contextPercent.Value)
+                ContextUsagePercent = normalizedPercent
+                ContextUsagePercentText = Math.Round(normalizedPercent,
+                                                     MidpointRounding.AwayFromZero).ToString("0",
+                                                                                              CultureInfo.InvariantCulture) & "%"
+                Dim normalizedTooltip = If(tooltipText, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalizedTooltip) Then
+                    normalizedTooltip = "Context usage for the selected thread."
+                End If
+                ContextUsageTooltipText = normalizedTooltip
+                ContextUsageStrokeDashArray = BuildContextUsageStrokeDashArray(normalizedPercent)
+                ContextUsageVisibility = Visibility.Visible
+            Else
+                ContextUsagePercent = 0.0R
+                ContextUsagePercentText = "--"
+                ContextUsageTooltipText = "Context usage for this thread is not available yet." & Environment.NewLine &
+                                          "It updates when token usage events arrive."
+                ContextUsageStrokeDashArray = BuildContextUsageStrokeDashArray(0.0R)
+                ContextUsageVisibility = Visibility.Visible
+            End If
+
+            SyncUsageIndicatorsVisibility()
         End Sub
 
         Private Sub RaiseTurnCommandCanExecuteChanged()
@@ -255,6 +346,44 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 _interruptTurnCommand.RaiseCanExecuteChanged()
             End If
         End Sub
+
+        Private Sub SyncUsageIndicatorsVisibility()
+            Dim hasRateLimitBars = RateLimitBarsVisibility = Visibility.Visible
+            Dim hasContextUsage = ContextUsageVisibility = Visibility.Visible
+            UsageIndicatorsVisibility = If(hasRateLimitBars OrElse hasContextUsage,
+                                           Visibility.Visible,
+                                           Visibility.Collapsed)
+        End Sub
+
+        Private Shared Function BuildContextUsageStrokeDashArray(percent As Double) As DoubleCollection
+            Dim normalizedPercent = ClampPercent(percent)
+            Dim normalizedRatio = normalizedPercent / 100.0R
+            Dim circumference = 2.0R * Math.PI * ContextUsageRingRadius
+            Dim totalDashUnits = circumference / ContextUsageRingStrokeThickness
+            Dim dashUnits = totalDashUnits * normalizedRatio
+            Dim gapUnits = Math.Max(0.001R, totalDashUnits - dashUnits)
+
+            Return New DoubleCollection() From {
+                Math.Max(0.0R, dashUnits),
+                gapUnits
+            }
+        End Function
+
+        Private Shared Function ClampPercent(value As Double) As Double
+            If Double.IsNaN(value) OrElse Double.IsInfinity(value) Then
+                Return 0.0R
+            End If
+
+            If value < 0.0R Then
+                Return 0.0R
+            End If
+
+            If value > 100.0R Then
+                Return 100.0R
+            End If
+
+            Return value
+        End Function
     End Class
 
     Public NotInheritable Class TurnComposerRateLimitBarViewModel

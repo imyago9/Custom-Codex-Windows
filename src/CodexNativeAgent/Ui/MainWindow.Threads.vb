@@ -347,6 +347,45 @@ Namespace CodexNativeAgent.Ui
             }
         End Function
 
+        Private Async Function RefreshSelectedThreadTokenUsageFromServerAsync(threadId As String) As Task
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return
+            End If
+
+            If _threadService Is Nothing OrElse Not IsClientRunning() Then
+                TraceContextUsageDebug("thread_read_refresh_skipped",
+                                       $"thread={normalizedThreadId}; clientRunning={IsClientRunning().ToString()}; hasThreadService={(_threadService IsNot Nothing).ToString()}")
+                Return
+            End If
+
+            Try
+                TraceContextUsageDebug("thread_read_refresh_begin",
+                                       $"thread={normalizedThreadId}")
+                Dim refreshedThreadObject =
+                    Await ReadThreadForSelectionAsync(normalizedThreadId, CancellationToken.None).ConfigureAwait(False)
+
+                Await RunOnUiAsync(
+                    Async Function()
+                        If Not StringComparer.Ordinal.Equals(GetVisibleThreadId(), normalizedThreadId) Then
+                            Return
+                        End If
+
+                        Dim refreshedTurns = GetPropertyArray(refreshedThreadObject, "turns")
+                        TraceContextUsageDebug("thread_read_refresh_apply",
+                                               $"thread={normalizedThreadId}; hasObject={(refreshedThreadObject IsNot Nothing).ToString()}; turns={If(refreshedTurns?.Count, 0).ToString()}")
+                        SyncTokenUsageWidgetFromThreadObject(refreshedThreadObject)
+                        Await Task.CompletedTask
+                    End Function).ConfigureAwait(False)
+            Catch ex As OperationCanceledException
+                TraceContextUsageDebug("thread_read_refresh_canceled",
+                                       $"thread={normalizedThreadId}")
+            Catch ex As Exception
+                TraceContextUsageDebug("thread_read_refresh_failed",
+                                       $"thread={normalizedThreadId}; error={ex.Message}")
+            End Try
+        End Function
+
         Private Async Function ApplyThreadSelectionPayloadUiAsync(request As ThreadSelectionLoadRequest,
                                                                   payload As ThreadSelectionLoadPayload) As Task
             If request Is Nothing OrElse payload Is Nothing Then
@@ -415,6 +454,11 @@ Namespace CodexNativeAgent.Ui
                         End If
                     End If
                     Dim bindMs = Math.Max(0, uiApplyPerf.ElapsedMilliseconds - bindStartMs)
+
+                    TraceContextUsageDebug("thread_selection_bind_complete",
+                                           $"thread={request.ThreadId}; bindMode={bindMode}; hasTurns={payload.HasTurns.ToString()}")
+                    SyncTokenUsageWidgetFromThreadObject(payload.ThreadObject)
+                    FireAndForget(RefreshSelectedThreadTokenUsageFromServerAsync(request.ThreadId))
 
                     If Not payload.HasTurns AndAlso _viewModel.TranscriptPanel.Items.Count = 0 Then
                         AppendSystemMessage("No historical turns loaded for this thread.")
@@ -875,6 +919,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Visible
+                UpdateTranscriptTabStripLoadingVisual()
                 Return
             End If
 
@@ -884,6 +929,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Collapsed
+                UpdateTranscriptTabStripLoadingVisual()
                 Return
             End If
 
@@ -895,6 +941,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Collapsed
+                UpdateTranscriptTabStripLoadingVisual()
                 Return
             End If
 
@@ -922,6 +969,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Collapsed
+            UpdateTranscriptTabStripLoadingVisual()
         End Sub
 
         Private Sub OnThreadsPreviewMouseRightButtonDown(sender As Object, e As MouseButtonEventArgs)
@@ -2389,7 +2437,9 @@ Namespace CodexNativeAgent.Ui
             If overlayTurnIds.Count = 0 Then
                 ' No tracked live overlay for this thread; avoid replaying stale/inferred runtime rows
                 ' that can overwrite historical snapshot bubbles during thread re-open.
-                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                SyncTokenUsageWidgetFromThreadRuntimeState(normalizedThreadId,
+                                                           runtimeStore,
+                                                           clearWhenMissing:=False)
                 Return
             End If
 
@@ -2514,21 +2564,265 @@ Namespace CodexNativeAgent.Ui
             Next
 
             If overlayTurnIds.Count = 0 Then
-                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                SyncTokenUsageWidgetFromThreadRuntimeState(normalizedThreadId,
+                                                           runtimeStore,
+                                                           clearWhenMissing:=True)
+                Return
+            End If
+
+            SyncTokenUsageWidgetFromThreadRuntimeState(normalizedThreadId,
+                                                       runtimeStore,
+                                                       clearWhenMissing:=False)
+        End Sub
+
+        Private Sub SyncTokenUsageWidgetFromThreadRuntimeState(threadId As String,
+                                                               runtimeStore As TurnFlowRuntimeStore,
+                                                               Optional clearWhenMissing As Boolean = True)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse runtimeStore Is Nothing Then
+                TraceContextUsageDebug("runtime_store_sync_skipped",
+                                       $"thread={normalizedThreadId}; clearWhenMissing={clearWhenMissing.ToString()}; hasStore={(runtimeStore IsNot Nothing).ToString()}")
+                If clearWhenMissing Then
+                    If Not TryApplyCachedTokenUsageForThread(normalizedThreadId, "runtime_store_sync_skipped") Then
+                        UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                    End If
+                End If
                 Return
             End If
 
             Dim threadState = runtimeStore.GetThreadState(normalizedThreadId)
             If threadState Is Nothing OrElse threadState.TokenUsage Is Nothing Then
-                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                TraceContextUsageDebug("runtime_store_sync_missing",
+                                       $"thread={normalizedThreadId}; clearWhenMissing={clearWhenMissing.ToString()}; hasThreadState={(threadState IsNot Nothing).ToString()}; hasTokenUsage={(threadState?.TokenUsage IsNot Nothing).ToString()}")
+                If clearWhenMissing Then
+                    If Not TryApplyCachedTokenUsageForThread(normalizedThreadId, "runtime_store_sync_missing") Then
+                        UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+                    End If
+                End If
                 Return
             End If
 
             Dim tokenTurnId = If(String.IsNullOrWhiteSpace(threadState.LatestTurnId),
                                  runtimeStore.GetLatestTurnId(normalizedThreadId),
                                  threadState.LatestTurnId)
+            TraceContextUsageDebug("runtime_store_sync_apply",
+                                   $"thread={normalizedThreadId}; turn={If(tokenTurnId, String.Empty).Trim()}; keys={DescribeJsonObjectKeys(threadState.TokenUsage)}")
             UpdateTokenUsageWidget(normalizedThreadId, tokenTurnId, threadState.TokenUsage)
         End Sub
+
+        Private Sub SyncTokenUsageWidgetFromThreadObject(threadObject As JsonObject)
+            If threadObject Is Nothing Then
+                TraceContextUsageDebug("thread_object_sync_skipped",
+                                       "reason=thread_object_missing")
+                Return
+            End If
+
+            Dim normalizedThreadId = If(GetPropertyString(threadObject, "id"), String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                normalizedThreadId = GetVisibleThreadId()
+            End If
+
+            Dim turns = GetPropertyArray(threadObject, "turns")
+            TraceContextUsageDebug("thread_object_sync_begin",
+                                   $"thread={normalizedThreadId}; turns={If(turns?.Count, 0).ToString()}; keys={DescribeJsonObjectKeys(threadObject)}")
+            If turns IsNot Nothing AndAlso turns.Count > 0 Then
+                For i = turns.Count - 1 To 0 Step -1
+                    Dim turnObject = TryCast(turns(i), JsonObject)
+                    If turnObject Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim resolutionPath As String = String.Empty
+                    Dim tokenUsage = ResolveTokenUsageObjectFromTurn(turnObject, resolutionPath)
+                    If tokenUsage Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim turnId = If(GetPropertyString(turnObject, "id"), String.Empty).Trim()
+                    TraceContextUsageDebug("thread_object_sync_turn_token_usage_found",
+                                           $"thread={normalizedThreadId}; turn={turnId}; turnIndex={i.ToString()}; resolution={resolutionPath}; keys={DescribeJsonObjectKeys(tokenUsage)}")
+                    UpdateTokenUsageWidget(normalizedThreadId, turnId, tokenUsage)
+                    Return
+                Next
+            End If
+
+            Dim threadResolutionPath As String = String.Empty
+            Dim threadTokenUsage = ResolveTokenUsageObjectFromTurn(threadObject, threadResolutionPath)
+            If threadTokenUsage IsNot Nothing Then
+                TraceContextUsageDebug("thread_object_sync_thread_token_usage_found",
+                                       $"thread={normalizedThreadId}; resolution={threadResolutionPath}; keys={DescribeJsonObjectKeys(threadTokenUsage)}")
+                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, threadTokenUsage)
+                Return
+            End If
+
+            TraceContextUsageDebug("thread_object_sync_no_token_usage_found",
+                                   $"thread={normalizedThreadId}")
+            If Not TryApplyCachedTokenUsageForThread(normalizedThreadId, "thread_object_sync_no_token_usage_found") Then
+                UpdateTokenUsageWidget(normalizedThreadId, String.Empty, Nothing)
+            End If
+        End Sub
+
+        Private Function TryApplyCachedTokenUsageForThread(threadId As String, cacheSource As String) As Boolean
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                Return False
+            End If
+
+            Dim cachedTurnId As String = String.Empty
+            Dim cachedTokenUsage As JsonObject = Nothing
+            If Not TryGetCachedThreadContextUsageSnapshot(normalizedThreadId, cachedTurnId, cachedTokenUsage) Then
+                TraceContextUsageDebug("context_cache_miss",
+                                       $"thread={normalizedThreadId}; source={If(cacheSource, String.Empty)}")
+                Return False
+            End If
+
+            TraceContextUsageDebug("context_cache_hit",
+                                   $"thread={normalizedThreadId}; turn={cachedTurnId}; source={If(cacheSource, String.Empty)}; keys={DescribeJsonObjectKeys(cachedTokenUsage)}")
+            UpdateTokenUsageWidget(normalizedThreadId, cachedTurnId, cachedTokenUsage)
+            Return True
+        End Function
+
+        Private Shared Function ResolveTokenUsageObjectFromTurn(source As JsonObject, ByRef resolutionPath As String) As JsonObject
+            resolutionPath = String.Empty
+            If source Is Nothing Then
+                resolutionPath = "source_null"
+                Return Nothing
+            End If
+
+            Dim tokenUsage = GetPropertyObject(source, "tokenUsage")
+            If tokenUsage Is Nothing Then
+                tokenUsage = GetPropertyObject(source, "token_usage")
+            End If
+            If tokenUsage Is Nothing Then
+                tokenUsage = GetPropertyObject(source, "usage")
+            End If
+
+            If tokenUsage IsNot Nothing Then
+                resolutionPath = "direct_property"
+                Return tokenUsage
+            End If
+
+            If LooksLikeTokenUsagePayload(source) Then
+                resolutionPath = "source_looks_like_usage_payload"
+                Return source
+            End If
+
+            Dim nestedTokenUsage = FindTokenUsagePayloadRecursive(source)
+            If nestedTokenUsage IsNot Nothing Then
+                resolutionPath = "recursive_nested_usage_payload"
+                Return nestedTokenUsage
+            End If
+
+            resolutionPath = "not_found"
+            Return Nothing
+        End Function
+
+        Private Shared Function LooksLikeTokenUsagePayload(candidate As JsonObject) As Boolean
+            If candidate Is Nothing Then
+                Return False
+            End If
+
+            For Each key In {"modelContextWindow", "model_context_window"}
+                If candidate.ContainsKey(key) Then
+                    Return True
+                End If
+            Next
+
+            If ContainsDirectTokenUsageMetrics(candidate) Then
+                Return True
+            End If
+
+            For Each nestedKey In {
+                "total",
+                "last",
+                "totalUsage",
+                "total_usage",
+                "totalTokenUsage",
+                "total_token_usage",
+                "lastUsage",
+                "last_usage",
+                "lastTokenUsage",
+                "last_token_usage"
+            }
+                Dim nestedObject = GetPropertyObject(candidate, nestedKey)
+                If nestedObject IsNot Nothing AndAlso ContainsDirectTokenUsageMetrics(nestedObject) Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function ContainsDirectTokenUsageMetrics(candidate As JsonObject) As Boolean
+            If candidate Is Nothing Then
+                Return False
+            End If
+
+            For Each key In {
+                "totalTokens",
+                "total_tokens",
+                "inputTokens",
+                "input_tokens",
+                "outputTokens",
+                "output_tokens",
+                "reasoningTokens",
+                "reasoning_tokens",
+                "cachedInputTokens",
+                "cached_input_tokens",
+                "contextUsedTokens",
+                "context_used_tokens",
+                "usedContextTokens",
+                "used_context_tokens"
+            }
+                If candidate.ContainsKey(key) Then
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function FindTokenUsagePayloadRecursive(root As JsonObject) As JsonObject
+            If root Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim queue As New Queue(Of JsonObject)()
+            queue.Enqueue(root)
+
+            Dim scanned As Integer = 0
+            Const maxObjectsToScan As Integer = 240
+            While queue.Count > 0 AndAlso scanned < maxObjectsToScan
+                Dim current = queue.Dequeue()
+                scanned += 1
+
+                If current IsNot root AndAlso LooksLikeTokenUsagePayload(current) Then
+                    Return current
+                End If
+
+                For Each kvp In current
+                    Dim childObject = TryCast(kvp.Value, JsonObject)
+                    If childObject IsNot Nothing Then
+                        queue.Enqueue(childObject)
+                        Continue For
+                    End If
+
+                    Dim childArray = TryCast(kvp.Value, JsonArray)
+                    If childArray Is Nothing Then
+                        Continue For
+                    End If
+
+                    For Each childNode In childArray
+                        Dim arrayChildObject = TryCast(childNode, JsonObject)
+                        If arrayChildObject IsNot Nothing Then
+                            queue.Enqueue(arrayChildObject)
+                        End If
+                    Next
+                Next
+            End While
+
+            Return Nothing
+        End Function
 
         Private Shared Function ShouldSkipCompletedTurnSnapshotDuplicatedOverlayItem(item As TurnItemRuntimeState) As Boolean
             If item Is Nothing Then

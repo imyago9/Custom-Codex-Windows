@@ -373,6 +373,15 @@ Namespace CodexNativeAgent.Ui
         End Class
 
 
+        Public NotInheritable Class TurnComposerThreadPreferenceSettings
+            Public Property ModelId As String = String.Empty
+            Public Property ReasoningEffort As String = "medium"
+            Public Property ApprovalPolicy As String = "on-request"
+            Public Property Sandbox As String = "workspace-write"
+            Public Property CachedContextTurnId As String = String.Empty
+            Public Property CachedContextTokenUsageJson As String = String.Empty
+        End Class
+
         Private NotInheritable Class AppSettings
             Public Property CodexPath As String = String.Empty
             Public Property ServerArgs As String = "app-server"
@@ -394,6 +403,8 @@ Namespace CodexNativeAgent.Ui
             Public Property DensityMode As String = AppAppearanceManager.ComfortableDensity
             Public Property TranscriptScaleIndex As Integer = 2
             Public Property TurnComposerPickersCollapsed As Boolean
+            Public Property TurnComposerThreadPreferences As Dictionary(Of String, TurnComposerThreadPreferenceSettings) =
+                New Dictionary(Of String, TurnComposerThreadPreferenceSettings)(StringComparer.Ordinal)
         End Class
 
         Private ReadOnly _accountService As IAccountService

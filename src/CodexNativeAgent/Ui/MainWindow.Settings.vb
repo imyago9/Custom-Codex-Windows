@@ -1,4 +1,5 @@
 Imports System.IO
+Imports System.Collections.Generic
 Imports System.Windows.Controls
 
 Namespace CodexNativeAgent.Ui
@@ -70,6 +71,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub RefreshAppearanceDependentTabVisuals()
             UpdateTranscriptTabButtonVisuals()
+            UpdateTranscriptTabStripLoadingVisual()
 
             ApplyGitPanelTabButtonState(If(GitPaneHost, Nothing)?.BtnGitTabChanges,
                                         StringComparer.Ordinal.Equals(_gitPanelActiveTab, "changes"))
@@ -135,12 +137,18 @@ Namespace CodexNativeAgent.Ui
             _settings.ThemeMode = _currentTheme
             _settings.DensityMode = _currentDensity
             _settings.TurnComposerPickersCollapsed = _turnComposerPickersCollapsed
+            _settings.TurnComposerThreadPreferences = ExportTurnComposerThreadPreferencesForSettings()
         End Sub
 
         Private Sub InitializeDefaults()
             _settings = LoadSettings()
             _settings.ThemeMode = AppAppearanceManager.NormalizeTheme(_settings.ThemeMode)
             _settings.DensityMode = AppAppearanceManager.NormalizeDensity(_settings.DensityMode)
+            If _settings.TurnComposerThreadPreferences Is Nothing Then
+                _settings.TurnComposerThreadPreferences =
+                    New Dictionary(Of String, TurnComposerThreadPreferenceSettings)(StringComparer.Ordinal)
+            End If
+            ImportTurnComposerThreadPreferencesFromSettings(_settings.TurnComposerThreadPreferences)
 
             Dim detectedCodexPath = _connectionService.DetectCodexExecutablePath()
 

@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Globalization
 Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports System.Threading.Tasks
@@ -495,8 +496,323 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub UpdateTokenUsageWidget(threadId As String, turnId As String, tokenUsage As JsonObject)
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            TraceContextUsageDebug("update_token_usage_widget",
+                                   $"thread={normalizedThreadId}; turn={normalizedTurnId}; hasPayload={(tokenUsage IsNot Nothing).ToString()}; keys={DescribeJsonObjectKeys(tokenUsage)}")
+            If Not String.IsNullOrWhiteSpace(normalizedThreadId) AndAlso tokenUsage IsNot Nothing Then
+                CacheThreadContextUsageSnapshot(normalizedThreadId, normalizedTurnId, tokenUsage)
+                TraceContextUsageDebug("context_cache_store",
+                                       $"thread={normalizedThreadId}; turn={normalizedTurnId}; keys={DescribeJsonObjectKeys(tokenUsage)}")
+            End If
             _viewModel.TranscriptPanel.SetTokenUsageSummary(threadId, turnId, tokenUsage)
+            SyncTurnComposerContextUsageIndicator(turnId, tokenUsage)
         End Sub
+
+        Private Sub SyncTurnComposerContextUsageIndicator(turnId As String, tokenUsage As JsonObject)
+            If _viewModel Is Nothing OrElse _viewModel.TurnComposer Is Nothing Then
+                Return
+            End If
+
+            Dim usedTokens As Long? = Nothing
+            Dim maxTokens As Long? = Nothing
+            Dim inferredCompactions As Long? = Nothing
+            Dim rawUsedTokens As Long? = Nothing
+            Dim contextResolution As String = String.Empty
+            Dim contextPercent = ResolveContextUsagePercent(tokenUsage,
+                                                           usedTokens,
+                                                           maxTokens,
+                                                           contextResolution,
+                                                           inferredCompactions,
+                                                           rawUsedTokens)
+            If Not contextPercent.HasValue Then
+                TraceContextUsageDebug("context_indicator_unresolved",
+                                       $"turn={If(turnId, String.Empty).Trim()}; used={FormatNullableLong(usedTokens)}; max={FormatNullableLong(maxTokens)}; compactions={FormatNullableLong(inferredCompactions)}; rawUsed={FormatNullableLong(rawUsedTokens)}; resolution={If(contextResolution, String.Empty)}; keys={DescribeJsonObjectKeys(tokenUsage)}")
+                _viewModel.TurnComposer.SetContextUsageIndicator(Nothing, String.Empty)
+                Return
+            End If
+
+            Dim normalizedPercent = ClampPercent(contextPercent.Value)
+            Dim tooltipText = BuildContextUsageTooltipText(turnId,
+                                                           normalizedPercent,
+                                                           usedTokens,
+                                                           maxTokens,
+                                                           inferredCompactions,
+                                                           rawUsedTokens)
+            TraceContextUsageDebug("context_indicator_applied",
+                                   $"turn={If(turnId, String.Empty).Trim()}; percent={normalizedPercent.ToString("0.###", CultureInfo.InvariantCulture)}; used={FormatNullableLong(usedTokens)}; max={FormatNullableLong(maxTokens)}; compactions={FormatNullableLong(inferredCompactions)}; rawUsed={FormatNullableLong(rawUsedTokens)}; resolution={If(contextResolution, String.Empty)}")
+            _viewModel.TurnComposer.SetContextUsageIndicator(normalizedPercent, tooltipText)
+        End Sub
+
+        Private Shared Function BuildContextUsageTooltipText(turnId As String,
+                                                             contextPercent As Double,
+                                                             usedTokens As Long?,
+                                                             maxTokens As Long?,
+                                                             inferredCompactions As Long?,
+                                                             rawUsedTokens As Long?) As String
+            Dim lines As New List(Of String)()
+            lines.Add($"Thread context used: {contextPercent.ToString("0.#", CultureInfo.InvariantCulture)}%")
+
+            If usedTokens.HasValue AndAlso maxTokens.HasValue AndAlso maxTokens.Value > 0 Then
+                lines.Add($"Usage: {usedTokens.Value.ToString(CultureInfo.InvariantCulture)} / {maxTokens.Value.ToString(CultureInfo.InvariantCulture)} tokens")
+            ElseIf maxTokens.HasValue AndAlso maxTokens.Value > 0 Then
+                lines.Add($"Context window: {maxTokens.Value.ToString(CultureInfo.InvariantCulture)} tokens")
+            ElseIf usedTokens.HasValue Then
+                lines.Add($"Context tokens used: {usedTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+            End If
+
+            If inferredCompactions.HasValue AndAlso inferredCompactions.Value > 0 Then
+                lines.Add($"Compactions inferred: {inferredCompactions.Value.ToString(CultureInfo.InvariantCulture)}")
+                If rawUsedTokens.HasValue Then
+                    lines.Add($"Raw context tokens seen: {rawUsedTokens.Value.ToString(CultureInfo.InvariantCulture)}")
+                End If
+            End If
+
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            If Not String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                lines.Add($"Turn: {normalizedTurnId}")
+            End If
+
+            lines.Add("Source: thread/tokenUsage/updated")
+            Return String.Join(Environment.NewLine, lines)
+        End Function
+
+        Private Shared Function ResolveContextUsagePercent(tokenUsage As JsonObject,
+                                                           ByRef usedTokens As Long?,
+                                                           ByRef maxTokens As Long?,
+                                                           ByRef resolution As String,
+                                                           ByRef inferredCompactions As Long?,
+                                                           ByRef rawUsedTokens As Long?) As Double?
+            usedTokens = Nothing
+            maxTokens = Nothing
+            inferredCompactions = Nothing
+            rawUsedTokens = Nothing
+            resolution = String.Empty
+
+            If tokenUsage Is Nothing Then
+                resolution = "token_usage_payload_missing"
+                Return Nothing
+            End If
+
+            Dim modelContextWindow As Long
+            If TryReadJsonLong(tokenUsage,
+                               modelContextWindow,
+                               "modelContextWindow",
+                               "model_context_window",
+                               "contextWindowTokens",
+                               "context_window_tokens",
+                               "maxContextTokens",
+                               "max_context_tokens") Then
+                If modelContextWindow > 0 Then
+                    maxTokens = modelContextWindow
+                    resolution = $"window_from_payload={modelContextWindow.ToString(CultureInfo.InvariantCulture)}"
+                End If
+            End If
+
+            Dim usageSummaryCandidates = {
+                New KeyValuePair(Of String, JsonObject)("last", ReadNestedObject(tokenUsage, "last")),
+                New KeyValuePair(Of String, JsonObject)("lastUsage", ReadNestedObject(tokenUsage, "lastUsage")),
+                New KeyValuePair(Of String, JsonObject)("last_usage", ReadNestedObject(tokenUsage, "last_usage")),
+                New KeyValuePair(Of String, JsonObject)("lastTokenUsage", ReadNestedObject(tokenUsage, "lastTokenUsage")),
+                New KeyValuePair(Of String, JsonObject)("last_token_usage", ReadNestedObject(tokenUsage, "last_token_usage")),
+                New KeyValuePair(Of String, JsonObject)("total", ReadNestedObject(tokenUsage, "total")),
+                New KeyValuePair(Of String, JsonObject)("totalUsage", ReadNestedObject(tokenUsage, "totalUsage")),
+                New KeyValuePair(Of String, JsonObject)("total_usage", ReadNestedObject(tokenUsage, "total_usage")),
+                New KeyValuePair(Of String, JsonObject)("totalTokenUsage", ReadNestedObject(tokenUsage, "totalTokenUsage")),
+                New KeyValuePair(Of String, JsonObject)("total_token_usage", ReadNestedObject(tokenUsage, "total_token_usage"))
+            }
+
+            Dim directPercent As Double
+            If TryReadJsonDouble(tokenUsage,
+                                 directPercent,
+                                 "contextPercent",
+                                 "context_percent",
+                                 "contextUsagePercent",
+                                 "context_usage_percent",
+                                 "contextUsagePercentage",
+                                 "context_usage_percentage",
+                                 "contextUsedPercent",
+                                 "context_used_percent",
+                                 "contextWindowPercent",
+                                 "context_window_percent",
+                                 "contextWindowUsedPercent",
+                                 "context_window_used_percent") Then
+                resolution = "direct_context_percent_field"
+                Return ClampPercent(directPercent)
+            End If
+
+            If TryReadJsonDouble(tokenUsage,
+                                 directPercent,
+                                 "contextRemainingPercent",
+                                 "context_remaining_percent",
+                                 "contextRemainingPercentage",
+                                 "context_remaining_percentage") Then
+                resolution = "direct_context_remaining_percent_field"
+                Return ClampPercent(100.0R - directPercent)
+            End If
+
+            Dim usedForContext As Long
+            Dim usedResolved As Boolean = False
+            Dim resolvedUsageSummaryLabel As String = String.Empty
+            For Each usageSummaryCandidate In usageSummaryCandidates
+                Dim usageSummary = usageSummaryCandidate.Value
+                If usageSummary Is Nothing Then
+                    Continue For
+                End If
+
+                If ResolveUsedTokensForContext(usageSummary, usedForContext) Then
+                    usedTokens = usedForContext
+                    usedResolved = True
+                    resolvedUsageSummaryLabel = usageSummaryCandidate.Key
+                    Exit For
+                End If
+            Next
+
+            If Not usedResolved Then
+                If ResolveUsedTokensForContext(tokenUsage, usedForContext) Then
+                    usedTokens = usedForContext
+                    usedResolved = True
+                    resolvedUsageSummaryLabel = "payload_root"
+                End If
+            End If
+
+            If usedResolved AndAlso maxTokens.HasValue AndAlso maxTokens.Value > 0 Then
+                rawUsedTokens = usedForContext
+                Dim effectiveUsedForContext = usedForContext
+                If usedForContext > maxTokens.Value Then
+                    inferredCompactions = usedForContext \ maxTokens.Value
+                    effectiveUsedForContext = usedForContext Mod maxTokens.Value
+                Else
+                    inferredCompactions = 0
+                End If
+
+                usedTokens = effectiveUsedForContext
+                Dim ratio = CDbl(effectiveUsedForContext) / CDbl(maxTokens.Value)
+                resolution = $"ratio_from_{resolvedUsageSummaryLabel}; compactions={inferredCompactions.Value.ToString(CultureInfo.InvariantCulture)}; raw={usedForContext.ToString(CultureInfo.InvariantCulture)}; effective={effectiveUsedForContext.ToString(CultureInfo.InvariantCulture)}"
+                Return ClampPercent(ratio * 100.0R)
+            End If
+
+            If usedResolved AndAlso Not maxTokens.HasValue Then
+                usedTokens = usedForContext
+                rawUsedTokens = usedForContext
+                resolution = $"used_tokens_resolved_but_window_missing source={resolvedUsageSummaryLabel}"
+            ElseIf Not usedResolved AndAlso maxTokens.HasValue Then
+                resolution = "window_resolved_but_used_tokens_missing"
+            Else
+                resolution = "context_usage_fields_not_found"
+            End If
+
+            Return Nothing
+        End Function
+
+        Private Shared Function ResolveUsedTokensForContext(source As JsonObject, ByRef usedTokens As Long) As Boolean
+            usedTokens = 0
+            If source Is Nothing Then
+                Return False
+            End If
+
+            Dim parsedContext As Long
+            If TryReadJsonLong(source,
+                               parsedContext,
+                               "contextUsedTokens",
+                               "context_used_tokens",
+                               "usedContextTokens",
+                               "used_context_tokens",
+                               "usedTokens",
+                               "used_tokens",
+                               "contextTokens",
+                                "context_tokens") Then
+                usedTokens = Math.Max(0L, parsedContext)
+                Return True
+            End If
+
+            Dim parsedInput As Long
+            Dim parsedOutput As Long
+            Dim hasInput = TryReadJsonLong(source, parsedInput, "inputTokens", "input_tokens")
+            Dim hasOutput = TryReadJsonLong(source, parsedOutput, "outputTokens", "output_tokens")
+
+            If hasInput OrElse hasOutput Then
+                usedTokens = Math.Max(0L, parsedInput) + Math.Max(0L, parsedOutput)
+                Return True
+            End If
+
+            Dim parsedTotal As Long
+            Dim hasTotal = TryReadJsonLong(source,
+                                           parsedTotal,
+                                           "totalTokens",
+                                           "total_tokens",
+                                           "total")
+
+            Dim parsedReasoning As Long
+            Dim hasReasoning = TryReadJsonLong(source,
+                                               parsedReasoning,
+                                               "reasoningTokens",
+                                               "reasoning_tokens",
+                                               "reasoningOutputTokens",
+                                               "reasoning_output_tokens")
+
+            If hasTotal Then
+                If hasReasoning Then
+                    usedTokens = Math.Max(0L, parsedTotal - parsedReasoning)
+                Else
+                    usedTokens = Math.Max(0L, parsedTotal)
+                End If
+                Return True
+            End If
+
+            Return False
+        End Function
+
+        Private Sub TraceContextUsageDebug(eventName As String, details As String)
+            AppendProtocol("debug",
+                           $"context_usage_debug event={If(eventName, String.Empty)} {If(details, String.Empty)}")
+        End Sub
+
+        Private Shared Function DescribeJsonObjectKeys(obj As JsonObject, Optional maxKeys As Integer = 24) As String
+            If obj Is Nothing Then
+                Return "<null>"
+            End If
+
+            Dim keys As New List(Of String)()
+            For Each kvp In obj
+                If keys.Count >= maxKeys Then
+                    Exit For
+                End If
+
+                keys.Add(If(kvp.Key, String.Empty))
+            Next
+
+            If obj.Count > keys.Count Then
+                keys.Add($"...+{(obj.Count - keys.Count).ToString(CultureInfo.InvariantCulture)}")
+            End If
+
+            If keys.Count = 0 Then
+                Return "<empty>"
+            End If
+
+            Return String.Join(",", keys)
+        End Function
+
+        Private Shared Function FormatNullableLong(value As Long?) As String
+            If value.HasValue Then
+                Return value.Value.ToString(CultureInfo.InvariantCulture)
+            End If
+
+            Return "<none>"
+        End Function
+
+        Private Shared Function ReadNestedObject(source As JsonObject, propertyName As String) As JsonObject
+            If source Is Nothing OrElse String.IsNullOrWhiteSpace(propertyName) Then
+                Return Nothing
+            End If
+
+            Dim node As JsonNode = Nothing
+            If Not source.TryGetPropertyValue(propertyName, node) OrElse node Is Nothing Then
+                Return Nothing
+            End If
+
+            Return TryCast(node, JsonObject)
+        End Function
 
         Private Sub AppendRuntimeDiagnosticEvent(message As String)
             _viewModel.TranscriptPanel.AppendRuntimeDiagnosticEvent(message)

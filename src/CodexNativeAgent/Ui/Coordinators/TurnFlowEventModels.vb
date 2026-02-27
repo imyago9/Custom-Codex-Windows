@@ -961,16 +961,130 @@ Namespace CodexNativeAgent.Ui.Coordinators
 
         Private Shared Function ReadTokenUsageObject(paramsObject As JsonObject) As JsonObject
             Dim usageObject = ReadObject(paramsObject, "tokenUsage")
-            If usageObject IsNot Nothing Then
-                Return usageObject
+            If usageObject Is Nothing Then
+                usageObject = ReadObject(paramsObject, "token_usage")
             End If
 
-            usageObject = ReadObject(paramsObject, "token_usage")
-            If usageObject IsNot Nothing Then
-                Return usageObject
+            Dim result = If(CloneJsonObject(usageObject), New JsonObject())
+            If paramsObject Is Nothing Then
+                Return result
             End If
 
-            Return New JsonObject()
+            For Each fieldName In {
+                "contextWindow",
+                "context_window",
+                "contextUsage",
+                "context_usage",
+                "context",
+                "modelContextWindow",
+                "model_context_window",
+                "total",
+                "last",
+                "totalUsage",
+                "total_usage",
+                "totalTokenUsage",
+                "total_token_usage",
+                "lastUsage",
+                "last_usage",
+                "lastTokenUsage",
+                "last_token_usage"
+            }
+                CopyTokenUsageFieldIfMissing(paramsObject, result, fieldName)
+            Next
+
+            For Each fieldName In {
+                "contextPercent",
+                "context_percent",
+                "contextUsagePercent",
+                "context_usage_percent",
+                "contextUsagePercentage",
+                "context_usage_percentage",
+                "contextRemainingPercent",
+                "context_remaining_percent",
+                "remainingPercent",
+                "remaining_percent",
+                "remainingPercentage",
+                "remaining_percentage",
+                "contextUsedTokens",
+                "context_used_tokens",
+                "usedContextTokens",
+                "used_context_tokens",
+                "usedTokens",
+                "used_tokens",
+                "contextWindowTokens",
+                "context_window_tokens",
+                "windowTokens",
+                "window_tokens",
+                "contextWindowSize",
+                "context_window_size",
+                "windowSize",
+                "window_size",
+                "maxContextTokens",
+                "max_context_tokens",
+                "maxTokens",
+                "max_tokens",
+                "tokenLimit",
+                "token_limit",
+                "inputTokens",
+                "input_tokens",
+                "outputTokens",
+                "output_tokens",
+                "reasoningTokens",
+                "reasoning_tokens",
+                "cachedInputTokens",
+                "cached_input_tokens",
+                "totalTokens",
+                "total_tokens",
+                "total"
+            }
+                CopyTokenUsageFieldIfMissing(paramsObject, result, fieldName)
+            Next
+
+            If result.Count = 0 Then
+                For Each kvp In paramsObject
+                    Dim key = If(kvp.Key, String.Empty)
+                    If IsTokenUsageMetaKey(key) Then
+                        Continue For
+                    End If
+
+                    result(key) = CloneJsonNode(kvp.Value)
+                Next
+            End If
+
+            Return result
+        End Function
+
+        Private Shared Sub CopyTokenUsageFieldIfMissing(source As JsonObject,
+                                                         target As JsonObject,
+                                                         fieldName As String)
+            If source Is Nothing OrElse target Is Nothing OrElse String.IsNullOrWhiteSpace(fieldName) Then
+                Return
+            End If
+
+            If target.ContainsKey(fieldName) Then
+                Return
+            End If
+
+            Dim node As JsonNode = Nothing
+            If Not source.TryGetPropertyValue(fieldName, node) OrElse node Is Nothing Then
+                Return
+            End If
+
+            target(fieldName) = CloneJsonNode(node)
+        End Sub
+
+        Private Shared Function IsTokenUsageMetaKey(fieldName As String) As Boolean
+            Dim normalized = NormalizeIdentifier(fieldName)
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return True
+            End If
+
+            Select Case normalized.ToLowerInvariant()
+                Case "threadid", "thread_id", "turnid", "turn_id", "method", "id"
+                    Return True
+                Case Else
+                    Return False
+            End Select
         End Function
 
         Private Shared Function ReadDeltaFromParams(paramsObject As JsonObject) As String

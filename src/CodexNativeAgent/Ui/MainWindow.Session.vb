@@ -1036,6 +1036,7 @@ Namespace CodexNativeAgent.Ui
 
             If _viewModel IsNot Nothing AndAlso _viewModel.TurnComposer IsNot Nothing Then
                 _viewModel.TurnComposer.SetRateLimitBars(Nothing)
+                _viewModel.TurnComposer.SetContextUsageIndicator(Nothing, String.Empty)
             End If
         End Sub
 
@@ -1748,6 +1749,13 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
+                If item.IsCompleted AndAlso
+                   StringComparer.OrdinalIgnoreCase.Equals(If(item.ItemType, String.Empty), "contextCompaction") Then
+                    TraceContextUsageDebug("context_compaction_completed",
+                                           $"thread={resolvedThreadId}; turn={resolvedTurnId}; triggering_thread_read_refresh=True")
+                    FireAndForget(RefreshSelectedThreadTokenUsageFromServerAsync(resolvedThreadId))
+                End If
+
                 RenderItem(item)
                 visibleRuntimeItemsRendered += 1
                 didMutateVisibleTranscript = True
@@ -1829,6 +1837,8 @@ Namespace CodexNativeAgent.Ui
                                                     _notificationRuntimeTurnId,
                                                     resolvedThreadId,
                                                     resolvedTurnId) Then
+                    TraceContextUsageDebug("notification_token_usage_scope_miss",
+                                           $"rawThread={If(tokenUsageMessage.ThreadId, String.Empty).Trim()}; rawTurn={If(tokenUsageMessage.TurnId, String.Empty).Trim()}; notificationThread={If(_notificationRuntimeThreadId, String.Empty).Trim()}; notificationTurn={If(_notificationRuntimeTurnId, String.Empty).Trim()}")
                     Continue For
                 End If
 
@@ -1836,9 +1846,13 @@ Namespace CodexNativeAgent.Ui
                                                              resolvedTurnId,
                                                              visibleThreadIdForRuntimeRouting,
                                                              dispatch.MethodName) Then
+                    TraceContextUsageDebug("notification_token_usage_not_visible",
+                                           $"thread={resolvedThreadId}; turn={resolvedTurnId}; visibleThread={If(visibleThreadIdForRuntimeRouting, String.Empty).Trim()}; method={If(dispatch.MethodName, String.Empty)}")
                     Continue For
                 End If
 
+                TraceContextUsageDebug("notification_token_usage_apply",
+                                       $"thread={resolvedThreadId}; turn={resolvedTurnId}; keys={DescribeJsonObjectKeys(tokenUsageMessage.TokenUsage)}")
                 UpdateTokenUsageWidget(resolvedThreadId,
                                        resolvedTurnId,
                                        tokenUsageMessage.TokenUsage)

@@ -6,6 +6,7 @@ Imports System.Windows.Controls
 Imports System.Windows.Controls.Primitives
 Imports System.Windows.Input
 Imports System.Windows.Media
+Imports System.Windows.Media.Animation
 Imports System.Windows.Threading
 Imports CodexNativeAgent.Ui.ViewModels.Threads
 
@@ -61,6 +62,7 @@ Namespace CodexNativeAgent.Ui
         Private Const TranscriptTabCaptionMaxChars As Integer = 48
         Private _transcriptSurfaceHostPanel As Panel
         Private _transcriptTabStripBorder As Border
+        Private _transcriptTabStripBorderBrush As SolidColorBrush
         Private _transcriptTabStripScrollViewer As ScrollViewer
         Private _transcriptTabStripPanel As StackPanel
         Private _activeTranscriptSurfaceListBox As ListBox
@@ -277,7 +279,9 @@ Namespace CodexNativeAgent.Ui
                     .Visibility = Visibility.Collapsed,
                     .Child = _transcriptTabStripScrollViewer
                 }
-                _transcriptTabStripBorder.SetResourceReference(Border.BorderBrushProperty, "BorderStrongBrush")
+                Dim defaultBorderColor = ResolveTabStripColor("BorderStrongBrush", Color.FromRgb(&H7A, &H88, &H9D))
+                _transcriptTabStripBorderBrush = New SolidColorBrush(defaultBorderColor)
+                _transcriptTabStripBorder.BorderBrush = _transcriptTabStripBorderBrush
                 AddHandler _transcriptTabStripBorder.SizeChanged, AddressOf OnTranscriptTabStripSizeChanged
                 AddHandler _transcriptTabStripScrollViewer.SizeChanged, AddressOf OnTranscriptTabStripSizeChanged
 
@@ -296,6 +300,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             ApplyTranscriptTabStripInteractionState()
+            UpdateTranscriptTabStripLoadingVisual()
             ApplyTranscriptTabResponsiveLayout()
         End Sub
 
@@ -312,6 +317,52 @@ Namespace CodexNativeAgent.Ui
 
             _transcriptTabStripBorder.IsHitTestVisible = _transcriptTabInteractionEnabled
             _transcriptTabStripBorder.Opacity = If(_transcriptTabInteractionEnabled, 1.0R, 0.74R)
+        End Sub
+
+        Private Shared Function ResolveSolidColorBrushResource(resource As Object) As SolidColorBrush
+            Dim solid = TryCast(resource, SolidColorBrush)
+            If solid IsNot Nothing Then
+                Return solid
+            End If
+
+            Return Nothing
+        End Function
+
+        Private Function ResolveTabStripColor(resourceKey As String, fallback As Color) As Color
+            Dim resource = TryFindResource(resourceKey)
+            Dim solid = ResolveSolidColorBrushResource(resource)
+            Return If(solid Is Nothing, fallback, solid.Color)
+        End Function
+
+        Private Sub UpdateTranscriptTabStripLoadingVisual()
+            If _transcriptTabStripBorder Is Nothing Then
+                Return
+            End If
+
+            If _transcriptTabStripBorderBrush Is Nothing Then
+                _transcriptTabStripBorderBrush = New SolidColorBrush()
+                _transcriptTabStripBorder.BorderBrush = _transcriptTabStripBorderBrush
+            End If
+
+            Dim baseColor = ResolveTabStripColor("BorderStrongBrush", Color.FromRgb(&H7A, &H88, &H9D))
+            Dim accentColor = ResolveTabStripColor("AccentBrush", baseColor)
+            Dim isLoading = _viewModel IsNot Nothing AndAlso
+                            _viewModel.TranscriptPanel IsNot Nothing AndAlso
+                            _viewModel.TranscriptPanel.HeaderLoadingSheenVisibility = Visibility.Visible
+
+            If isLoading Then
+                Dim pulse As New ColorAnimation() With {
+                    .From = baseColor,
+                    .To = accentColor,
+                    .Duration = TimeSpan.FromMilliseconds(420),
+                    .AutoReverse = True,
+                    .RepeatBehavior = RepeatBehavior.Forever
+                }
+                _transcriptTabStripBorderBrush.BeginAnimation(SolidColorBrush.ColorProperty, pulse, HandoffBehavior.SnapshotAndReplace)
+            Else
+                _transcriptTabStripBorderBrush.BeginAnimation(SolidColorBrush.ColorProperty, Nothing)
+                _transcriptTabStripBorderBrush.Color = baseColor
+            End If
         End Sub
 
         Private Sub AppendTranscriptTabChipAtStripEnd(tabChipBorder As Border)
@@ -1643,13 +1694,15 @@ Namespace CodexNativeAgent.Ui
             Dim inactiveHoverBackground = TryCast(TryFindResource("TabHoverBackgroundBrush"), Brush)
             Dim activeForeground = TryCast(TryFindResource("TextPrimaryBrush"), Brush)
             Dim inactiveForeground = TryCast(TryFindResource("TextTertiaryBrush"), Brush)
+            Dim activeOutlineBrush As Brush = If(TryCast(_transcriptTabStripBorderBrush, Brush),
+                                                 TryCast(TryFindResource("BorderStrongBrush"), Brush))
 
             If chipBorder IsNot Nothing Then
                 chipBorder.CornerRadius = New CornerRadius(6, 6, 0, 0)
                 If isActive Then
                     chipBorder.Background = If(If(isHover, activeHoverBackground, activeBackground), Brushes.Transparent)
-                    chipBorder.BorderBrush = Brushes.Transparent
-                    chipBorder.BorderThickness = New Thickness(0)
+                    chipBorder.BorderBrush = If(activeOutlineBrush, Brushes.Transparent)
+                    chipBorder.BorderThickness = New Thickness(1, 1, 1, 0)
                     chipBorder.Margin = New Thickness(0, 2, 4, 0)
                     chipBorder.Opacity = 1.0R
                     Panel.SetZIndex(chipBorder, 20)
