@@ -1,13 +1,51 @@
 <UserControl x:Class="CodexNativeAgent.Ui.WorkspacePaneControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:CodexNativeAgent.Ui"
              Background="Transparent">
             <UserControl.Resources>
+                <ui:MultilineTextToLinesConverter x:Key="MultilineTextToLinesConverter" />
                 <Style x:Key="TurnComposerHoverToolTipStyle" TargetType="ToolTip">
                     <Setter Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
                     <Setter Property="BorderBrush" Value="Transparent" />
                     <Setter Property="BorderThickness" Value="0" />
                     <Setter Property="Padding" Value="10,7" />
+                    <Setter Property="MaxWidth" Value="360" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ToolTip">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="12"
+                                        SnapsToDevicePixels="True">
+                                    <ItemsControl Margin="{TemplateBinding Padding}"
+                                                  AlternationCount="128"
+                                                  ItemsSource="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Content, Converter={StaticResource MultilineTextToLinesConverter}}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel>
+                                                    <Border x:Name="TooltipLineDivider"
+                                                            Height="1"
+                                                            Margin="0,4,0,4"
+                                                            Background="{DynamicResource BorderBrush}"
+                                                            Opacity="0.55" />
+                                                    <TextBlock Text="{Binding}"
+                                                               TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                </StackPanel>
+                                                <DataTemplate.Triggers>
+                                                    <Trigger Property="ItemsControl.AlternationIndex" Value="0">
+                                                        <Setter TargetName="TooltipLineDivider" Property="Visibility" Value="Collapsed" />
+                                                    </Trigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
                 <Style x:Key="NoOutlineBubbleComboBoxItemStyle"
                        TargetType="ComboBoxItem"
@@ -26,11 +64,11 @@
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsHighlighted" Value="True">
-                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
                                         <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
                                     </Trigger>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                        <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
                                         <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
                                     </Trigger>
                                     <Trigger Property="IsEnabled" Value="False">
@@ -1797,11 +1835,8 @@
                                             ToolTipService.BetweenShowDelay="50"
                                             ToolTipService.ShowDuration="45000">
                                         <Border.ToolTip>
-                                            <ToolTip Style="{StaticResource TurnComposerHoverToolTipStyle}">
-                                                <TextBlock Text="{Binding TurnComposer.ContextUsageTooltipText}"
-                                                           TextWrapping="Wrap"
-                                                           MaxWidth="340" />
-                                            </ToolTip>
+                                            <ToolTip Style="{StaticResource TurnComposerHoverToolTipStyle}"
+                                                     Content="{Binding TurnComposer.ContextUsageTooltipText}" />
                                         </Border.ToolTip>
                                         <Grid Width="24"
                                               Height="24"

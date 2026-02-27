@@ -26,11 +26,11 @@
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsHighlighted" Value="True">
-                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
                                     <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
                                 </Trigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassStrongBrush}" />
+                                    <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource SurfaceContrastBrush}" />
                                     <Setter TargetName="ItemChrome" Property="BorderBrush" Value="Transparent" />
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
