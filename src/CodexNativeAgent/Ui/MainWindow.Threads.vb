@@ -491,6 +491,20 @@ Namespace CodexNativeAgent.Ui
                 Return False
             End If
 
+            Dim runtimeStore = If(_sessionNotificationCoordinator Is Nothing,
+                                  Nothing,
+                                  _sessionNotificationCoordinator.RuntimeStore)
+            Dim projection As New ThreadTranscriptProjectionSnapshot() With {
+                .RawText = snapshot.RawText
+            }
+            For Each descriptor In snapshot.DisplayEntries
+                If descriptor Is Nothing Then
+                    Continue For
+                End If
+
+                projection.DisplayEntries.Add(descriptor)
+            Next
+
             Dim overlayReplayTurnCount = 0
             Dim overlayFastBindReuseEnabled = False
             Dim overlayFastBindSkipReason = String.Empty
@@ -509,10 +523,23 @@ Namespace CodexNativeAgent.Ui
                                                 $"thread={normalizedThreadId}; overlayReplayTurns={overlayReplayTurnCount}")
             End If
 
+            Dim completedOverlayTurnsForFullReplay As HashSet(Of String) = Nothing
+            If overlayReplayTurnCount > 0 AndAlso runtimeStore IsNot Nothing Then
+                ApplyOverlayRuntimeOrderMetadataToProjection(normalizedThreadId, projection, runtimeStore)
+                completedOverlayTurnsForFullReplay = RemoveProjectionSnapshotItemRowsForCompletedOverlayTurns(normalizedThreadId,
+                                                                                                              projection,
+                                                                                                              runtimeStore)
+                RemoveProjectionOverlayReplaySupersededMarkers(normalizedThreadId,
+                                                               projection,
+                                                               runtimeStore)
+            End If
+
             Dim chunkPlanLookupStartMs = perf.ElapsedMilliseconds
             Dim initialChunkPlan = payload.InitialDisplayChunkPlan
-            If initialChunkPlan Is Nothing Then
-                initialChunkPlan = BuildInitialVisibleTranscriptChunkPlan(snapshot.DisplayEntries)
+            If overlayReplayTurnCount > 0 Then
+                initialChunkPlan = BuildInitialVisibleTranscriptChunkPlan(projection.DisplayEntries)
+            ElseIf initialChunkPlan Is Nothing Then
+                initialChunkPlan = BuildInitialVisibleTranscriptChunkPlan(projection.DisplayEntries)
             End If
             Dim chunkPlanLookupMs = Math.Max(0, perf.ElapsedMilliseconds - chunkPlanLookupStartMs)
 
@@ -538,7 +565,7 @@ Namespace CodexNativeAgent.Ui
                 Return False
             End If
 
-            Dim visibleEntriesToRender As IEnumerable(Of TranscriptEntryDescriptor) = snapshot.DisplayEntries
+            Dim visibleEntriesToRender As IEnumerable(Of TranscriptEntryDescriptor) = projection.DisplayEntries
             If initialChunkPlan IsNot Nothing Then
                 visibleEntriesToRender = initialChunkPlan.DisplayEntries
             End If
@@ -548,7 +575,7 @@ Namespace CodexNativeAgent.Ui
             Dim didSwapTranscriptDoc = EnsureTranscriptDocumentActivatedForThread(normalizedThreadId, "selection_fast_bind")
             Dim docSwapMs = Math.Max(0, perf.ElapsedMilliseconds - docSwapStartMs)
             Dim renderedDisplayCount = If(initialChunkPlan Is Nothing,
-                                          snapshot.DisplayEntries.Count,
+                                          projection.DisplayEntries.Count,
                                           initialChunkPlan.SelectedEntryCount)
 
             Dim canSkipRebindAsUnchanged = False
@@ -605,7 +632,7 @@ Namespace CodexNativeAgent.Ui
                                                 $"thread={normalizedThreadId}; mode=fast; {_viewModel.TranscriptPanel.DescribeLastClearTranscriptTelemetry()}")
 
                 Dim setRawTextStartMs = perf.ElapsedMilliseconds
-                _viewModel.TranscriptPanel.SetTranscriptSnapshot(snapshot.RawText)
+                _viewModel.TranscriptPanel.SetTranscriptSnapshot(projection.RawText)
                 setRawTextMs = Math.Max(0, perf.ElapsedMilliseconds - setRawTextStartMs)
 
                 Dim setDisplayStartMs = perf.ElapsedMilliseconds
@@ -622,8 +649,8 @@ Namespace CodexNativeAgent.Ui
 
             Dim overlayApplyStartMs = perf.ElapsedMilliseconds
             ApplyLiveRuntimeOverlayForThread(normalizedThreadId,
-                                            _sessionNotificationCoordinator.RuntimeStore,
-                                            Nothing)
+                                            runtimeStore,
+                                            completedOverlayTurnsForFullReplay)
             Dim overlayApplyMs = Math.Max(0, perf.ElapsedMilliseconds - overlayApplyStartMs)
 
             Dim finalizeBindStartMs = perf.ElapsedMilliseconds
@@ -633,7 +660,7 @@ Namespace CodexNativeAgent.Ui
 
             EnsureTranscriptChunkTopProbeTimerStarted()
             TraceTranscriptChunkSession("rebuild_fast_complete",
-                                        $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={renderedDisplayCount}; totalProjectionCount={snapshot.DisplayEntries.Count}")
+                                        $"thread={normalizedThreadId}; generation={chunkSessionGeneration}; displayCount={renderedDisplayCount}; totalProjectionCount={projection.DisplayEntries.Count}")
             If Not canSkipRebindAsUnchanged Then
                 ScrollTranscriptToBottom(force:=True, reason:=TranscriptScrollRequestReason.ThreadRebuild)
             End If
@@ -641,7 +668,7 @@ Namespace CodexNativeAgent.Ui
 
             TraceThreadSelectionPerformance(
                 "fast_bind_complete",
-                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; docSwapMs={docSwapMs}; docSwapped={didSwapTranscriptDoc}; reusedUnchanged={canSkipRebindAsUnchanged}; reuseSkipReason={skipRebindReason}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={snapshot.DisplayEntries.Count}")
+                $"thread={normalizedThreadId}; chunkPlanLookupMs={chunkPlanLookupMs}; chunkSessionSetupMs={chunkSessionSetupMs}; docSwapMs={docSwapMs}; docSwapped={didSwapTranscriptDoc}; reusedUnchanged={canSkipRebindAsUnchanged}; reuseSkipReason={skipRebindReason}; uiBindMs={uiBindMs}; clearMs={clearMs}; setRawTextMs={setRawTextMs}; setDisplayMs={setDisplayMs}; overlayApplyMs={overlayApplyMs}; finalizeMs={finalizeBindMs}; totalMs={perf.ElapsedMilliseconds}; rendered={renderedDisplayCount}; total={projection.DisplayEntries.Count}")
             Return True
         End Function
 

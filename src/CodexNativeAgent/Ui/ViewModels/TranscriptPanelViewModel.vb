@@ -1137,6 +1137,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return
             End If
 
+            TryRemoveOptimisticUserEchoDuplicate(descriptor, runtimeKey)
             RegisterRuntimeItemAssociations(itemState, runtimeKey)
             UpsertRuntimeDescriptor(runtimeKey, descriptor)
 
@@ -1151,6 +1152,169 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 RemoveStandaloneTurnDiffEntriesForTurn(itemState.TurnId)
             End If
         End Sub
+
+        Private Sub TryRemoveOptimisticUserEchoDuplicate(descriptor As TranscriptEntryDescriptor, runtimeKey As String)
+            If descriptor Is Nothing Then
+                Return
+            End If
+
+            If Not StringComparer.OrdinalIgnoreCase.Equals(If(descriptor.Kind, String.Empty), "user") Then
+                Return
+            End If
+
+            Dim normalizedRuntimeKey = If(runtimeKey, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedRuntimeKey) Then
+                Return
+            End If
+
+            ' If we already have the runtime-keyed entry, this is a regular update and no dedupe is needed.
+            If _runtimeEntriesByKey.ContainsKey(normalizedRuntimeKey) Then
+                Return
+            End If
+
+            If TryRemoveOptimisticUserEchoForTurnStartMarker(descriptor) Then
+                Return
+            End If
+
+            Dim normalizedBody = NormalizeOptimisticUserEchoBody(descriptor.BodyText)
+            If String.IsNullOrWhiteSpace(normalizedBody) Then
+                Return
+            End If
+
+            Dim normalizedDescriptorThreadId = If(descriptor.ThreadId, String.Empty).Trim()
+            Dim normalizedDescriptorTurnId = NormalizeTurnId(descriptor.TurnId)
+            Dim lowerBound = Math.Max(0, _items.Count - 12)
+
+            For i = _items.Count - 1 To lowerBound Step -1
+                Dim candidate = _items(i)
+                If candidate Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.OrdinalIgnoreCase.Equals(candidate.Kind, "user") Then
+                    Continue For
+                End If
+
+                If Not String.IsNullOrWhiteSpace(If(candidate.RuntimeKey, String.Empty).Trim()) Then
+                    Continue For
+                End If
+
+                Dim normalizedCandidateBody = NormalizeOptimisticUserEchoBody(candidate.BodyText)
+                If Not StringComparer.Ordinal.Equals(normalizedCandidateBody, normalizedBody) Then
+                    Continue For
+                End If
+
+                Dim normalizedCandidateThreadId = If(candidate.ThreadId, String.Empty).Trim()
+                If Not String.IsNullOrWhiteSpace(normalizedDescriptorThreadId) AndAlso
+                   Not String.IsNullOrWhiteSpace(normalizedCandidateThreadId) AndAlso
+                   Not StringComparer.Ordinal.Equals(normalizedCandidateThreadId, normalizedDescriptorThreadId) Then
+                    Continue For
+                End If
+
+                Dim normalizedCandidateTurnId = NormalizeTurnId(candidate.TurnId)
+                If Not String.IsNullOrWhiteSpace(normalizedDescriptorTurnId) AndAlso
+                   Not String.IsNullOrWhiteSpace(normalizedCandidateTurnId) AndAlso
+                   Not StringComparer.Ordinal.Equals(normalizedCandidateTurnId, normalizedDescriptorTurnId) Then
+                    Continue For
+                End If
+
+                _items.RemoveAt(i)
+                Exit For
+            Next
+        End Sub
+
+        Private Function TryRemoveOptimisticUserEchoForTurnStartMarker(descriptor As TranscriptEntryDescriptor) As Boolean
+            If descriptor Is Nothing Then
+                Return False
+            End If
+
+            Dim normalizedDescriptorTurnId = NormalizeTurnId(descriptor.TurnId)
+            If String.IsNullOrWhiteSpace(normalizedDescriptorTurnId) Then
+                Return False
+            End If
+
+            Dim normalizedDescriptorThreadId = If(descriptor.ThreadId, String.Empty).Trim()
+            Dim startMarkerIndex = -1
+
+            For i = 0 To _items.Count - 1
+                Dim candidate = _items(i)
+                If candidate Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.OrdinalIgnoreCase.Equals(candidate.Kind, "turnMarker") Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(If(candidate.BodyText, String.Empty).Trim(), "Turn started.") Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedDescriptorTurnId) Then
+                    Continue For
+                End If
+
+                Dim normalizedCandidateThreadId = If(candidate.ThreadId, String.Empty).Trim()
+                If Not String.IsNullOrWhiteSpace(normalizedDescriptorThreadId) AndAlso
+                   Not String.IsNullOrWhiteSpace(normalizedCandidateThreadId) AndAlso
+                   Not StringComparer.Ordinal.Equals(normalizedDescriptorThreadId, normalizedCandidateThreadId) Then
+                    Continue For
+                End If
+
+                startMarkerIndex = i
+                Exit For
+            Next
+
+            If startMarkerIndex <= 0 Then
+                Return False
+            End If
+
+            Dim lowerBound = Math.Max(0, startMarkerIndex - 6)
+            For i = startMarkerIndex - 1 To lowerBound Step -1
+                Dim candidate = _items(i)
+                If candidate Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.OrdinalIgnoreCase.Equals(candidate.Kind, "user") Then
+                    Continue For
+                End If
+
+                If Not String.IsNullOrWhiteSpace(If(candidate.RuntimeKey, String.Empty).Trim()) Then
+                    Continue For
+                End If
+
+                Dim normalizedCandidateTurnId = NormalizeTurnId(candidate.TurnId)
+                If Not String.IsNullOrWhiteSpace(normalizedCandidateTurnId) AndAlso
+                   Not StringComparer.Ordinal.Equals(normalizedCandidateTurnId, normalizedDescriptorTurnId) Then
+                    Continue For
+                End If
+
+                Dim normalizedCandidateThreadId = If(candidate.ThreadId, String.Empty).Trim()
+                If Not String.IsNullOrWhiteSpace(normalizedDescriptorThreadId) AndAlso
+                   Not String.IsNullOrWhiteSpace(normalizedCandidateThreadId) AndAlso
+                   Not StringComparer.Ordinal.Equals(normalizedCandidateThreadId, normalizedDescriptorThreadId) Then
+                    Continue For
+                End If
+
+                _items.RemoveAt(i)
+                Return True
+            Next
+
+            Return False
+        End Function
+
+        Private Shared Function NormalizeOptimisticUserEchoBody(value As String) As String
+            Dim normalized = If(value, String.Empty)
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return String.Empty
+            End If
+
+            normalized = normalized.Replace(ControlChars.CrLf, ControlChars.Lf).
+                                    Replace(ControlChars.Cr, ControlChars.Lf).
+                                    Trim()
+            Return normalized
+        End Function
 
         Public Sub UpsertTurnLifecycleMarker(threadId As String,
                                             turnId As String,
@@ -1435,6 +1599,28 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Dim normalizedTurnId = NormalizeTurnId(descriptor.TurnId)
             If String.IsNullOrWhiteSpace(normalizedTurnId) Then
                 Return -1
+            End If
+
+            Dim normalizedKind = If(descriptor.Kind, String.Empty).Trim()
+            If StringComparer.OrdinalIgnoreCase.Equals(normalizedKind, "user") Then
+                For i = 0 To _items.Count - 1
+                    Dim candidate = _items(i)
+                    If candidate Is Nothing Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                        Continue For
+                    End If
+
+                    If Not StringComparer.OrdinalIgnoreCase.Equals(candidate.Kind, "turnMarker") Then
+                        Continue For
+                    End If
+
+                    If StringComparer.Ordinal.Equals(If(candidate.BodyText, String.Empty).Trim(), "Turn started.") Then
+                        Return i
+                    End If
+                Next
             End If
 
             If descriptor.TurnItemStreamSequence.HasValue Then
