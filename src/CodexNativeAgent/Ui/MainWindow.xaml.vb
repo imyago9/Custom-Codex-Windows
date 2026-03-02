@@ -1077,13 +1077,18 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub SetThreadsSidebarVisible(isVisible As Boolean)
+            Dim visibilityChanged = (_isLeftSidebarVisible <> isVisible)
+
             If LeftSidebarColumn Is Nothing Then
                 _isLeftSidebarVisible = isVisible
                 SyncThreadsSidebarToggleVisual()
+                If visibilityChanged Then
+                    PlayPanelVisibilityToggleSoundIfEnabled()
+                End If
                 Return
             End If
 
-            If isVisible = _isLeftSidebarVisible AndAlso LeftSidebarColumn.ActualWidth >= 1.0R Then
+            If Not visibilityChanged AndAlso LeftSidebarColumn.ActualWidth >= 1.0R Then
                 SyncThreadsSidebarToggleVisual()
                 Return
             End If
@@ -1107,6 +1112,10 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 LeftSidebarColumn.Width = New GridLength(targetWidth, GridUnitType.Pixel)
+            End If
+
+            If visibilityChanged Then
+                PlayPanelVisibilityToggleSoundIfEnabled()
             End If
         End Sub
 
@@ -2133,6 +2142,10 @@ Namespace CodexNativeAgent.Ui
             Dim sourceIndex As Integer = 0
 
             For Each line In lines
+                If ShouldHideGitDiffHeaderLineFromPreview(line) Then
+                    Continue For
+                End If
+
                 Dim kind = ClassifyGitDiffPreviewLine(line)
                 Dim entry As New GitDiffPreviewLineEntry() With {
                     .Text = line,
@@ -2175,6 +2188,14 @@ Namespace CodexNativeAgent.Ui
             Next
 
             Return result
+        End Function
+
+        Private Shared Function ShouldHideGitDiffHeaderLineFromPreview(line As String) As Boolean
+            Dim value = If(line, String.Empty)
+            Return value.StartsWith("diff --git ", StringComparison.Ordinal) OrElse
+                   value.StartsWith("index ", StringComparison.Ordinal) OrElse
+                   value.StartsWith("--- ", StringComparison.Ordinal) OrElse
+                   value.StartsWith("+++ ", StringComparison.Ordinal)
         End Function
 
         Private Shared Function ParseGitDiffHunkHeader(line As String,
@@ -3150,7 +3171,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If GitPaneHost.GitInspectorPanel.Visibility = Visibility.Visible Then
-                CloseGitPanel()
+                CloseGitPanel(playToggleSound:=True)
                 Return
             End If
 
@@ -3158,6 +3179,7 @@ Namespace CodexNativeAgent.Ui
             ShowGitPanelDock()
             GitPaneHost.GitInspectorPanel.Visibility = Visibility.Visible
             UpdateSidebarSelectionState(showSettings:=(_viewModel.SidebarSettingsViewVisibility = Visibility.Visible))
+            PlayPanelVisibilityToggleSoundIfEnabled()
             FireAndForget(RefreshGitPanelAsync())
         End Sub
 
@@ -3253,8 +3275,12 @@ Namespace CodexNativeAgent.Ui
             Return StartProcessInDirectory("cmd.exe", "/c code " & normalizedArgs, workingDirectory, createNoWindow:=True)
         End Function
 
-        Private Sub CloseGitPanel()
+        Private Sub CloseGitPanel(Optional playToggleSound As Boolean = True)
             If GitPaneHost.GitInspectorPanel Is Nothing Then
+                Return
+            End If
+
+            If GitPaneHost.GitInspectorPanel.Visibility <> Visibility.Visible Then
                 Return
             End If
 
@@ -3289,6 +3315,9 @@ Namespace CodexNativeAgent.Ui
             Interlocked.Increment(_gitPanelCommitPreviewLoadVersion)
             Interlocked.Increment(_gitPanelBranchPreviewLoadVersion)
             UpdateSidebarSelectionState(showSettings:=(_viewModel.SidebarSettingsViewVisibility = Visibility.Visible))
+            If playToggleSound Then
+                PlayPanelVisibilityToggleSoundIfEnabled()
+            End If
         End Sub
 
         Private Async Function RefreshGitPanelAsync() As Task
@@ -4449,7 +4478,7 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub MainWindow_PreviewKeyDown(sender As Object, e As KeyEventArgs) Handles Me.PreviewKeyDown
             If Keyboard.Modifiers = ModifierKeys.Control AndAlso e.Key = Key.Enter Then
-                If TryExecuteShellCommand(_viewModel.ShellSendCommand) Then
+                If TryExecuteTurnComposerSendOrSteerCommand() Then
                     e.Handled = True
                 End If
                 Return
@@ -4865,10 +4894,10 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If String.IsNullOrWhiteSpace(GetVisibleTurnId()) Then
-                Return "Ready. Send with Ctrl+Enter."
+                Return "Ready. Press Enter to send."
             End If
 
-            Return "Turn in progress. Use Steer to refine or Interrupt to stop execution."
+            Return "Turn in progress. Press Enter to steer or use Interrupt to stop execution."
         End Function
 
         Private Sub ShowControlCenterTab()

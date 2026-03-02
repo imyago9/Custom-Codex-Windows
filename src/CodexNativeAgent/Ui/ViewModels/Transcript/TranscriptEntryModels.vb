@@ -850,6 +850,10 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             Dim lines = normalized.Split(ControlChars.Lf)
             For Each rawLine In lines
                 Dim lineText = If(rawLine, String.Empty)
+                If ShouldHideDiffHeaderLineFromDisplay(lineText) Then
+                    Continue For
+                End If
+
                 _detailsDiffLines.Add(New TranscriptDiffLineViewModel() With {
                     .Text = lineText,
                     .Kind = ClassifyDiffLineKind(lineText)
@@ -884,6 +888,14 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End If
 
             Return "context"
+        End Function
+
+        Private Shared Function ShouldHideDiffHeaderLineFromDisplay(lineText As String) As Boolean
+            Dim text = If(lineText, String.Empty)
+            Return text.StartsWith("diff --git ", StringComparison.Ordinal) OrElse
+                   text.StartsWith("index ", StringComparison.Ordinal) OrElse
+                   text.StartsWith("--- ", StringComparison.Ordinal) OrElse
+                   text.StartsWith("+++ ", StringComparison.Ordinal)
         End Function
     End Class
 End Namespace

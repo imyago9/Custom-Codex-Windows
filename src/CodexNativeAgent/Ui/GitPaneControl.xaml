@@ -847,6 +847,8 @@
                                                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                                                      ScrollViewer.CanContentScroll="False">
                                                                 <ListBox.Resources>
+                                                                    <!-- Ensure the scroll corner between horizontal/vertical bars stays transparent (not default white). -->
+                                                                    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="Transparent" />
                                                                     <Style TargetType="ListBoxItem">
                                                                         <Setter Property="Padding" Value="0" />
                                                                         <Setter Property="Margin" Value="0" />
@@ -1116,7 +1118,11 @@
                                                                  Background="Transparent"
                                                                  Foreground="{DynamicResource TextSecondaryBrush}"
                                                                  FontFamily="Cascadia Code"
-                                                                 FontSize="11.5" />
+                                                                 FontSize="11.5">
+                                                            <TextBox.Resources>
+                                                                <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="Transparent" />
+                                                            </TextBox.Resources>
+                                                        </TextBox>
                                                     </Border>
                                                 </Grid>
                                             </Grid>
@@ -1236,7 +1242,11 @@
                                                                  Background="Transparent"
                                                                  Foreground="{DynamicResource TextSecondaryBrush}"
                                                                  FontFamily="Cascadia Code"
-                                                                 FontSize="11.5" />
+                                                                 FontSize="11.5">
+                                                            <TextBox.Resources>
+                                                                <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="Transparent" />
+                                                            </TextBox.Resources>
+                                                        </TextBox>
                                                     </Border>
                                                 </Grid>
                                             </Grid>

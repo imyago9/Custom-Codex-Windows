@@ -50,11 +50,29 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim popup = If(WorkspacePaneHost?.TurnComposerTokenSuggestionsPopup, Nothing)
-            If popup Is Nothing OrElse Not popup.IsOpen Then
-                Return
+            Dim popupOpen = popup IsNot Nothing AndAlso popup.IsOpen
+
+            If e.Key = Key.Enter Then
+                Dim modifiers = Keyboard.Modifiers
+
+                If modifiers = ModifierKeys.None AndAlso popupOpen Then
+                    ' Keep Enter scoped to suggestion selection whenever the popup is open.
+                    If ApplySelectedTurnComposerTokenSuggestion() Then
+                        e.Handled = True
+                    End If
+                    e.Handled = True
+                    Return
+                End If
+
+                If modifiers = ModifierKeys.None OrElse modifiers = ModifierKeys.Control Then
+                    If TryExecuteTurnComposerSendOrSteerCommand() Then
+                        e.Handled = True
+                    End If
+                    Return
+                End If
             End If
 
-            If e.Key = Key.Enter AndAlso Keyboard.Modifiers = ModifierKeys.Control Then
+            If Not popupOpen Then
                 Return
             End If
 
@@ -71,11 +89,6 @@ Namespace CodexNativeAgent.Ui
                         e.Handled = True
                     End If
 
-                Case Key.Enter
-                    If Keyboard.Modifiers = ModifierKeys.None AndAlso ApplySelectedTurnComposerTokenSuggestion() Then
-                        e.Handled = True
-                    End If
-
                 Case Key.Tab
                     If Keyboard.Modifiers = ModifierKeys.None AndAlso ApplySelectedTurnComposerTokenSuggestion() Then
                         e.Handled = True
@@ -86,6 +99,18 @@ Namespace CodexNativeAgent.Ui
                     e.Handled = True
             End Select
         End Sub
+
+        Private Function TryExecuteTurnComposerSendOrSteerCommand() As Boolean
+            If _viewModel Is Nothing OrElse _viewModel.TurnComposer Is Nothing Then
+                Return False
+            End If
+
+            If _viewModel.TurnComposer.CanSteerTurn Then
+                Return TryExecuteShellCommand(_viewModel.TurnComposer.SteerTurnCommand)
+            End If
+
+            Return TryExecuteShellCommand(_viewModel.ShellSendCommand)
+        End Function
 
         Private Sub OnTurnComposerTokenSuggestionsPreviewMouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs)
             Dim suggestionList = TryCast(sender, ListBox)

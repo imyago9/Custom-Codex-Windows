@@ -267,7 +267,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If IsMetricsPanelVisible() Then
-                CloseMetricsPanel()
+                CloseMetricsPanel(playToggleSound:=True)
                 Return
             End If
 
@@ -276,11 +276,16 @@ Namespace CodexNativeAgent.Ui
             MetricsPaneHost.IsHitTestVisible = True
             MetricsPaneHost.MetricsInspectorPanel.Visibility = Visibility.Visible
             UpdateSidebarSelectionState(showSettings:=(_viewModel.SidebarSettingsViewVisibility = Visibility.Visible))
+            PlayPanelVisibilityToggleSoundIfEnabled()
             FireAndForget(RefreshMetricsPanelAsync())
         End Sub
 
-        Private Sub CloseMetricsPanel()
+        Private Sub CloseMetricsPanel(Optional playToggleSound As Boolean = True)
             If MetricsPaneHost Is Nothing OrElse MetricsPaneHost.MetricsInspectorPanel Is Nothing Then
+                Return
+            End If
+
+            If MetricsPaneHost.MetricsInspectorPanel.Visibility <> Visibility.Visible Then
                 Return
             End If
 
@@ -311,6 +316,9 @@ Namespace CodexNativeAgent.Ui
 
             UpdateMainPaneResizeBounds()
             UpdateSidebarSelectionState(showSettings:=(_viewModel.SidebarSettingsViewVisibility = Visibility.Visible))
+            If playToggleSound Then
+                PlayPanelVisibilityToggleSoundIfEnabled()
+            End If
         End Sub
 
         Private Function IsMetricsPanelVisible() As Boolean

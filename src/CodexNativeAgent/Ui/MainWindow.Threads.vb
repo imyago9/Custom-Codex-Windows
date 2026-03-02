@@ -1535,13 +1535,13 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub RefreshThreadRuntimeIndicatorsIfNeeded()
-            If _threadEntries.Count = 0 Then
-                Return
+            If _threadEntries.Count > 0 Then
+                If UpdateThreadEntryRuntimeIndicatorsFromSessionState() Then
+                    ApplyThreadFiltersAndSort()
+                End If
             End If
 
-            If UpdateThreadEntryRuntimeIndicatorsFromSessionState() Then
-                ApplyThreadFiltersAndSort()
-            End If
+            UpdateTranscriptTabButtonVisuals()
         End Sub
 
         Private Function UpdateThreadEntryRuntimeIndicatorsFromSessionState() As Boolean

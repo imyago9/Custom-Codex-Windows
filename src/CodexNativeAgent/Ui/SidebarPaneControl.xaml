@@ -1053,8 +1053,8 @@
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl+Enter" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Send turn input" Margin="0,0,0,8" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Enter" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Send input / steer active turn" Margin="0,0,0,8" VerticalAlignment="Center" />
 
                                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl+Shift+N" Margin="0,0,10,8" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" />
                                             <TextBlock Grid.Row="1" Grid.Column="1" Text="Start a new thread" Margin="0,0,0,8" VerticalAlignment="Center" />

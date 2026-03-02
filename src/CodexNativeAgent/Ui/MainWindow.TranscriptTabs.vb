@@ -7,7 +7,9 @@ Imports System.Windows.Controls.Primitives
 Imports System.Windows.Input
 Imports System.Windows.Media
 Imports System.Windows.Media.Animation
+Imports System.Windows.Shapes
 Imports System.Windows.Threading
+Imports CodexNativeAgent.Ui.Coordinators
 Imports CodexNativeAgent.Ui.ViewModels.Threads
 
 Namespace CodexNativeAgent.Ui
@@ -15,6 +17,13 @@ Namespace CodexNativeAgent.Ui
         Private Enum TranscriptTabKind
             Thread = 0
             PendingNewThread = 1
+        End Enum
+
+        Private Enum TranscriptTabRuntimeIndicatorKind
+            None = 0
+            Active = 1
+            PendingApproval = 2
+            PendingUpdates = 3
         End Enum
 
         Private NotInheritable Class TranscriptTabState
@@ -34,6 +43,8 @@ Namespace CodexNativeAgent.Ui
             Public Property TabButton As Button
             Public Property TabChipBorder As Border
             Public Property TabCloseButton As Button
+            Public Property TabCaptionTextBlock As TextBlock
+            Public Property TabStatusDot As Ellipse
             Public Property IsPrimarySurface As Boolean
         End Class
 
@@ -518,9 +529,13 @@ Namespace CodexNativeAgent.Ui
 
             Dim tabButton As Button = Nothing
             Dim tabCloseButton As Button = Nothing
+            Dim tabCaptionTextBlock As TextBlock = Nothing
+            Dim tabStatusDot As Ellipse = Nothing
             Dim tabChipBorder = CreateTranscriptTabChip(normalizedThreadId,
                                                         tabButton,
-                                                        tabCloseButton)
+                                                        tabCloseButton,
+                                                        tabCaptionTextBlock,
+                                                        tabStatusDot)
 
             Dim handle As New TranscriptTabSurfaceHandle() With {
                 .ThreadId = normalizedThreadId,
@@ -528,6 +543,8 @@ Namespace CodexNativeAgent.Ui
                 .TabButton = tabButton,
                 .TabChipBorder = tabChipBorder,
                 .TabCloseButton = tabCloseButton,
+                .TabCaptionTextBlock = tabCaptionTextBlock,
+                .TabStatusDot = tabStatusDot,
                 .IsPrimarySurface = usePrimarySurface
             }
 
@@ -650,7 +667,9 @@ Namespace CodexNativeAgent.Ui
 
         Private Function CreateTranscriptTabChip(threadId As String,
                                                  ByRef tabButton As Button,
-                                                 ByRef closeButton As Button) As Border
+                                                 ByRef closeButton As Button,
+                                                 ByRef captionTextBlock As TextBlock,
+                                                 ByRef statusDot As Ellipse) As Border
             tabButton = New Button() With {
                 .Tag = threadId,
                 .Padding = New Thickness(12, 8, 8, 8),
@@ -666,6 +685,32 @@ Namespace CodexNativeAgent.Ui
                 .BorderThickness = New Thickness(0),
                 .HorizontalContentAlignment = HorizontalAlignment.Left
             }
+
+            statusDot = New Ellipse() With {
+                .Width = 7,
+                .Height = 7,
+                .Visibility = Visibility.Collapsed,
+                .Opacity = 1.0R,
+                .Margin = New Thickness(0, 0, 6, 0),
+                .VerticalAlignment = VerticalAlignment.Center,
+                .Fill = If(TryCast(TryFindResource("TextTertiaryBrush"), Brush), Brushes.Transparent),
+                .Stroke = If(TryCast(TryFindResource("SurfaceBrush"), Brush), Brushes.Transparent),
+                .StrokeThickness = 1
+            }
+
+            captionTextBlock = New TextBlock() With {
+                .Text = ResolveTranscriptTabCaption(threadId),
+                .TextTrimming = TextTrimming.CharacterEllipsis,
+                .VerticalAlignment = VerticalAlignment.Center
+            }
+
+            Dim tabLabelPanel As New StackPanel() With {
+                .Orientation = Orientation.Horizontal,
+                .VerticalAlignment = VerticalAlignment.Center
+            }
+            tabLabelPanel.Children.Add(statusDot)
+            tabLabelPanel.Children.Add(captionTextBlock)
+            tabButton.Content = tabLabelPanel
 
             AddHandler tabButton.Click, AddressOf OnTranscriptTabButtonClick
 
@@ -2153,7 +2198,11 @@ Namespace CodexNativeAgent.Ui
 
             Dim threadId = If(handle.ThreadId, String.Empty).Trim()
             Dim text = ResolveTranscriptTabCaption(threadId, maxChars)
-            handle.TabButton.Content = text
+            If handle.TabCaptionTextBlock IsNot Nothing Then
+                handle.TabCaptionTextBlock.Text = text
+            Else
+                handle.TabButton.Content = text
+            End If
             handle.TabButton.ToolTip = threadId
         End Sub
 
@@ -2245,10 +2294,123 @@ Namespace CodexNativeAgent.Ui
             button.IsHitTestVisible = canInteract
             button.Cursor = If(canInteract, Cursors.Hand, Cursors.Arrow)
 
+            UpdateTranscriptTabStatusDotVisual(handle, ResolveTranscriptTabRuntimeIndicatorKind(handle.ThreadId))
+
             UpdateTranscriptTabCloseButtonVisual(handle,
                                                  isActive,
                                                  If(If(isActive OrElse isHover, activeForeground, inactiveForeground), Brushes.Black),
                                                  canInteract)
+        End Sub
+
+        Private Function ResolveTranscriptTabRuntimeIndicatorKind(threadId As String) As TranscriptTabRuntimeIndicatorKind
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse
+               StringComparer.Ordinal.Equals(normalizedThreadId, PendingNewThreadTranscriptTabId) Then
+                Return TranscriptTabRuntimeIndicatorKind.None
+            End If
+
+            Dim entry = FindThreadListEntryById(normalizedThreadId)
+            If entry IsNot Nothing Then
+                If entry.HasPendingApproval Then
+                    Return TranscriptTabRuntimeIndicatorKind.PendingApproval
+                End If
+
+                If entry.HasActiveRuntimeTurn Then
+                    Return TranscriptTabRuntimeIndicatorKind.Active
+                End If
+
+                If entry.HasPendingRuntimeUpdates Then
+                    Return TranscriptTabRuntimeIndicatorKind.PendingUpdates
+                End If
+
+                Return TranscriptTabRuntimeIndicatorKind.None
+            End If
+
+            Dim runtimeStore = If(_sessionNotificationCoordinator?.RuntimeStore, Nothing)
+            Dim hasActiveRuntimeTurn = runtimeStore IsNot Nothing AndAlso runtimeStore.HasActiveTurn(normalizedThreadId)
+
+            Dim hasPendingRuntimeUpdates = False
+            Dim liveState As ThreadLiveSessionState = Nothing
+            If _threadLiveSessionRegistry.TryGet(normalizedThreadId, liveState) AndAlso liveState IsNot Nothing Then
+                hasPendingRuntimeUpdates = liveState.PendingRebuild
+                If runtimeStore Is Nothing AndAlso Not hasActiveRuntimeTurn Then
+                    hasActiveRuntimeTurn = liveState.IsTurnActive AndAlso
+                                           Not String.IsNullOrWhiteSpace(If(liveState.ActiveTurnId, String.Empty).Trim())
+                End If
+            End If
+
+            Dim visibleThreadId = GetVisibleThreadId()
+            If Not String.IsNullOrWhiteSpace(visibleThreadId) AndAlso
+               StringComparer.Ordinal.Equals(visibleThreadId, normalizedThreadId) Then
+                hasPendingRuntimeUpdates = False
+            End If
+
+            Dim hasPendingApproval = _turnWorkflowCoordinator IsNot Nothing AndAlso
+                                     _turnWorkflowCoordinator.HasPendingApprovalForThread(normalizedThreadId)
+
+            If hasPendingApproval Then
+                Return TranscriptTabRuntimeIndicatorKind.PendingApproval
+            End If
+
+            If hasActiveRuntimeTurn Then
+                Return TranscriptTabRuntimeIndicatorKind.Active
+            End If
+
+            If hasPendingRuntimeUpdates Then
+                Return TranscriptTabRuntimeIndicatorKind.PendingUpdates
+            End If
+
+            Return TranscriptTabRuntimeIndicatorKind.None
+        End Function
+
+        Private Sub UpdateTranscriptTabStatusDotVisual(handle As TranscriptTabSurfaceHandle,
+                                                       indicatorKind As TranscriptTabRuntimeIndicatorKind)
+            If handle Is Nothing OrElse handle.TabStatusDot Is Nothing Then
+                Return
+            End If
+
+            Dim dot = handle.TabStatusDot
+            Dim brush As Brush = Nothing
+            Dim shouldPulse = False
+            Dim toolTipText = String.Empty
+
+            Select Case indicatorKind
+                Case TranscriptTabRuntimeIndicatorKind.PendingApproval
+                    brush = TryCast(TryFindResource("WarningBrush"), Brush)
+                    shouldPulse = True
+                    toolTipText = "Approval pending"
+                Case TranscriptTabRuntimeIndicatorKind.Active
+                    brush = TryCast(TryFindResource("AccentBrush"), Brush)
+                    shouldPulse = True
+                    toolTipText = "Thread is actively running"
+                Case TranscriptTabRuntimeIndicatorKind.PendingUpdates
+                    brush = TryCast(TryFindResource("SuccessBrush"), Brush)
+                    toolTipText = "Turn finished"
+                Case Else
+                    dot.BeginAnimation(UIElement.OpacityProperty, Nothing)
+                    dot.Opacity = 1.0R
+                    dot.Visibility = Visibility.Collapsed
+                    dot.ToolTip = Nothing
+                    Return
+            End Select
+
+            dot.Fill = If(brush, Brushes.Transparent)
+            dot.Visibility = Visibility.Visible
+            dot.ToolTip = toolTipText
+
+            If shouldPulse Then
+                Dim pulse As New DoubleAnimation() With {
+                    .From = 0.58R,
+                    .To = 1.0R,
+                    .Duration = TimeSpan.FromMilliseconds(560),
+                    .AutoReverse = True,
+                    .RepeatBehavior = RepeatBehavior.Forever
+                }
+                dot.BeginAnimation(UIElement.OpacityProperty, pulse, HandoffBehavior.SnapshotAndReplace)
+            Else
+                dot.BeginAnimation(UIElement.OpacityProperty, Nothing)
+                dot.Opacity = 1.0R
+            End If
         End Sub
 
         Private Sub UpdateTranscriptTabCloseButtonVisual(handle As TranscriptTabSurfaceHandle,

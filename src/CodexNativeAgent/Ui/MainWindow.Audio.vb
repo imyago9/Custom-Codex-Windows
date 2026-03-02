@@ -11,6 +11,7 @@ Namespace CodexNativeAgent.Ui
         Private Const GitPushSoundDuplicateSuppressWindowMs As Integer = 900
         Private Const ApprovalNeededSoundDuplicateSuppressWindowMs As Integer = 1400
         Private Const GeneralErrorSoundDuplicateSuppressWindowMs As Integer = 900
+        Private Const PanelVisibilitySoundDuplicateSuppressWindowMs As Integer = 220
 
         Private ReadOnly _activeUiSoundPlayers As New List(Of MediaPlayer)()
         Private _lastTurnDoneSoundKey As String = String.Empty
@@ -23,6 +24,7 @@ Namespace CodexNativeAgent.Ui
         Private _lastApprovalNeededSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
         Private _lastGeneralErrorSoundKey As String = String.Empty
         Private _lastGeneralErrorSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _lastPanelVisibilitySoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
 
         Private Sub PlayLoadThreadSoundIfEnabled()
             PlayUiSoundIfEnabled("load-thread.mp3")
@@ -102,6 +104,16 @@ Namespace CodexNativeAgent.Ui
             If PlayUiSoundIfEnabled("general-error.mp3") Then
                 _lastGeneralErrorSoundKey = soundKey
                 _lastGeneralErrorSoundPlayedUtc = DateTimeOffset.UtcNow
+            End If
+        End Sub
+
+        Private Sub PlayPanelVisibilityToggleSoundIfEnabled()
+            If (DateTimeOffset.UtcNow - _lastPanelVisibilitySoundPlayedUtc).TotalMilliseconds < PanelVisibilitySoundDuplicateSuppressWindowMs Then
+                Return
+            End If
+
+            If PlayUiSoundIfEnabled("hide-show-side-panels.mp3") Then
+                _lastPanelVisibilitySoundPlayedUtc = DateTimeOffset.UtcNow
             End If
         End Sub
 

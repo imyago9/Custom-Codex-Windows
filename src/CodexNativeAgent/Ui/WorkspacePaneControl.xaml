@@ -1265,11 +1265,16 @@
                                             <Path.RenderTransform>
                                                 <RotateTransform x:Name="ActiveTurnSpinnerRotateTransform"
                                                                  CenterX="11"
-                                                                 CenterY="11" />
+                                                 CenterY="11" />
                                             </Path.RenderTransform>
                                         </Path>
                                     </Grid>
-                                    <TextBlock Margin="9,0,0,0"
+                                    <Ellipse Width="4"
+                                             Height="4"
+                                             Margin="8,0,0,0"
+                                             VerticalAlignment="Center"
+                                             Fill="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Margin="8,0,0,0"
                                                Text="{Binding TranscriptPanel.ActiveTurnElapsedText}"
                                                VerticalAlignment="Center"
                                                FontFamily="Cascadia Code"
@@ -1278,7 +1283,12 @@
                                                LineStackingStrategy="BlockLineHeight"
                                                LineHeight="16"
                                                Foreground="{DynamicResource TextSecondaryBrush}" />
-                                    <TextBlock Margin="10,0,0,0"
+                                    <Ellipse Width="4"
+                                             Height="4"
+                                             Margin="8,0,0,0"
+                                             VerticalAlignment="Center"
+                                             Fill="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Margin="8,0,0,0"
                                                Text="{Binding TranscriptPanel.ActiveTurnStatusText}"
                                                VerticalAlignment="Center"
                                                FontFamily="Cascadia Code"
@@ -1435,20 +1445,15 @@
                             <Border x:Name="InlineApprovalCard"
                                     Grid.Row="0"
                                     Grid.RowSpan="3"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    Background="{DynamicResource SurfaceRaisedBrush}"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="0"
+                                    Background="Transparent"
                                     Focusable="True"
-                                    CornerRadius="10"
-                                    Padding="10"
+                                    CornerRadius="0"
+                                    Padding="0"
                                     Margin="0"
                                     VerticalAlignment="Stretch"
                                     Visibility="{Binding ApprovalPanel.CardVisibility}">
-                                <Border.Resources>
-                                    <SolidColorBrush x:Key="ApprovalOptionNeutralBorderBrush" Color="#70808080" />
-                                    <SolidColorBrush x:Key="ApprovalOptionSelectedBorderBrush" Color="#B09A9A9A" />
-                                    <SolidColorBrush x:Key="ApprovalOptionSelectedBackgroundBrush" Color="#1C808080" />
-                                </Border.Resources>
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -1487,135 +1492,250 @@
                                                 </TextBlock.Style>
                                             </TextBlock>
 
-                                            <Border Padding="10,8"
-                                                    Margin="0,0,0,6"
-                                                    CornerRadius="8"
-                                                    BorderThickness="1">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="Transparent" />
-                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                            <Grid Margin="0,0,0,7">
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Opacity" Value="1" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="1">
-                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
-                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
-                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding ApprovalPanel.CanAccept}" Value="False">
                                                                 <Setter Property="Opacity" Value="0.45" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </Border.Style>
-                                                <TextBlock Text="1. Accept"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           FontSize="11.5"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
+                                                </Grid.Style>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="12" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0"
+                                                         Width="6"
+                                                         Height="6"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{DynamicResource TextTertiaryBrush}">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="1">
+                                                                    <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="1. Accept"
+                                                           FontSize="11.5">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="1">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
 
-                                            <Border Padding="10,8"
-                                                    Margin="0,0,0,6"
-                                                    CornerRadius="8"
-                                                    BorderThickness="1">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="Transparent" />
-                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                            <Grid Margin="0,0,0,7">
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Opacity" Value="1" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="2">
-                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
-                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
-                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding ApprovalPanel.CanAcceptSession}" Value="False">
                                                                 <Setter Property="Opacity" Value="0.45" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </Border.Style>
-                                                <TextBlock Text="2. Accept Session"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           FontSize="11.5"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
+                                                </Grid.Style>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="12" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0"
+                                                         Width="6"
+                                                         Height="6"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{DynamicResource TextTertiaryBrush}">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="2">
+                                                                    <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="2. Accept Session"
+                                                           FontSize="11.5">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="2">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
 
-                                            <Border Padding="10,8"
-                                                    Margin="0,0,0,6"
-                                                    CornerRadius="8"
-                                                    BorderThickness="1">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="Transparent" />
-                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                            <Grid Margin="0,0,0,7">
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Opacity" Value="1" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="3">
-                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
-                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
-                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding ApprovalPanel.CanAcceptAmended}" Value="False">
                                                                 <Setter Property="Opacity" Value="0.45" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </Border.Style>
-                                                <StackPanel>
+                                                </Grid.Style>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="12" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0"
+                                                         Width="6"
+                                                         Height="6"
+                                                         VerticalAlignment="Top"
+                                                         Margin="0,4,0,0"
+                                                         Fill="{DynamicResource TextTertiaryBrush}">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="3">
+                                                                    <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                                <StackPanel Grid.Column="1">
                                                     <TextBlock Text="3. Accept + Amendment"
-                                                               Foreground="{DynamicResource TextPrimaryBrush}"
-                                                               FontSize="11.5"
-                                                               FontWeight="SemiBold" />
+                                                               FontSize="11.5">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="3">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                        <Setter Property="FontWeight" Value="Bold" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                     <TextBlock Text="Available when an execpolicy amendment is provided."
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               FontSize="10.2" />
+                                                               FontSize="10.2"
+                                                               Foreground="{DynamicResource TextTertiaryBrush}" />
                                                 </StackPanel>
-                                            </Border>
+                                            </Grid>
 
-                                            <Border Padding="10,8"
-                                                    Margin="0,0,0,6"
-                                                    CornerRadius="8"
-                                                    BorderThickness="1">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="Transparent" />
-                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                            <Grid Margin="0,0,0,7">
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Opacity" Value="1" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="4">
-                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
-                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
-                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding ApprovalPanel.CanDecline}" Value="False">
                                                                 <Setter Property="Opacity" Value="0.45" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </Border.Style>
-                                                <TextBlock Text="4. Decline"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           FontSize="11.5"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
+                                                </Grid.Style>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="12" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0"
+                                                         Width="6"
+                                                         Height="6"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{DynamicResource TextTertiaryBrush}">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="4">
+                                                                    <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="4. Decline"
+                                                           FontSize="11.5">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="4">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
 
-                                            <Border Padding="10,8"
-                                                    Margin="0,0,0,4"
-                                                    CornerRadius="8"
-                                                    BorderThickness="1">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="Transparent" />
-                                                        <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionNeutralBorderBrush}" />
+                                            <Grid Margin="0,0,0,4">
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Opacity" Value="1" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="5">
-                                                                <Setter Property="Background" Value="{StaticResource ApprovalOptionSelectedBackgroundBrush}" />
-                                                                <Setter Property="BorderBrush" Value="{StaticResource ApprovalOptionSelectedBorderBrush}" />
-                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding ApprovalPanel.CanCancel}" Value="False">
                                                                 <Setter Property="Opacity" Value="0.45" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </Border.Style>
-                                                <TextBlock Text="5. Cancel Turn"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           FontSize="11.5"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
+                                                </Grid.Style>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="12" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0"
+                                                         Width="6"
+                                                         Height="6"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{DynamicResource TextTertiaryBrush}">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="5">
+                                                                    <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="5. Cancel Turn"
+                                                           FontSize="11.5">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ApprovalPanel.SelectedOptionNumber}" Value="5">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
                                         </StackPanel>
                                     </ScrollViewer>
                                 </Grid>
@@ -1979,26 +2099,10 @@
                                       VerticalAlignment="Center">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
-                                    <Button x:Name="BtnTurnSteer"
-                                            Grid.Column="0"
-                                            Style="{StaticResource TurnComposerIconButtonStyle}"
-                                            Width="42"
-                                            MinWidth="42"
-                                            Padding="0"
-                                            Margin="0,0,6,6"
-                                            Visibility="{Binding TurnComposer.InterruptTurnVisibility}"
-                                            Command="{Binding TurnComposer.SteerTurnCommand}"
-                                            ToolTip="Steer active turn">
-                                        <Image Source="{DynamicResource TurnSteerIconImageSource}"
-                                               Width="16"
-                                               Height="16"
-                                               Stretch="Uniform" />
-                                    </Button>
                                     <Button x:Name="BtnTurnStart"
-                                            Grid.Column="1"
+                                            Grid.Column="0"
                                             Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="42"
                                             MinWidth="42"
@@ -2006,14 +2110,14 @@
                                             Margin="0,0,0,6"
                                             Visibility="{Binding TurnComposer.StartTurnVisibility}"
                                             Command="{Binding TurnComposer.StartTurnCommand}"
-                                            ToolTip="Send (Ctrl+Enter)">
+                                            ToolTip="Send / Steer (Enter)">
                                         <Image Source="{DynamicResource TurnSendIconImageSource}"
                                                Width="16"
                                                Height="16"
                                                Stretch="Uniform" />
                                     </Button>
                                     <Button x:Name="BtnTurnInterrupt"
-                                            Grid.Column="1"
+                                            Grid.Column="0"
                                             Style="{StaticResource TurnComposerIconButtonStyle}"
                                             Width="42"
                                             MinWidth="42"
