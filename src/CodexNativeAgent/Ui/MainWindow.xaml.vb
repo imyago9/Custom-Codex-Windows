@@ -5,6 +5,7 @@ Imports System.IO.Compression
 Imports System.Runtime.InteropServices
 Imports System.Security.Cryptography
 Imports System.Text
+Imports System.Text.RegularExpressions
 Imports System.Text.Json
 Imports System.Text.Json.Nodes
 Imports System.Threading
@@ -84,6 +85,10 @@ Namespace CodexNativeAgent.Ui
             Public Property ChangesText As String = String.Empty
             Public Property CommitsText As String = String.Empty
             Public Property BranchesText As String = String.Empty
+            Public Property StagedChangeCount As Integer
+            Public Property UnstagedChangeCount As Integer
+            Public Property UntrackedChangeCount As Integer
+            Public Property ConflictChangeCount As Integer
             Public Property ChangedFiles As New List(Of GitChangedFileListEntry)()
             Public Property Commits As New List(Of GitCommitListEntry)()
             Public Property Branches As New List(Of GitBranchListEntry)()
@@ -131,6 +136,58 @@ Namespace CodexNativeAgent.Ui
                         Case Else
                             Return "other"
                     End Select
+                End Get
+            End Property
+
+            Public ReadOnly Property IsStagedChange As Boolean
+                Get
+                    If IsUntracked Then
+                        Return False
+                    End If
+
+                    Dim code = If(StatusCode, String.Empty).PadRight(2)
+                    Dim x = code(0)
+                    Return x <> " "c AndAlso x <> "?"c
+                End Get
+            End Property
+
+            Public ReadOnly Property IsUnstagedChange As Boolean
+                Get
+                    If IsUntracked Then
+                        Return True
+                    End If
+
+                    Dim code = If(StatusCode, String.Empty).PadRight(2)
+                    Dim y = code(1)
+                    Return y <> " "c AndAlso y <> "?"c
+                End Get
+            End Property
+
+            Public ReadOnly Property StageToggleButtonText As String
+                Get
+                    If IsUnstagedChange Then
+                        Return "Stage"
+                    End If
+
+                    If IsStagedChange Then
+                        Return "Unstage"
+                    End If
+
+                    Return "Stage"
+                End Get
+            End Property
+
+            Public ReadOnly Property StageToggleToolTip As String
+                Get
+                    If IsUnstagedChange Then
+                        Return "Stage this file"
+                    End If
+
+                    If IsStagedChange Then
+                        Return "Unstage this file"
+                    End If
+
+                    Return "Stage this file"
                 End Get
             End Property
 
@@ -290,7 +347,86 @@ Namespace CodexNativeAgent.Ui
         Private NotInheritable Class GitDiffPreviewLineEntry
             Public Property Text As String = String.Empty
             Public Property Kind As String = "context"
+            Public Property OldLineNumber As Integer?
+            Public Property NewLineNumber As Integer?
+            Public Property SourceIndex As Integer
+            Public Property IsInlineEditing As Boolean
+            Public Property InlineEditText As String = String.Empty
+
+            Public ReadOnly Property DisplayOldLineNumber As String
+                Get
+                    Return If(OldLineNumber.HasValue, OldLineNumber.Value.ToString(), String.Empty)
+                End Get
+            End Property
+
+            Public ReadOnly Property DisplayNewLineNumber As String
+                Get
+                    Return If(NewLineNumber.HasValue, NewLineNumber.Value.ToString(), String.Empty)
+                End Get
+            End Property
+
+            Public ReadOnly Property DiffMarker As String
+                Get
+                    Dim value = If(Text, String.Empty)
+                    If value.Length = 0 Then
+                        Return " "
+                    End If
+
+                    Dim first = value(0)
+                    If first = "+"c OrElse first = "-"c OrElse first = " "c Then
+                        Return first
+                    End If
+
+                    Return " "
+                End Get
+            End Property
+
+            Public ReadOnly Property DisplayText As String
+                Get
+                    Dim value = If(Text, String.Empty)
+                    If value.Length = 0 Then
+                        Return String.Empty
+                    End If
+
+                    If StringComparer.Ordinal.Equals(Kind, "added") OrElse
+                       StringComparer.Ordinal.Equals(Kind, "removed") OrElse
+                       StringComparer.Ordinal.Equals(Kind, "context") Then
+                        If value.Length > 0 Then
+                            Return value.Substring(1)
+                        End If
+                    End If
+
+                    Return value
+                End Get
+            End Property
+
+            Public ReadOnly Property IsEditableLine As Boolean
+                Get
+                    Return NewLineNumber.HasValue AndAlso
+                           (StringComparer.Ordinal.Equals(Kind, "context") OrElse
+                            StringComparer.Ordinal.Equals(Kind, "added"))
+                End Get
+            End Property
         End Class
+
+        Private NotInheritable Class GitInlineDiffEditSession
+            Public Property RepoRoot As String = String.Empty
+            Public Property RelativePath As String = String.Empty
+            Public Property DisplayPath As String = String.Empty
+            Public Property FullPath As String = String.Empty
+            Public Property FileEncoding As Encoding
+            Public Property PreferredNewLine As String = vbLf
+            Public Property HadTerminalNewLine As Boolean
+            Public Property EditableEntriesByLine As New Dictionary(Of Integer, GitDiffPreviewLineEntry)()
+            Public Property OriginalLinesByLine As New Dictionary(Of Integer, String)()
+        End Class
+
+        Private Structure EditableTextFileBuffer
+            Public Property Lines As List(Of String)
+            Public Property FileEncoding As Encoding
+            Public Property PreferredNewLine As String
+            Public Property HadTerminalNewLine As Boolean
+        End Structure
 
         <StructLayout(LayoutKind.Sequential, CharSet:=CharSet.Unicode)>
         Private Structure SHFILEINFO
@@ -395,6 +531,7 @@ Namespace CodexNativeAgent.Ui
             Public Property DisableThreadsPanelHints As Boolean
             Public Property ShowEventDotsInTranscript As Boolean
             Public Property ShowSystemDotsInTranscript As Boolean
+            Public Property ShowTurnLifecycleDotsInTranscript As Boolean = True
             Public Property PlayUiSounds As Boolean = True
             Public Property UiSoundVolumePercent As Double = 100.0R
             Public Property FilterThreadsByWorkingDir As Boolean
@@ -494,6 +631,9 @@ Namespace CodexNativeAgent.Ui
         Private _gitPanelDiffPreviewLoadVersion As Integer
         Private _gitPanelCommitPreviewLoadVersion As Integer
         Private _gitPanelBranchPreviewLoadVersion As Integer
+        Private _gitPanelLoadingActive As Boolean
+        Private _gitPanelCommandInProgress As Boolean
+        Private _metricsPanelLoadVersion As Integer
         Private _suppressGitPanelSelectionEvents As Boolean
         Private _gitPanelActiveTab As String = "changes"
         Private _gitPanelDockWidth As Double = 560.0R
@@ -501,6 +641,11 @@ Namespace CodexNativeAgent.Ui
         Private _isLeftSidebarVisible As Boolean = True
         Private _currentGitPanelSnapshot As GitPanelSnapshot
         Private _gitPanelSelectedDiffFilePath As String = String.Empty
+        Private _gitInlineDiffEditSession As GitInlineDiffEditSession
+        Private _gitInlineEditSaveInProgress As Boolean
+        Private _gitDiffCtrlDragSelecting As Boolean
+        Private _gitDiffCtrlDragAnchorIndex As Integer = -1
+        Private _gitDiffCtrlDragLastIndex As Integer = -1
         Private _protocolDialogWindow As Window
         Private _isStatusBarExpanded As Boolean
         Private _settings As New AppSettings()
@@ -696,6 +841,7 @@ Namespace CodexNativeAgent.Ui
                                                                ShowWorkspaceView()
                                                                Await RunUiActionAsync(AddressOf ChooseFolderAndStartNewThreadAsync)
                                                            End Sub
+            AddHandler SidebarPaneHost.BtnSidebarMetrics.Click, Sub(sender, e) ToggleMetricsPanel()
             AddHandler SidebarPaneHost.BtnSidebarSettings.Click, Sub(sender, e) ShowSettingsView()
             AddHandler SidebarPaneHost.BtnSettingsBack.Click, Sub(sender, e) ShowWorkspaceView()
             AddHandler SidebarPaneHost.CmbDensity.SelectionChanged, Sub(sender, e) OnDensitySelectionChanged()
@@ -746,6 +892,16 @@ Namespace CodexNativeAgent.Ui
                     ApplyTranscriptTimelineDotVisibilitySettings()
                 End Sub
             AddHandler SidebarPaneHost.ChkShowSystemDotsInTranscript.Unchecked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowTurnLifecycleDotsInTranscript.Checked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowTurnLifecycleDotsInTranscript.Unchecked,
                 Sub(sender, e)
                     SaveSettings()
                     ApplyTranscriptTimelineDotVisibilitySettings()
@@ -815,6 +971,13 @@ Namespace CodexNativeAgent.Ui
             AddHandler GitPaneHost.BtnGitTabChanges.Click, Sub(sender, e) ShowGitPanelTab("changes")
             AddHandler GitPaneHost.BtnGitTabHistory.Click, Sub(sender, e) ShowGitPanelTab("history")
             AddHandler GitPaneHost.BtnGitTabBranches.Click, Sub(sender, e) ShowGitPanelTab("branches")
+            AddHandler GitPaneHost.BtnGitStageAll.Click, Sub(sender, e) FireAndForget(StageAllGitChangesAsync())
+            AddHandler GitPaneHost.BtnGitUnstageAll.Click, Sub(sender, e) FireAndForget(UnstageAllGitChangesAsync())
+            AddHandler GitPaneHost.BtnGitPush.Click, Sub(sender, e) FireAndForget(PushGitChangesAsync())
+            AddHandler GitPaneHost.BtnGitCommit.Click, Sub(sender, e) FireAndForget(CommitGitChangesAsync())
+            AddHandler GitPaneHost.TxtGitCommitMessage.TextChanged, Sub(sender, e) UpdateGitCommitComposerState()
+            AddHandler GitPaneHost.ChkGitCommitAmend.Checked, Sub(sender, e) UpdateGitCommitComposerState()
+            AddHandler GitPaneHost.ChkGitCommitAmend.Unchecked, Sub(sender, e) UpdateGitCommitComposerState()
             AddHandler GitPaneHost.LstGitPanelChanges.SelectionChanged, AddressOf OnGitPanelChangesSelectionChanged
             AddHandler GitPaneHost.LstGitPanelChanges.MouseDoubleClick, AddressOf OnGitPanelChangesMouseDoubleClick
             GitPaneHost.LstGitPanelChanges.AddHandler(Button.ClickEvent,
@@ -822,7 +985,19 @@ Namespace CodexNativeAgent.Ui
                                                             True)
             AddHandler GitPaneHost.LstGitPanelCommits.SelectionChanged, AddressOf OnGitPanelCommitsSelectionChanged
             AddHandler GitPaneHost.LstGitPanelBranches.SelectionChanged, AddressOf OnGitPanelBranchesSelectionChanged
+            AddHandler GitPaneHost.LstGitPanelDiffPreviewLines.SelectionChanged, AddressOf OnGitPanelDiffPreviewLinesSelectionChanged
+            AddHandler GitPaneHost.LstGitPanelDiffPreviewLines.MouseDoubleClick, AddressOf OnGitPanelDiffPreviewLinesMouseDoubleClick
+            AddHandler GitPaneHost.LstGitPanelDiffPreviewLines.PreviewMouseLeftButtonDown, AddressOf OnGitPanelDiffPreviewLinesPreviewMouseLeftButtonDown
+            AddHandler GitPaneHost.LstGitPanelDiffPreviewLines.PreviewMouseMove, AddressOf OnGitPanelDiffPreviewLinesPreviewMouseMove
+            AddHandler GitPaneHost.LstGitPanelDiffPreviewLines.PreviewMouseLeftButtonUp, AddressOf OnGitPanelDiffPreviewLinesPreviewMouseLeftButtonUp
+            AddHandler GitPaneHost.LstGitPanelDiffPreviewLines.PreviewKeyDown, AddressOf OnGitPanelDiffPreviewLinesPreviewKeyDown
+            AddHandler GitPaneHost.BtnGitDiffInlineStart.Click, Sub(sender, e) BeginGitInlineDiffEditFromSelection()
+            AddHandler GitPaneHost.BtnGitDiffInlineSave.Click, Sub(sender, e) FireAndForget(SaveGitInlineDiffEditAsync())
+            AddHandler GitPaneHost.BtnGitDiffInlineCancel.Click, Sub(sender, e) CancelGitInlineDiffEdit(shouldShowStatus:=False)
+            AddHandler MetricsPaneHost.BtnMetricsPanelRefresh.Click, Sub(sender, e) FireAndForget(RefreshMetricsPanelAsync())
+            AddHandler MetricsPaneHost.BtnMetricsPanelClose.Click, Sub(sender, e) CloseMetricsPanel()
             InitializeGitPanelUi()
+            InitializeMetricsPanelUi()
             AttachTranscriptInteractionHandlers(WorkspacePaneHost.LstTranscript)
             AddHandler WorkspacePaneHost.BtnDismissWorkspaceHintOverlay.Click,
                 Sub(sender, e)
@@ -1335,10 +1510,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            button.Background = ResolveBrush(If(isSelected, "AccentSubtleBrush", "SurfaceBrush"), Brushes.Transparent)
-            button.BorderBrush = ResolveBrush(If(isSelected, "AccentGlowBrush", "BorderBrush"), Brushes.Transparent)
-            button.BorderThickness = New Thickness(1)
-            button.Foreground = ResolveBrush(If(isSelected, "TextSecondaryBrush", "TextTertiaryBrush"), Brushes.Black)
+            button.Background = ResolveBrush(If(isSelected, "AccentSubtleBrush", "Transparent"), Brushes.Transparent)
+            button.BorderBrush = ResolveBrush(If(isSelected, "ListItemSelectedBorderBrush", "Transparent"), Brushes.Transparent)
+            button.BorderThickness = If(isSelected, New Thickness(1), New Thickness(0))
+            button.Foreground = ResolveBrush(If(isSelected, "TextPrimaryBrush", "TextSecondaryBrush"), Brushes.Black)
             button.FontWeight = If(isSelected, FontWeights.SemiBold, FontWeights.Normal)
         End Sub
 
@@ -1380,6 +1555,18 @@ Namespace CodexNativeAgent.Ui
             If GitPaneHost.LblGitPanelBranchPreviewTitle IsNot Nothing Then
                 GitPaneHost.LblGitPanelBranchPreviewTitle.Text = "Branch Preview"
             End If
+            If GitPaneHost.TxtGitCommitMessage IsNot Nothing Then
+                GitPaneHost.TxtGitCommitMessage.Text = String.Empty
+            End If
+            If GitPaneHost.ChkGitCommitAmend IsNot Nothing Then
+                GitPaneHost.ChkGitCommitAmend.IsChecked = False
+            End If
+            If GitPaneHost.LblGitCommitComposerState IsNot Nothing Then
+                GitPaneHost.LblGitCommitComposerState.Text = "Load repository status to stage and commit changes."
+            End If
+
+            UpdateGitCommitComposerState()
+            UpdateGitDiffInlineToolbarState()
         End Sub
 
         Private Sub OnGitPanelChangesSelectionChanged(sender As Object, e As SelectionChangedEventArgs)
@@ -1422,7 +1609,7 @@ Namespace CodexNativeAgent.Ui
             End If
 
             Dim button = FindVisualAncestor(Of Button)(source)
-            If button Is Nothing OrElse Not StringComparer.Ordinal.Equals(button.Name, "BtnGitChangeOpenInline") Then
+            If button Is Nothing Then
                 Return
             End If
 
@@ -1435,8 +1622,422 @@ Namespace CodexNativeAgent.Ui
             End If
 
             e.Handled = True
-            OpenGitChangeInVsCode(selected)
+            If StringComparer.Ordinal.Equals(button.Name, "BtnGitChangeOpenInline") Then
+                OpenGitChangeInVsCode(selected)
+                Return
+            End If
+
+            If StringComparer.Ordinal.Equals(button.Name, "BtnGitChangeStageToggle") Then
+                FireAndForget(ToggleGitFileStageStateAsync(selected))
+                Return
+            End If
         End Sub
+
+        Private Sub UpdateGitCommitComposerState(Optional snapshot As GitPanelSnapshot = Nothing)
+            If GitPaneHost Is Nothing Then
+                Return
+            End If
+
+            Dim activeSnapshot = If(snapshot, _currentGitPanelSnapshot)
+            Dim hasSnapshot = activeSnapshot IsNot Nothing AndAlso String.IsNullOrWhiteSpace(activeSnapshot.ErrorMessage)
+            Dim stagedCount = If(hasSnapshot, activeSnapshot.StagedChangeCount, 0)
+            Dim unstagedCount = If(hasSnapshot, activeSnapshot.UnstagedChangeCount, 0)
+            Dim untrackedCount = If(hasSnapshot, activeSnapshot.UntrackedChangeCount, 0)
+            Dim conflictCount = If(hasSnapshot, activeSnapshot.ConflictChangeCount, 0)
+            Dim hasMessage = Not String.IsNullOrWhiteSpace(If(GitPaneHost.TxtGitCommitMessage?.Text, String.Empty))
+            Dim isAmendMode = GitPaneHost.ChkGitCommitAmend IsNot Nothing AndAlso
+                              GitPaneHost.ChkGitCommitAmend.IsChecked.HasValue AndAlso
+                              GitPaneHost.ChkGitCommitAmend.IsChecked.Value
+            Dim branchName = If(If(activeSnapshot?.BranchName, String.Empty), String.Empty).Trim()
+            Dim canPushBranch = hasSnapshot AndAlso
+                                Not String.IsNullOrWhiteSpace(branchName) AndAlso
+                                Not StringComparer.OrdinalIgnoreCase.Equals(branchName, "HEAD")
+            Dim hasAnyLocalChanges = stagedCount > 0 OrElse
+                                     unstagedCount > 0 OrElse
+                                     untrackedCount > 0 OrElse
+                                     conflictCount > 0
+            Dim showPushPrimary = hasSnapshot AndAlso canPushBranch AndAlso Not hasAnyLocalChanges
+            Dim allowInteraction = hasSnapshot AndAlso Not _gitPanelLoadingActive AndAlso Not _gitPanelCommandInProgress
+
+            If GitPaneHost.BtnGitStageAll IsNot Nothing Then
+                GitPaneHost.BtnGitStageAll.IsEnabled = allowInteraction AndAlso (unstagedCount > 0 OrElse untrackedCount > 0)
+            End If
+
+            If GitPaneHost.BtnGitUnstageAll IsNot Nothing Then
+                GitPaneHost.BtnGitUnstageAll.IsEnabled = allowInteraction AndAlso stagedCount > 0
+            End If
+
+            Dim canCommit As Boolean
+            If isAmendMode Then
+                canCommit = allowInteraction AndAlso (stagedCount > 0 OrElse hasMessage)
+            Else
+                canCommit = allowInteraction AndAlso stagedCount > 0 AndAlso hasMessage
+            End If
+
+            If GitPaneHost.BtnGitPush IsNot Nothing Then
+                GitPaneHost.BtnGitPush.Visibility = If(showPushPrimary, Visibility.Visible, Visibility.Collapsed)
+                GitPaneHost.BtnGitPush.IsEnabled = allowInteraction AndAlso showPushPrimary
+            End If
+
+            If GitPaneHost.BtnGitCommit IsNot Nothing Then
+                GitPaneHost.BtnGitCommit.Visibility = If(showPushPrimary, Visibility.Collapsed, Visibility.Visible)
+                GitPaneHost.BtnGitCommit.IsEnabled = canCommit
+            End If
+
+            If GitPaneHost.ChkGitCommitAmend IsNot Nothing Then
+                GitPaneHost.ChkGitCommitAmend.IsEnabled = hasSnapshot AndAlso Not _gitPanelLoadingActive AndAlso Not _gitPanelCommandInProgress
+            End If
+
+            If GitPaneHost.TxtGitCommitMessage IsNot Nothing Then
+                GitPaneHost.TxtGitCommitMessage.IsEnabled = hasSnapshot AndAlso Not _gitPanelCommandInProgress
+            End If
+
+            If GitPaneHost.LblGitCommitComposerState Is Nothing Then
+                Return
+            End If
+
+            If _gitPanelCommandInProgress Then
+                GitPaneHost.LblGitCommitComposerState.Text = "Running git command..."
+                Return
+            End If
+
+            If _gitPanelLoadingActive Then
+                GitPaneHost.LblGitCommitComposerState.Text = "Loading repository status..."
+                Return
+            End If
+
+            If Not hasSnapshot Then
+                GitPaneHost.LblGitCommitComposerState.Text = "Load repository status to stage and commit changes."
+                Return
+            End If
+
+            Dim statusParts As New List(Of String)()
+            If stagedCount > 0 Then
+                statusParts.Add($"{stagedCount} staged")
+            End If
+            If unstagedCount > 0 Then
+                statusParts.Add($"{unstagedCount} unstaged")
+            End If
+            If untrackedCount > 0 Then
+                statusParts.Add($"{untrackedCount} untracked")
+            End If
+            If conflictCount > 0 Then
+                statusParts.Add($"{conflictCount} conflicts")
+            End If
+
+            If statusParts.Count = 0 Then
+                If isAmendMode Then
+                    GitPaneHost.LblGitCommitComposerState.Text = If(hasMessage,
+                                                                    "Working tree clean. Amend is on; commit will amend message.",
+                                                                    "Working tree clean. Amend is on; add a message to amend last commit.")
+                ElseIf showPushPrimary Then
+                    GitPaneHost.LblGitCommitComposerState.Text = "Working tree clean. Ready to push."
+                Else
+                    GitPaneHost.LblGitCommitComposerState.Text = "Working tree clean."
+                End If
+                Return
+            End If
+
+            Dim statusSummary = String.Join(", ", statusParts)
+            If isAmendMode Then
+                If stagedCount > 0 AndAlso hasMessage Then
+                    GitPaneHost.LblGitCommitComposerState.Text = $"{statusSummary}. Amend is on; commit will amend with new message."
+                ElseIf stagedCount > 0 Then
+                    GitPaneHost.LblGitCommitComposerState.Text = $"{statusSummary}. Amend is on; commit will amend without changing message."
+                ElseIf hasMessage Then
+                    GitPaneHost.LblGitCommitComposerState.Text = $"{statusSummary}. Amend is on; commit will amend message only."
+                Else
+                    GitPaneHost.LblGitCommitComposerState.Text = $"{statusSummary}. Amend is on; add a message or stage changes."
+                End If
+            Else
+                If stagedCount > 0 Then
+                    GitPaneHost.LblGitCommitComposerState.Text = If(hasMessage,
+                                                                    $"{statusSummary}. Ready to commit.",
+                                                                    $"{statusSummary}. Add a commit message.")
+                Else
+                    GitPaneHost.LblGitCommitComposerState.Text = $"{statusSummary}. Stage changes to enable commit."
+                End If
+            End If
+
+            If Not canPushBranch AndAlso StringComparer.OrdinalIgnoreCase.Equals(branchName, "HEAD") Then
+                GitPaneHost.LblGitCommitComposerState.Text &= " Push unavailable on detached HEAD."
+            End If
+        End Sub
+
+        Private Sub SetGitPanelCommandBusyState(isBusy As Boolean, Optional statusText As String = Nothing)
+            _gitPanelCommandInProgress = isBusy
+
+            If Not String.IsNullOrWhiteSpace(statusText) AndAlso GitPaneHost.LblGitPanelState IsNot Nothing Then
+                GitPaneHost.LblGitPanelState.Text = statusText
+            End If
+
+            If GitPaneHost.BtnGitPanelRefresh IsNot Nothing Then
+                GitPaneHost.BtnGitPanelRefresh.IsEnabled = Not _gitPanelLoadingActive AndAlso Not _gitPanelCommandInProgress
+            End If
+            If GitPaneHost.LstGitPanelChanges IsNot Nothing Then
+                GitPaneHost.LstGitPanelChanges.IsEnabled = Not _gitPanelCommandInProgress
+            End If
+
+            UpdateGitCommitComposerState()
+            UpdateGitDiffInlineToolbarState()
+        End Sub
+
+        Private Async Function ToggleGitFileStageStateAsync(selected As GitChangedFileListEntry) As Task
+            If selected Is Nothing OrElse _gitPanelCommandInProgress Then
+                Return
+            End If
+
+            Dim repoRoot = ResolveCurrentGitPanelRepoRoot()
+            If String.IsNullOrWhiteSpace(repoRoot) Then
+                ShowStatus("Git panel repository is not available.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            Dim filePath = If(selected.FilePath, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(filePath) Then
+                ShowStatus("No file path available for this entry.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            Dim shouldStage = selected.IsUnstagedChange OrElse selected.IsUntracked OrElse Not selected.IsStagedChange
+            Dim actionLabel = If(shouldStage, "Staging", "Unstaging")
+            Dim quotedPath = QuoteProcessArgument(filePath)
+            Dim commandArgs = If(shouldStage,
+                                 $"add -- {quotedPath}",
+                                 $"restore --staged -- {quotedPath}")
+
+            SetGitPanelCommandBusyState(True, $"{actionLabel} {selected.DisplayPath}...")
+            Try
+                Dim result = Await Task.Run(Function() RunProcessCapture("git", commandArgs, repoRoot)).ConfigureAwait(True)
+                If Not shouldStage AndAlso result.ExitCode <> 0 Then
+                    result = Await Task.Run(Function() RunProcessCapture("git", $"reset HEAD -- {quotedPath}", repoRoot)).ConfigureAwait(True)
+                End If
+
+                If result.ExitCode <> 0 Then
+                    Dim reason = FirstNonEmptyLine(NormalizeProcessError(result))
+                    ShowStatus($"Could not {If(shouldStage, "stage", "unstage")} {selected.DisplayPath}: {If(String.IsNullOrWhiteSpace(reason), "unknown error", reason)}",
+                               isError:=True,
+                               displayToast:=True)
+                    Return
+                End If
+
+                ShowStatus($"{If(shouldStage, "Staged", "Unstaged")} {selected.DisplayPath}")
+                Await RefreshGitPanelAsync().ConfigureAwait(True)
+            Finally
+                SetGitPanelCommandBusyState(False)
+            End Try
+        End Function
+
+        Private Async Function StageAllGitChangesAsync() As Task
+            If _gitPanelCommandInProgress Then
+                Return
+            End If
+
+            Dim snapshot = _currentGitPanelSnapshot
+            If snapshot Is Nothing Then
+                ShowStatus("No repository snapshot loaded.", isError:=True, displayToast:=True)
+                Return
+            End If
+            If String.IsNullOrWhiteSpace(snapshot.RepoRoot) Then
+                ShowStatus("Git panel repository is not available.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            If snapshot.UnstagedChangeCount <= 0 AndAlso snapshot.UntrackedChangeCount <= 0 Then
+                ShowStatus("No unstaged or untracked changes to stage.")
+                Return
+            End If
+
+            SetGitPanelCommandBusyState(True, "Staging all changes...")
+            Try
+                Dim result = Await Task.Run(Function() RunProcessCapture("git", "add -A", snapshot.RepoRoot)).ConfigureAwait(True)
+                If result.ExitCode <> 0 Then
+                    Dim reason = FirstNonEmptyLine(NormalizeProcessError(result))
+                    ShowStatus($"Could not stage all changes: {If(String.IsNullOrWhiteSpace(reason), "unknown error", reason)}", isError:=True, displayToast:=True)
+                    Return
+                End If
+
+                ShowStatus("Staged all changes.")
+                Await RefreshGitPanelAsync().ConfigureAwait(True)
+            Finally
+                SetGitPanelCommandBusyState(False)
+            End Try
+        End Function
+
+        Private Async Function UnstageAllGitChangesAsync() As Task
+            If _gitPanelCommandInProgress Then
+                Return
+            End If
+
+            Dim snapshot = _currentGitPanelSnapshot
+            If snapshot Is Nothing Then
+                ShowStatus("No repository snapshot loaded.", isError:=True, displayToast:=True)
+                Return
+            End If
+            If String.IsNullOrWhiteSpace(snapshot.RepoRoot) Then
+                ShowStatus("Git panel repository is not available.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            If snapshot.StagedChangeCount <= 0 Then
+                ShowStatus("No staged changes to unstage.")
+                Return
+            End If
+
+            SetGitPanelCommandBusyState(True, "Unstaging all changes...")
+            Try
+                Dim result = Await Task.Run(Function() RunProcessCapture("git", "reset", snapshot.RepoRoot)).ConfigureAwait(True)
+                If result.ExitCode <> 0 Then
+                    Dim reason = FirstNonEmptyLine(NormalizeProcessError(result))
+                    ShowStatus($"Could not unstage all changes: {If(String.IsNullOrWhiteSpace(reason), "unknown error", reason)}", isError:=True, displayToast:=True)
+                    Return
+                End If
+
+                ShowStatus("Unstaged all changes.")
+                Await RefreshGitPanelAsync().ConfigureAwait(True)
+            Finally
+                SetGitPanelCommandBusyState(False)
+            End Try
+        End Function
+
+        Private Async Function PushGitChangesAsync() As Task
+            If _gitPanelCommandInProgress Then
+                Return
+            End If
+
+            Dim snapshot = _currentGitPanelSnapshot
+            If snapshot Is Nothing OrElse String.IsNullOrWhiteSpace(snapshot.RepoRoot) Then
+                ShowStatus("Git panel repository is not available.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            Dim branchName = If(snapshot.BranchName, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(branchName) OrElse StringComparer.OrdinalIgnoreCase.Equals(branchName, "HEAD") Then
+                Dim branchResult = Await Task.Run(Function() RunProcessCapture("git", "rev-parse --abbrev-ref HEAD", snapshot.RepoRoot)).ConfigureAwait(True)
+                If branchResult.ExitCode = 0 Then
+                    branchName = FirstNonEmptyLine(branchResult.OutputText)
+                End If
+            End If
+
+            branchName = If(branchName, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(branchName) OrElse StringComparer.OrdinalIgnoreCase.Equals(branchName, "HEAD") Then
+                ShowStatus("Cannot push while on a detached HEAD.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            SetGitPanelCommandBusyState(True, $"Pushing {branchName}...")
+            Try
+                Dim upstreamResult = Await Task.Run(
+                    Function()
+                        Return RunProcessCapture("git",
+                                                 "rev-parse --abbrev-ref --symbolic-full-name @{u}",
+                                                 snapshot.RepoRoot)
+                    End Function).ConfigureAwait(True)
+
+                Dim hasUpstream = upstreamResult.ExitCode = 0 AndAlso
+                                  Not String.IsNullOrWhiteSpace(FirstNonEmptyLine(upstreamResult.OutputText))
+                Dim pushArgs = If(hasUpstream,
+                                  "push",
+                                  $"push -u origin {QuoteProcessArgument(branchName)}")
+
+                Dim pushResult = Await Task.Run(Function() RunProcessCapture("git", pushArgs, snapshot.RepoRoot)).ConfigureAwait(True)
+                If pushResult.ExitCode <> 0 Then
+                    Dim reason = FirstNonEmptyLine(NormalizeProcessError(pushResult))
+                    ShowStatus($"Push failed: {If(String.IsNullOrWhiteSpace(reason), "unknown error", reason)}",
+                               isError:=True,
+                               displayToast:=True)
+                    Return
+                End If
+
+                ShowStatus(ResolveGitCommandSummary(pushResult, $"Pushed {branchName}."), displayToast:=True)
+                Await RefreshGitPanelAsync().ConfigureAwait(True)
+            Finally
+                SetGitPanelCommandBusyState(False)
+            End Try
+        End Function
+
+        Private Async Function CommitGitChangesAsync() As Task
+            If _gitPanelCommandInProgress Then
+                Return
+            End If
+
+            Dim snapshot = _currentGitPanelSnapshot
+            If snapshot Is Nothing OrElse String.IsNullOrWhiteSpace(snapshot.RepoRoot) Then
+                ShowStatus("Git panel repository is not available.", isError:=True, displayToast:=True)
+                Return
+            End If
+
+            Dim commitMessage = If(GitPaneHost.TxtGitCommitMessage?.Text, String.Empty)
+            Dim hasMessage = Not String.IsNullOrWhiteSpace(commitMessage)
+            Dim isAmendMode = GitPaneHost.ChkGitCommitAmend IsNot Nothing AndAlso
+                              GitPaneHost.ChkGitCommitAmend.IsChecked.HasValue AndAlso
+                              GitPaneHost.ChkGitCommitAmend.IsChecked.Value
+
+            If Not isAmendMode Then
+                If Not hasMessage Then
+                    ShowStatus("Enter a commit message first.", isError:=True, displayToast:=True)
+                    Return
+                End If
+
+                If snapshot.StagedChangeCount <= 0 Then
+                    ShowStatus("Stage at least one file before committing.", isError:=True, displayToast:=True)
+                    Return
+                End If
+            Else
+                If snapshot.StagedChangeCount <= 0 AndAlso Not hasMessage Then
+                    ShowStatus("For amend, stage changes or provide a new message.", isError:=True, displayToast:=True)
+                    Return
+                End If
+            End If
+
+            Dim commitMessageFilePath As String = String.Empty
+
+            SetGitPanelCommandBusyState(True, If(isAmendMode, "Amending commit...", "Creating commit..."))
+            Try
+                If hasMessage Then
+                    commitMessageFilePath = Path.Combine(Path.GetTempPath(), $"codex-git-commit-{Guid.NewGuid():N}.txt")
+                    Dim commitBody = commitMessage.TrimEnd() & Environment.NewLine
+                    File.WriteAllText(commitMessageFilePath, commitBody, New UTF8Encoding(False))
+                End If
+
+                Dim commitArgs As String
+                If isAmendMode Then
+                    If hasMessage Then
+                        commitArgs = $"commit --amend -F {QuoteProcessArgument(commitMessageFilePath)}"
+                    Else
+                        commitArgs = "commit --amend --no-edit"
+                    End If
+                Else
+                    commitArgs = $"commit -F {QuoteProcessArgument(commitMessageFilePath)}"
+                End If
+
+                Dim result = Await Task.Run(Function() RunProcessCapture("git", commitArgs, snapshot.RepoRoot)).ConfigureAwait(True)
+
+                If result.ExitCode <> 0 Then
+                    Dim reason = FirstNonEmptyLine(NormalizeProcessError(result))
+                    ShowStatus($"Commit failed: {If(String.IsNullOrWhiteSpace(reason), "unknown error", reason)}",
+                               isError:=True,
+                               displayToast:=True)
+                    Return
+                End If
+
+                If hasMessage AndAlso GitPaneHost.TxtGitCommitMessage IsNot Nothing Then
+                    GitPaneHost.TxtGitCommitMessage.Text = String.Empty
+                End If
+
+                ShowStatus(ResolveGitCommandSummary(result, If(isAmendMode, "Commit amended.", "Commit created.")), displayToast:=True)
+                Await RefreshGitPanelAsync().ConfigureAwait(True)
+            Finally
+                Try
+                    If Not String.IsNullOrWhiteSpace(commitMessageFilePath) AndAlso File.Exists(commitMessageFilePath) Then
+                        File.Delete(commitMessageFilePath)
+                    End If
+                Catch
+                End Try
+
+                SetGitPanelCommandBusyState(False)
+            End Try
+        End Function
 
         Private Sub OnGitPanelCommitsSelectionChanged(sender As Object, e As SelectionChangedEventArgs)
             If _suppressGitPanelSelectionEvents Then
@@ -1475,6 +2076,9 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            EndGitDiffCtrlDragSelection()
+            CancelGitInlineDiffEdit(shouldShowStatus:=False)
+
             Dim lines = BuildGitDiffPreviewLineEntries(previewText)
             GitPaneHost.LstGitPanelDiffPreviewLines.ItemsSource = Nothing
             GitPaneHost.LstGitPanelDiffPreviewLines.ItemsSource = lines
@@ -1482,6 +2086,8 @@ Namespace CodexNativeAgent.Ui
             If lines IsNot Nothing AndAlso lines.Count > 0 Then
                 GitPaneHost.LstGitPanelDiffPreviewLines.ScrollIntoView(lines(0))
             End If
+
+            UpdateGitDiffInlineToolbarState()
         End Sub
 
         Private Shared Function BuildGitDiffPreviewLineEntries(previewText As String) As List(Of GitDiffPreviewLineEntry)
@@ -1494,14 +2100,97 @@ Namespace CodexNativeAgent.Ui
 
             Dim result As New List(Of GitDiffPreviewLineEntry)()
             Dim lines = text.Split({vbLf}, StringSplitOptions.None)
+            Dim currentOldLineNumber As Integer = 0
+            Dim currentNewLineNumber As Integer = 0
+            Dim inHunk As Boolean
+            Dim sourceIndex As Integer = 0
+
             For Each line In lines
-                result.Add(New GitDiffPreviewLineEntry() With {
+                Dim kind = ClassifyGitDiffPreviewLine(line)
+                Dim entry As New GitDiffPreviewLineEntry() With {
                     .Text = line,
-                    .Kind = ClassifyGitDiffPreviewLine(line)
-                })
+                    .Kind = kind,
+                    .SourceIndex = sourceIndex
+                }
+
+                If kind = "hunk" Then
+                    Dim parsedOldStart As Integer
+                    Dim parsedOldCount As Integer
+                    Dim parsedNewStart As Integer
+                    Dim parsedNewCount As Integer
+                    If ParseGitDiffHunkHeader(line, parsedOldStart, parsedOldCount, parsedNewStart, parsedNewCount) Then
+                        currentOldLineNumber = parsedOldStart
+                        currentNewLineNumber = parsedNewStart
+                        inHunk = True
+                    Else
+                        inHunk = False
+                    End If
+                ElseIf inHunk Then
+                    If line.StartsWith(" ", StringComparison.Ordinal) Then
+                        entry.OldLineNumber = currentOldLineNumber
+                        entry.NewLineNumber = currentNewLineNumber
+                        currentOldLineNumber += 1
+                        currentNewLineNumber += 1
+                    ElseIf line.StartsWith("+", StringComparison.Ordinal) AndAlso Not line.StartsWith("+++", StringComparison.Ordinal) Then
+                        entry.NewLineNumber = currentNewLineNumber
+                        currentNewLineNumber += 1
+                    ElseIf line.StartsWith("-", StringComparison.Ordinal) AndAlso Not line.StartsWith("---", StringComparison.Ordinal) Then
+                        entry.OldLineNumber = currentOldLineNumber
+                        currentOldLineNumber += 1
+                    ElseIf line.StartsWith("\", StringComparison.Ordinal) Then
+                    ElseIf kind = "fileHeader" OrElse kind = "pathHeader" OrElse kind = "meta" Then
+                        inHunk = False
+                    End If
+                End If
+
+                result.Add(entry)
+                sourceIndex += 1
             Next
 
             Return result
+        End Function
+
+        Private Shared Function ParseGitDiffHunkHeader(line As String,
+                                                       ByRef oldStart As Integer,
+                                                       ByRef oldCount As Integer,
+                                                       ByRef newStart As Integer,
+                                                       ByRef newCount As Integer) As Boolean
+            oldStart = 0
+            oldCount = 0
+            newStart = 0
+            newCount = 0
+
+            Dim value = If(line, String.Empty)
+            If String.IsNullOrWhiteSpace(value) Then
+                Return False
+            End If
+
+            Dim match = Regex.Match(value, "^@@\s*-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@")
+            If Not match.Success Then
+                Return False
+            End If
+
+            If Not Integer.TryParse(match.Groups(1).Value, oldStart) Then
+                Return False
+            End If
+            If match.Groups(2).Success AndAlso Not Integer.TryParse(match.Groups(2).Value, oldCount) Then
+                Return False
+            End If
+            If Not match.Groups(2).Success Then
+                oldCount = 1
+            End If
+
+            If Not Integer.TryParse(match.Groups(3).Value, newStart) Then
+                Return False
+            End If
+            If match.Groups(4).Success AndAlso Not Integer.TryParse(match.Groups(4).Value, newCount) Then
+                Return False
+            End If
+            If Not match.Groups(4).Success Then
+                newCount = 1
+            End If
+
+            Return True
         End Function
 
         Private Shared Function ClassifyGitDiffPreviewLine(line As String) As String
@@ -1590,6 +2279,746 @@ Namespace CodexNativeAgent.Ui
 
             SetGitPanelDiffPreviewText(previewText)
         End Function
+
+        Private Sub OnGitPanelDiffPreviewLinesSelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+            If _suppressGitPanelSelectionEvents Then
+                Return
+            End If
+
+            UpdateGitDiffInlineToolbarState()
+        End Sub
+
+        Private Sub OnGitPanelDiffPreviewLinesMouseDoubleClick(sender As Object, e As MouseButtonEventArgs)
+            If e Is Nothing OrElse _gitInlineEditSaveInProgress Then
+                Return
+            End If
+
+            Dim source = TryCast(e.OriginalSource, DependencyObject)
+            If source Is Nothing Then
+                Return
+            End If
+
+            If FindVisualAncestor(Of ScrollBar)(source) IsNot Nothing Then
+                Return
+            End If
+
+            Dim listItem = FindVisualAncestor(Of ListBoxItem)(source)
+            If listItem Is Nothing Then
+                Return
+            End If
+
+            Dim clickedLine = TryCast(listItem.DataContext, GitDiffPreviewLineEntry)
+            BeginGitInlineDiffEditFromSelection(clickedLine)
+            e.Handled = True
+        End Sub
+
+        Private Sub OnGitPanelDiffPreviewLinesPreviewMouseLeftButtonDown(sender As Object, e As MouseButtonEventArgs)
+            If e Is Nothing Then
+                Return
+            End If
+
+            If _gitInlineDiffEditSession IsNot Nothing Then
+                Return
+            End If
+
+            If (Keyboard.Modifiers And ModifierKeys.Control) <> ModifierKeys.Control Then
+                EndGitDiffCtrlDragSelection()
+                Return
+            End If
+
+            Dim source = TryCast(e.OriginalSource, DependencyObject)
+            If source Is Nothing Then
+                Return
+            End If
+
+            If FindVisualAncestor(Of ScrollBar)(source) IsNot Nothing Then
+                Return
+            End If
+
+            Dim listItem = FindVisualAncestor(Of ListBoxItem)(source)
+            If listItem Is Nothing Then
+                EndGitDiffCtrlDragSelection()
+                Return
+            End If
+
+            Dim list = GitPaneHost.LstGitPanelDiffPreviewLines
+            If list Is Nothing Then
+                EndGitDiffCtrlDragSelection()
+                Return
+            End If
+
+            list.Focus()
+            Dim anchorIndex = ResolveGitDiffListItemIndex(listItem)
+            If anchorIndex < 0 Then
+                EndGitDiffCtrlDragSelection()
+                Return
+            End If
+            EnsureGitDiffLineSelection(anchorIndex, anchorIndex)
+
+            Dim clickedLine = TryCast(listItem.DataContext, GitDiffPreviewLineEntry)
+            If e.ClickCount >= 2 Then
+                EndGitDiffCtrlDragSelection()
+                BeginGitInlineDiffEditFromSelection(clickedLine)
+                e.Handled = True
+                Return
+            End If
+
+            _gitDiffCtrlDragSelecting = True
+            _gitDiffCtrlDragAnchorIndex = anchorIndex
+            _gitDiffCtrlDragLastIndex = anchorIndex
+            Mouse.Capture(list)
+            e.Handled = True
+        End Sub
+
+        Private Sub OnGitPanelDiffPreviewLinesPreviewMouseMove(sender As Object, e As MouseEventArgs)
+            If e Is Nothing OrElse Not _gitDiffCtrlDragSelecting Then
+                Return
+            End If
+
+            Dim list = GitPaneHost?.LstGitPanelDiffPreviewLines
+            If list Is Nothing Then
+                EndGitDiffCtrlDragSelection()
+                Return
+            End If
+
+            If e.LeftButton <> MouseButtonState.Pressed OrElse
+               (Keyboard.Modifiers And ModifierKeys.Control) <> ModifierKeys.Control Then
+                EndGitDiffCtrlDragSelection()
+                Return
+            End If
+
+            Dim point = e.GetPosition(list)
+            If point.X < 0 OrElse point.Y < 0 OrElse point.X > list.ActualWidth OrElse point.Y > list.ActualHeight Then
+                Return
+            End If
+
+            Dim hoverIndex = ResolveGitDiffListItemIndexAtPoint(list, point)
+            If hoverIndex < 0 Then
+                Return
+            End If
+
+            If _gitDiffCtrlDragAnchorIndex < 0 Then
+                _gitDiffCtrlDragAnchorIndex = hoverIndex
+                _gitDiffCtrlDragLastIndex = hoverIndex
+                EnsureGitDiffLineSelection(_gitDiffCtrlDragAnchorIndex, hoverIndex)
+                e.Handled = True
+                Return
+            End If
+
+            If hoverIndex <> _gitDiffCtrlDragLastIndex Then
+                EnsureGitDiffLineSelection(_gitDiffCtrlDragAnchorIndex, hoverIndex)
+                _gitDiffCtrlDragLastIndex = hoverIndex
+            End If
+
+            e.Handled = True
+        End Sub
+
+        Private Sub OnGitPanelDiffPreviewLinesPreviewMouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs)
+            If Not _gitDiffCtrlDragSelecting Then
+                Return
+            End If
+
+            EndGitDiffCtrlDragSelection()
+            If e IsNot Nothing Then
+                e.Handled = True
+            End If
+        End Sub
+
+        Private Sub OnGitPanelDiffPreviewLinesPreviewKeyDown(sender As Object, e As KeyEventArgs)
+            If e Is Nothing Then
+                Return
+            End If
+
+            Dim hasControl = (Keyboard.Modifiers And ModifierKeys.Control) = ModifierKeys.Control
+            If _gitInlineDiffEditSession IsNot Nothing Then
+                If e.Key = Key.Escape Then
+                    CancelGitInlineDiffEdit(shouldShowStatus:=False)
+                    e.Handled = True
+                    Return
+                End If
+
+                If (hasControl AndAlso (e.Key = Key.S OrElse e.Key = Key.Enter)) OrElse
+                   (Not hasControl AndAlso e.Key = Key.Enter) Then
+                    FireAndForget(SaveGitInlineDiffEditAsync())
+                    e.Handled = True
+                    Return
+                End If
+
+                Return
+            End If
+
+            If e.Key = Key.F2 OrElse (hasControl AndAlso e.Key = Key.E) Then
+                BeginGitInlineDiffEditFromSelection()
+                e.Handled = True
+            End If
+        End Sub
+
+        Private Sub BeginGitInlineDiffEditFromSelection(Optional clickedLine As GitDiffPreviewLineEntry = Nothing)
+            If GitPaneHost Is Nothing OrElse
+               GitPaneHost.GitDiffInlineEditActions Is Nothing Then
+                Return
+            End If
+
+            If _gitInlineEditSaveInProgress Then
+                Return
+            End If
+
+            If _gitInlineDiffEditSession IsNot Nothing Then
+                CancelGitInlineDiffEdit(shouldShowStatus:=False)
+            End If
+
+            Dim session As GitInlineDiffEditSession = Nothing
+            Dim reason As String = String.Empty
+            If Not TryBuildGitInlineDiffEditSession(session, reason, clickedLine) Then
+                If Not String.IsNullOrWhiteSpace(reason) Then
+                    ShowStatus(reason, isError:=True, displayToast:=True)
+                End If
+                Return
+            End If
+
+            _gitInlineDiffEditSession = session
+            RefreshGitDiffPreviewListBindings()
+            UpdateGitDiffInlineToolbarState()
+            FocusFirstGitInlineEditor()
+        End Sub
+
+        Private Function ResolveSelectedEditableGitDiffEntries(Optional clickedLine As GitDiffPreviewLineEntry = Nothing) As List(Of GitDiffPreviewLineEntry)
+            Dim result As New List(Of GitDiffPreviewLineEntry)()
+            Dim seenSourceIndexes As New HashSet(Of Integer)()
+            Dim list = GitPaneHost?.LstGitPanelDiffPreviewLines
+            If list Is Nothing Then
+                Return result
+            End If
+
+            For Each item In list.SelectedItems
+                Dim entry = TryCast(item, GitDiffPreviewLineEntry)
+                If entry Is Nothing OrElse Not entry.IsEditableLine Then
+                    Continue For
+                End If
+
+                If seenSourceIndexes.Add(entry.SourceIndex) Then
+                    result.Add(entry)
+                End If
+            Next
+
+            If result.Count = 0 Then
+                Dim selectedEntry = TryCast(list.SelectedItem, GitDiffPreviewLineEntry)
+                If selectedEntry IsNot Nothing AndAlso selectedEntry.IsEditableLine Then
+                    If seenSourceIndexes.Add(selectedEntry.SourceIndex) Then
+                        result.Add(selectedEntry)
+                    End If
+                End If
+            End If
+
+            If result.Count = 0 AndAlso clickedLine IsNot Nothing AndAlso clickedLine.IsEditableLine Then
+                If seenSourceIndexes.Add(clickedLine.SourceIndex) Then
+                    result.Add(clickedLine)
+                End If
+            End If
+
+            If result.Count = 0 AndAlso clickedLine IsNot Nothing Then
+                Dim entries = TryCast(list.ItemsSource, List(Of GitDiffPreviewLineEntry))
+                If entries IsNot Nothing AndAlso entries.Count > 0 Then
+                    Dim anchorIndex = clickedLine.SourceIndex
+                    If anchorIndex < 0 OrElse anchorIndex >= entries.Count Then
+                        anchorIndex = entries.IndexOf(clickedLine)
+                    End If
+
+                    If anchorIndex >= 0 AndAlso anchorIndex < entries.Count Then
+                        For radius = 1 To entries.Count
+                            Dim beforeIndex = anchorIndex - radius
+                            If beforeIndex >= 0 Then
+                                Dim beforeLine = entries(beforeIndex)
+                                If beforeLine IsNot Nothing AndAlso beforeLine.IsEditableLine Then
+                                    If seenSourceIndexes.Add(beforeLine.SourceIndex) Then
+                                        result.Add(beforeLine)
+                                    End If
+                                    Exit For
+                                End If
+                            End If
+
+                            Dim afterIndex = anchorIndex + radius
+                            If afterIndex < entries.Count Then
+                                Dim afterLine = entries(afterIndex)
+                                If afterLine IsNot Nothing AndAlso afterLine.IsEditableLine Then
+                                    If seenSourceIndexes.Add(afterLine.SourceIndex) Then
+                                        result.Add(afterLine)
+                                    End If
+                                    Exit For
+                                End If
+                            End If
+                        Next
+                    End If
+                End If
+            End If
+
+            result.Sort(Function(a, b) a.SourceIndex.CompareTo(b.SourceIndex))
+            Return result
+        End Function
+
+        Private Function TryBuildGitInlineDiffEditSession(ByRef session As GitInlineDiffEditSession,
+                                                          ByRef failureReason As String,
+                                                          Optional clickedLine As GitDiffPreviewLineEntry = Nothing) As Boolean
+            session = Nothing
+            failureReason = String.Empty
+
+            If GitPaneHost Is Nothing OrElse
+               GitPaneHost.LstGitPanelDiffPreviewLines Is Nothing OrElse
+               GitPaneHost.LstGitPanelChanges Is Nothing Then
+                failureReason = "Diff editor is unavailable right now."
+                Return False
+            End If
+
+            Dim selectedFile = TryCast(GitPaneHost.LstGitPanelChanges.SelectedItem, GitChangedFileListEntry)
+            If selectedFile Is Nothing Then
+                failureReason = "Select a changed file first."
+                Return False
+            End If
+
+            Dim repoRoot = ResolveCurrentGitPanelRepoRoot()
+            If String.IsNullOrWhiteSpace(repoRoot) Then
+                failureReason = "Git repository is unavailable."
+                Return False
+            End If
+
+            Dim relativePath = If(selectedFile.FilePath, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(relativePath) Then
+                failureReason = "No file path is available for this diff."
+                Return False
+            End If
+
+            Dim selectedEntries = ResolveSelectedEditableGitDiffEntries(clickedLine)
+            If selectedEntries.Count = 0 Then
+                failureReason = "Select one or more added/context lines, then start editing."
+                Return False
+            End If
+
+            Dim repoRootFull = Path.GetFullPath(repoRoot).TrimEnd("\"c, "/"c)
+            Dim fullPath = Path.GetFullPath(Path.Combine(repoRootFull, relativePath))
+            Dim repoRootWithSlash = repoRootFull & Path.DirectorySeparatorChar
+            If Not fullPath.StartsWith(repoRootWithSlash, StringComparison.OrdinalIgnoreCase) AndAlso
+               Not StringComparer.OrdinalIgnoreCase.Equals(fullPath, repoRootFull) Then
+                failureReason = "Selected file is outside the repository root."
+                Return False
+            End If
+
+            If Not File.Exists(fullPath) Then
+                failureReason = "The selected file does not exist on disk."
+                Return False
+            End If
+
+            Dim fileBuffer As EditableTextFileBuffer
+            Try
+                fileBuffer = ReadEditableTextFileBuffer(fullPath)
+            Catch ex As Exception
+                failureReason = $"Could not read file for inline editing: {ex.Message}"
+                Return False
+            End Try
+
+            If fileBuffer.Lines Is Nothing OrElse fileBuffer.Lines.Count = 0 Then
+                failureReason = "The selected file has no editable text lines."
+                Return False
+            End If
+
+            session = New GitInlineDiffEditSession() With {
+                .RepoRoot = repoRootFull,
+                .RelativePath = relativePath,
+                .DisplayPath = If(selectedFile.DisplayPath, relativePath),
+                .FullPath = fullPath,
+                .FileEncoding = fileBuffer.FileEncoding,
+                .PreferredNewLine = If(String.IsNullOrEmpty(fileBuffer.PreferredNewLine), vbLf, fileBuffer.PreferredNewLine),
+                .HadTerminalNewLine = fileBuffer.HadTerminalNewLine
+            }
+
+            selectedEntries.Sort(Function(a, b) a.SourceIndex.CompareTo(b.SourceIndex))
+            For Each entry In selectedEntries
+                If entry Is Nothing OrElse Not entry.IsEditableLine OrElse Not entry.NewLineNumber.HasValue Then
+                    Continue For
+                End If
+
+                Dim lineNumber = entry.NewLineNumber.Value
+                If lineNumber <= 0 OrElse lineNumber > fileBuffer.Lines.Count Then
+                    failureReason = "Selected lines are out of date. Refresh diff and try again."
+                    Return False
+                End If
+
+                If session.EditableEntriesByLine.ContainsKey(lineNumber) Then
+                    Continue For
+                End If
+
+                Dim originalLine = fileBuffer.Lines(lineNumber - 1)
+                session.EditableEntriesByLine(lineNumber) = entry
+                session.OriginalLinesByLine(lineNumber) = originalLine
+            Next
+
+            If session.EditableEntriesByLine.Count = 0 Then
+                failureReason = "No editable diff lines were selected."
+                Return False
+            End If
+
+            For Each pair In session.EditableEntriesByLine
+                Dim lineNumber = pair.Key
+                Dim entry = pair.Value
+                entry.IsInlineEditing = True
+                entry.InlineEditText = session.OriginalLinesByLine(lineNumber)
+            Next
+
+            Return True
+        End Function
+
+        Private Async Function SaveGitInlineDiffEditAsync() As Task
+            Dim session = _gitInlineDiffEditSession
+            If session Is Nothing OrElse _gitInlineEditSaveInProgress Then
+                Return
+            End If
+
+            If GitPaneHost Is Nothing OrElse
+               GitPaneHost.BtnGitDiffInlineSave Is Nothing OrElse
+               GitPaneHost.BtnGitDiffInlineCancel Is Nothing Then
+                Return
+            End If
+
+            Dim hasAnyChange As Boolean
+            For Each pair In session.EditableEntriesByLine
+                Dim lineNumber = pair.Key
+                Dim entry = pair.Value
+                Dim originalLine As String = Nothing
+                If Not session.OriginalLinesByLine.TryGetValue(lineNumber, originalLine) Then
+                    Continue For
+                End If
+
+                Dim editedLine = NormalizeInlineEditSingleLine(If(entry?.InlineEditText, String.Empty))
+                If Not StringComparer.Ordinal.Equals(editedLine, originalLine) Then
+                    hasAnyChange = True
+                    Exit For
+                End If
+            Next
+
+            If Not hasAnyChange Then
+                ShowStatus("No inline edits to save.")
+                UpdateGitDiffInlineToolbarState()
+                Return
+            End If
+
+            _gitInlineEditSaveInProgress = True
+            UpdateGitDiffInlineToolbarState()
+
+            Try
+                Dim fileBuffer = Await Task.Run(Function() ReadEditableTextFileBuffer(session.FullPath)).ConfigureAwait(True)
+                If fileBuffer.Lines Is Nothing Then
+                    fileBuffer.Lines = New List(Of String)()
+                End If
+
+                Dim lineNumbers As New List(Of Integer)(session.EditableEntriesByLine.Keys)
+                lineNumbers.Sort()
+
+                For Each lineNumber In lineNumbers
+                    If lineNumber <= 0 OrElse lineNumber > fileBuffer.Lines.Count Then
+                        Throw New InvalidOperationException("Selected line range no longer exists in the file.")
+                    End If
+
+                    Dim expectedLine As String = Nothing
+                    If Not session.OriginalLinesByLine.TryGetValue(lineNumber, expectedLine) Then
+                        Throw New InvalidOperationException("Inline edit state is out of date.")
+                    End If
+
+                    Dim currentLine = fileBuffer.Lines(lineNumber - 1)
+                    If Not StringComparer.Ordinal.Equals(currentLine, expectedLine) Then
+                        Throw New InvalidOperationException("The file changed since you opened inline edit. Refresh the diff and try again.")
+                    End If
+
+                    Dim entry = session.EditableEntriesByLine(lineNumber)
+                    Dim editedLine = NormalizeInlineEditSingleLine(If(entry?.InlineEditText, String.Empty))
+                    fileBuffer.Lines(lineNumber - 1) = editedLine
+                Next
+
+                fileBuffer.HadTerminalNewLine = session.HadTerminalNewLine
+                fileBuffer.PreferredNewLine = If(String.IsNullOrEmpty(session.PreferredNewLine), vbLf, session.PreferredNewLine)
+                fileBuffer.FileEncoding = If(session.FileEncoding, Encoding.UTF8)
+
+                Await Task.Run(Sub() WriteEditableTextFileBuffer(session.FullPath, fileBuffer)).ConfigureAwait(True)
+
+                CancelGitInlineDiffEdit(shouldShowStatus:=False, force:=True)
+                ShowStatus($"Updated {session.DisplayPath} ({lineNumbers.Count} line(s)).", displayToast:=True)
+                Await RefreshGitPanelAsync().ConfigureAwait(True)
+            Catch ex As Exception
+                ShowStatus($"Could not save inline diff edits: {ex.Message}", isError:=True, displayToast:=True)
+            Finally
+                _gitInlineEditSaveInProgress = False
+                UpdateGitDiffInlineToolbarState()
+            End Try
+        End Function
+
+        Private Sub CancelGitInlineDiffEdit(Optional shouldShowStatus As Boolean = True, Optional force As Boolean = False)
+            If _gitInlineEditSaveInProgress AndAlso Not force Then
+                Return
+            End If
+
+            EndGitDiffCtrlDragSelection()
+            Dim activeSession = _gitInlineDiffEditSession
+            _gitInlineDiffEditSession = Nothing
+
+            If activeSession IsNot Nothing AndAlso activeSession.EditableEntriesByLine IsNot Nothing Then
+                For Each pair In activeSession.EditableEntriesByLine
+                    Dim lineEntry = pair.Value
+                    If lineEntry Is Nothing Then
+                        Continue For
+                    End If
+
+                    lineEntry.IsInlineEditing = False
+                    lineEntry.InlineEditText = String.Empty
+                Next
+            End If
+
+            If GitPaneHost Is Nothing Then
+                Return
+            End If
+
+            RefreshGitDiffPreviewListBindings()
+            UpdateGitDiffInlineToolbarState()
+
+            If shouldShowStatus Then
+                ShowStatus("Canceled inline diff edit.")
+            End If
+        End Sub
+
+        Private Sub EndGitDiffCtrlDragSelection()
+            If Not _gitDiffCtrlDragSelecting Then
+                _gitDiffCtrlDragAnchorIndex = -1
+                _gitDiffCtrlDragLastIndex = -1
+                Return
+            End If
+
+            _gitDiffCtrlDragSelecting = False
+            _gitDiffCtrlDragAnchorIndex = -1
+            _gitDiffCtrlDragLastIndex = -1
+
+            Dim list = GitPaneHost?.LstGitPanelDiffPreviewLines
+            If list IsNot Nothing AndAlso Mouse.Captured Is list Then
+                Mouse.Capture(Nothing)
+            End If
+        End Sub
+
+        Private Sub EnsureGitDiffLineSelection(startIndex As Integer, endIndex As Integer)
+            Dim list = GitPaneHost?.LstGitPanelDiffPreviewLines
+            If list Is Nothing OrElse list.Items Is Nothing OrElse list.Items.Count = 0 Then
+                Return
+            End If
+
+            Dim minIndex = Math.Max(0, Math.Min(startIndex, endIndex))
+            Dim maxIndex = Math.Min(list.Items.Count - 1, Math.Max(startIndex, endIndex))
+            For i = minIndex To maxIndex
+                Dim item = list.Items(i)
+                If item Is Nothing Then
+                    Continue For
+                End If
+
+                If Not list.SelectedItems.Contains(item) Then
+                    list.SelectedItems.Add(item)
+                End If
+            Next
+        End Sub
+
+        Private Function ResolveGitDiffListItemIndex(listItem As ListBoxItem) As Integer
+            Dim list = GitPaneHost?.LstGitPanelDiffPreviewLines
+            If list Is Nothing OrElse listItem Is Nothing Then
+                Return -1
+            End If
+
+            Dim dataItem = list.ItemContainerGenerator.ItemFromContainer(listItem)
+            If dataItem Is DependencyProperty.UnsetValue OrElse dataItem Is Nothing Then
+                dataItem = listItem.DataContext
+            End If
+
+            If dataItem Is Nothing Then
+                Return -1
+            End If
+
+            Return list.Items.IndexOf(dataItem)
+        End Function
+
+        Private Function ResolveGitDiffListItemIndexAtPoint(list As ListBox, point As Point) As Integer
+            If list Is Nothing Then
+                Return -1
+            End If
+
+            Dim hit = TryCast(list.InputHitTest(point), DependencyObject)
+            If hit Is Nothing Then
+                Return -1
+            End If
+
+            If FindVisualAncestor(Of ScrollBar)(hit) IsNot Nothing Then
+                Return -1
+            End If
+
+            Dim listItem = FindVisualAncestor(Of ListBoxItem)(hit)
+            If listItem Is Nothing Then
+                Return -1
+            End If
+
+            Return ResolveGitDiffListItemIndex(listItem)
+        End Function
+
+        Private Sub RestoreGitPanelDiffMetaForCurrentSelection()
+            If GitPaneHost Is Nothing OrElse GitPaneHost.LblGitPanelDiffMeta Is Nothing Then
+                Return
+            End If
+
+            Dim selected = TryCast(GitPaneHost.LstGitPanelChanges?.SelectedItem, GitChangedFileListEntry)
+            Dim metaParts As New List(Of String)()
+            If selected IsNot Nothing Then
+                If selected.AddedLineCount.HasValue AndAlso selected.AddedLineCount.Value > 0 Then
+                    metaParts.Add($"+{selected.AddedLineCount.Value}")
+                End If
+                If selected.RemovedLineCount.HasValue AndAlso selected.RemovedLineCount.Value > 0 Then
+                    metaParts.Add($"-{selected.RemovedLineCount.Value}")
+                End If
+            End If
+
+            If _gitInlineDiffEditSession IsNot Nothing Then
+                metaParts.Add($"editing {_gitInlineDiffEditSession.EditableEntriesByLine.Count} line(s)")
+            Else
+                Dim selectedEditableCount = ResolveSelectedEditableGitDiffEntries().Count
+                If selectedEditableCount > 0 Then
+                    metaParts.Add($"{selectedEditableCount} selected")
+                End If
+            End If
+
+            GitPaneHost.LblGitPanelDiffMeta.Text = String.Join("  ", metaParts)
+        End Sub
+
+        Private Sub UpdateGitDiffInlineToolbarState()
+            If GitPaneHost Is Nothing Then
+                Return
+            End If
+
+            Dim isEditing = _gitInlineDiffEditSession IsNot Nothing
+            Dim hasEditableSelection = ResolveSelectedEditableGitDiffEntries().Count > 0
+            Dim canStartEditing = Not isEditing AndAlso
+                                  Not _gitInlineEditSaveInProgress AndAlso
+                                  Not _gitPanelLoadingActive AndAlso
+                                  Not _gitPanelCommandInProgress AndAlso
+                                  hasEditableSelection
+            Dim canSaveOrCancel = isEditing AndAlso Not _gitInlineEditSaveInProgress
+
+            If GitPaneHost.BtnGitDiffInlineStart IsNot Nothing Then
+                GitPaneHost.BtnGitDiffInlineStart.Visibility = If(isEditing, Visibility.Collapsed, Visibility.Visible)
+                GitPaneHost.BtnGitDiffInlineStart.IsEnabled = canStartEditing
+            End If
+
+            If GitPaneHost.BtnGitDiffInlineSave IsNot Nothing Then
+                GitPaneHost.BtnGitDiffInlineSave.Visibility = If(isEditing, Visibility.Visible, Visibility.Collapsed)
+                GitPaneHost.BtnGitDiffInlineSave.IsEnabled = canSaveOrCancel
+            End If
+
+            If GitPaneHost.BtnGitDiffInlineCancel IsNot Nothing Then
+                GitPaneHost.BtnGitDiffInlineCancel.Visibility = If(isEditing, Visibility.Visible, Visibility.Collapsed)
+                GitPaneHost.BtnGitDiffInlineCancel.IsEnabled = canSaveOrCancel
+            End If
+
+            RestoreGitPanelDiffMetaForCurrentSelection()
+        End Sub
+
+        Private Sub RefreshGitDiffPreviewListBindings()
+            If GitPaneHost Is Nothing OrElse GitPaneHost.LstGitPanelDiffPreviewLines Is Nothing Then
+                Return
+            End If
+
+            Dim view = CollectionViewSource.GetDefaultView(GitPaneHost.LstGitPanelDiffPreviewLines.ItemsSource)
+            If view IsNot Nothing Then
+                view.Refresh()
+            End If
+        End Sub
+
+        Private Sub FocusFirstGitInlineEditor()
+            Dim list = GitPaneHost?.LstGitPanelDiffPreviewLines
+            If list Is Nothing OrElse _gitInlineDiffEditSession Is Nothing Then
+                Return
+            End If
+
+            Dispatcher.BeginInvoke(
+                New Action(
+                    Sub()
+                        If _gitInlineDiffEditSession Is Nothing Then
+                            Return
+                        End If
+
+                        For Each lineEntry In _gitInlineDiffEditSession.EditableEntriesByLine.Values
+                            If lineEntry Is Nothing Then
+                                Continue For
+                            End If
+
+                            list.ScrollIntoView(lineEntry)
+                            Dim container = TryCast(list.ItemContainerGenerator.ContainerFromItem(lineEntry), ListBoxItem)
+                            If container Is Nothing Then
+                                Continue For
+                            End If
+
+                            Dim editor = FindVisualDescendantByName(Of TextBox)(container, "GitDiffInlineEditTextBox")
+                            If editor Is Nothing Then
+                                Continue For
+                            End If
+
+                            editor.Focus()
+                            editor.SelectAll()
+                            Exit For
+                        Next
+                    End Sub),
+                DispatcherPriority.Input)
+        End Sub
+
+        Private Shared Function NormalizeInlineEditSingleLine(value As String) As String
+            Dim normalized = If(value, String.Empty).Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim newlineIndex = normalized.IndexOf(vbLf, StringComparison.Ordinal)
+            If newlineIndex >= 0 Then
+                normalized = normalized.Substring(0, newlineIndex)
+            End If
+
+            Return normalized
+        End Function
+
+        Private Shared Function ReadEditableTextFileBuffer(fullPath As String) As EditableTextFileBuffer
+            Dim text As String = String.Empty
+            Dim encoding As Encoding = New UTF8Encoding(False)
+            Using reader As New StreamReader(fullPath, detectEncodingFromByteOrderMarks:=True)
+                text = reader.ReadToEnd()
+                encoding = reader.CurrentEncoding
+            End Using
+
+            Dim preferredNewLine = If(text.Contains(vbCrLf), vbCrLf, vbLf)
+            Dim normalized = text.Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+            Dim hadTerminalNewLine = normalized.EndsWith(vbLf, StringComparison.Ordinal)
+            Dim lines As New List(Of String)()
+
+            If normalized.Length > 0 Then
+                lines.AddRange(normalized.Split({vbLf}, StringSplitOptions.None))
+                If hadTerminalNewLine AndAlso lines.Count > 0 Then
+                    lines.RemoveAt(lines.Count - 1)
+                End If
+            End If
+
+            Return New EditableTextFileBuffer With {
+                .Lines = lines,
+                .FileEncoding = encoding,
+                .PreferredNewLine = preferredNewLine,
+                .HadTerminalNewLine = hadTerminalNewLine
+            }
+        End Function
+
+        Private Shared Sub WriteEditableTextFileBuffer(fullPath As String, buffer As EditableTextFileBuffer)
+            Dim lines = If(buffer.Lines, New List(Of String)())
+            Dim normalized = String.Join(vbLf, lines)
+            If buffer.HadTerminalNewLine Then
+                normalized &= vbLf
+            End If
+
+            Dim preferredNewLine = If(String.IsNullOrEmpty(buffer.PreferredNewLine), vbLf, buffer.PreferredNewLine)
+            Dim content = If(StringComparer.Ordinal.Equals(preferredNewLine, vbCrLf),
+                             normalized.Replace(vbLf, vbCrLf),
+                             normalized)
+
+            File.WriteAllText(fullPath, content, If(buffer.FileEncoding, New UTF8Encoding(False)))
+        End Sub
 
         Private Async Function LoadGitCommitPreviewAsync(selected As GitCommitListEntry) As Task
             If selected Is Nothing Then
@@ -1698,8 +3127,10 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            HideMetricsPanelForPanelSwitch()
             ShowGitPanelDock()
             GitPaneHost.GitInspectorPanel.Visibility = Visibility.Visible
+            UpdateSidebarSelectionState(showSettings:=(_viewModel.SidebarSettingsViewVisibility = Visibility.Visible))
             FireAndForget(RefreshGitPanelAsync())
         End Sub
 
@@ -1800,29 +3231,37 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            EndGitDiffCtrlDragSelection()
+            CancelGitInlineDiffEdit(shouldShowStatus:=False, force:=True)
+
+            Dim keepDockOpenForMetrics = IsMetricsPanelVisible()
             Dim actualWidth = GitPaneHost.GitInspectorPanel.ActualWidth
             If Not Double.IsNaN(actualWidth) AndAlso Not Double.IsInfinity(actualWidth) AndAlso actualWidth >= 280 Then
                 _gitPanelDockWidth = actualWidth
             End If
 
             GitPaneHost.GitInspectorPanel.Visibility = Visibility.Collapsed
-            If RightGitPaneSplitter IsNot Nothing Then
-                RightGitPaneSplitter.Visibility = Visibility.Collapsed
+            If Not keepDockOpenForMetrics Then
+                If RightGitPaneSplitter IsNot Nothing Then
+                    RightGitPaneSplitter.Visibility = Visibility.Collapsed
+                End If
+                If RightGitPaneSplitterColumn IsNot Nothing Then
+                    RightGitPaneSplitterColumn.Width = New GridLength(0, GridUnitType.Pixel)
+                End If
+                If RightGitPaneColumn IsNot Nothing Then
+                    RightGitPaneColumn.MinWidth = 0
+                    RightGitPaneColumn.Width = New GridLength(0, GridUnitType.Pixel)
+                End If
+                If RightGitPaneShell IsNot Nothing Then
+                    RightGitPaneShell.Visibility = Visibility.Collapsed
+                End If
             End If
-            If RightGitPaneSplitterColumn IsNot Nothing Then
-                RightGitPaneSplitterColumn.Width = New GridLength(0, GridUnitType.Pixel)
-            End If
-            If RightGitPaneColumn IsNot Nothing Then
-                RightGitPaneColumn.MinWidth = 0
-                RightGitPaneColumn.Width = New GridLength(0, GridUnitType.Pixel)
-            End If
-            If RightGitPaneShell IsNot Nothing Then
-                RightGitPaneShell.Visibility = Visibility.Collapsed
-            End If
+            UpdateMainPaneResizeBounds()
             Interlocked.Increment(_gitPanelLoadVersion)
             Interlocked.Increment(_gitPanelDiffPreviewLoadVersion)
             Interlocked.Increment(_gitPanelCommitPreviewLoadVersion)
             Interlocked.Increment(_gitPanelBranchPreviewLoadVersion)
+            UpdateSidebarSelectionState(showSettings:=(_viewModel.SidebarSettingsViewVisibility = Visibility.Visible))
         End Sub
 
         Private Async Function RefreshGitPanelAsync() As Task
@@ -1854,6 +3293,8 @@ Namespace CodexNativeAgent.Ui
         End Function
 
         Private Sub SetGitPanelLoadingState(isLoading As Boolean, statusText As String)
+            _gitPanelLoadingActive = isLoading
+
             If GitPaneHost.GitPanelLoadingOverlay IsNot Nothing Then
                 GitPaneHost.GitPanelLoadingOverlay.Visibility = If(isLoading, Visibility.Visible, Visibility.Collapsed)
             End If
@@ -1867,8 +3308,11 @@ Namespace CodexNativeAgent.Ui
             End If
 
             If GitPaneHost.BtnGitPanelRefresh IsNot Nothing Then
-                GitPaneHost.BtnGitPanelRefresh.IsEnabled = Not isLoading
+                GitPaneHost.BtnGitPanelRefresh.IsEnabled = Not isLoading AndAlso Not _gitPanelCommandInProgress
             End If
+
+            UpdateGitCommitComposerState()
+            UpdateGitDiffInlineToolbarState()
         End Sub
 
         Private Sub SetGitPanelErrorState(message As String)
@@ -2102,6 +3546,10 @@ Namespace CodexNativeAgent.Ui
                 End If
                 snapshot.StatusSummary = parsedStatus.StatusSummary
                 snapshot.ChangesText = parsedStatus.ChangesText
+                snapshot.StagedChangeCount = parsedStatus.StagedChangeCount
+                snapshot.UnstagedChangeCount = parsedStatus.UnstagedChangeCount
+                snapshot.UntrackedChangeCount = parsedStatus.UntrackedChangeCount
+                snapshot.ConflictChangeCount = parsedStatus.ConflictChangeCount
                 snapshot.ChangedFiles = parsedStatus.ChangedFiles
                 RemoveGitDirectoryEntries(snapshot.ChangedFiles, snapshot.RepoRoot)
                 AssignGitFileIcons(snapshot.ChangedFiles, snapshot.RepoRoot)
@@ -2202,6 +3650,10 @@ Namespace CodexNativeAgent.Ui
             Public Property BranchName As String
             Public Property StatusSummary As String
             Public Property ChangesText As String
+            Public Property StagedChangeCount As Integer
+            Public Property UnstagedChangeCount As Integer
+            Public Property UntrackedChangeCount As Integer
+            Public Property ConflictChangeCount As Integer
             Public Property ChangedFiles As List(Of GitChangedFileListEntry)
         End Structure
 
@@ -2280,7 +3732,11 @@ Namespace CodexNativeAgent.Ui
                 parts.Add($"{untrackedCount} untracked")
             End If
 
-            result.StatusSummary = If(parts.Count = 0, "clean", String.Join(" • ", parts))
+            result.StatusSummary = If(parts.Count = 0, "clean", String.Join(", ", parts))
+            result.StagedChangeCount = stagedCount
+            result.UnstagedChangeCount = unstagedCount
+            result.UntrackedChangeCount = untrackedCount
+            result.ConflictChangeCount = conflictCount
             Return result
         End Function
 
@@ -2303,13 +3759,8 @@ Namespace CodexNativeAgent.Ui
                 canonicalPath = pathText.Substring(renameArrowIndex + 4).Trim()
             End If
 
-            Dim code = rawCode.Trim()
-            If String.IsNullOrWhiteSpace(code) Then
-                code = rawCode
-            End If
-
             Return New GitChangedFileListEntry() With {
-                .StatusCode = If(code, String.Empty),
+                .StatusCode = If(rawCode, String.Empty),
                 .FilePath = canonicalPath,
                 .DisplayPath = displayPath,
                 .IsUntracked = StringComparer.Ordinal.Equals(rawCode, "??")
@@ -2817,6 +4268,19 @@ Namespace CodexNativeAgent.Ui
             Return NormalizePanelMultiline(result.OutputText, "No data available.")
         End Function
 
+        Private Shared Function ResolveGitCommandSummary(result As ProcessCaptureResult, fallback As String) As String
+            Dim summary = FirstNonEmptyLine(result.OutputText)
+            If String.IsNullOrWhiteSpace(summary) Then
+                summary = FirstNonEmptyLine(result.ErrorText)
+            End If
+
+            If String.IsNullOrWhiteSpace(summary) Then
+                Return If(fallback, String.Empty)
+            End If
+
+            Return summary
+        End Function
+
         Private Function ResolveQuickOpenWorkspaceCwd(destinationLabel As String) As String
             Dim source As String = String.Empty
             Dim targetCwd = NormalizeProjectPath(ResolveNewThreadTargetCwd(source))
@@ -3196,6 +4660,7 @@ Namespace CodexNativeAgent.Ui
             _viewModel.TurnComposer.IsSandboxEnabled = authenticatedAndInteractive
 
             _viewModel.IsSidebarNewThreadEnabled = authenticatedAndInteractive AndAlso Not _threadContentLoading
+            _viewModel.IsSidebarMetricsEnabled = True
             _viewModel.IsSidebarAutomationsEnabled = True
             _viewModel.IsSidebarSkillsEnabled = True
             _viewModel.IsSidebarSettingsEnabled = True
@@ -3291,14 +4756,16 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Sub UpdateSidebarSelectionState(showSettings As Boolean)
+            Dim showMetrics = Not showSettings AndAlso IsMetricsPanelVisible()
             Dim newThreadTag As String
-            If showSettings Then
+            If showSettings OrElse showMetrics Then
                 newThreadTag = String.Empty
             Else
                 newThreadTag = "Active"
             End If
 
             _viewModel.SidebarNewThreadNavTag = newThreadTag
+            _viewModel.SidebarMetricsNavTag = If(showMetrics, "Active", String.Empty)
             _viewModel.SidebarSettingsNavTag = If(showSettings, "Active", String.Empty)
             _viewModel.SidebarAutomationsNavTag = String.Empty
             _viewModel.SidebarSkillsNavTag = String.Empty
@@ -3339,6 +4806,7 @@ Namespace CodexNativeAgent.Ui
             settingsObject("disableThreadsPanelHints") = _viewModel.SettingsPanel.DisableThreadsPanelHints
             settingsObject("showEventDotsInTranscript") = _viewModel.SettingsPanel.ShowEventDotsInTranscript
             settingsObject("showSystemDotsInTranscript") = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
+            settingsObject("showTurnLifecycleDotsInTranscript") = _viewModel.SettingsPanel.ShowTurnLifecycleDotsInTranscript
             settingsObject("playUiSounds") = _viewModel.SettingsPanel.PlayUiSounds
             settingsObject("uiSoundVolumePercent") = _viewModel.SettingsPanel.UiSoundVolumePercent
             settingsObject("theme") = _currentTheme
@@ -4399,6 +5867,29 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 Dim nested = FindVisualDescendant(Of T)(child)
+                If nested IsNot Nothing Then
+                    Return nested
+                End If
+            Next
+
+            Return Nothing
+        End Function
+
+        Private Shared Function FindVisualDescendantByName(Of T As FrameworkElement)(root As DependencyObject,
+                                                                                      elementName As String) As T
+            If root Is Nothing OrElse String.IsNullOrWhiteSpace(elementName) Then
+                Return Nothing
+            End If
+
+            Dim childCount = VisualTreeHelper.GetChildrenCount(root)
+            For i = 0 To childCount - 1
+                Dim child = VisualTreeHelper.GetChild(root, i)
+                Dim typed = TryCast(child, T)
+                If typed IsNot Nothing AndAlso StringComparer.Ordinal.Equals(typed.Name, elementName) Then
+                    Return typed
+                End If
+
+                Dim nested = FindVisualDescendantByName(Of T)(child, elementName)
                 If nested IsNot Nothing Then
                     Return nested
                 End If

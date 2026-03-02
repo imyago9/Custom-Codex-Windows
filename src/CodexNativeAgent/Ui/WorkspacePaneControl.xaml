@@ -470,6 +470,27 @@
                                                             Opacity="0.55"
                                                             HorizontalAlignment="Center"
                                                             Margin="0,16,0,0" />
+                                                    <Ellipse x:Name="ActivityDotHalo"
+                                                             Width="16"
+                                                             Height="16"
+                                                             Fill="{DynamicResource AccentGlowBrush}"
+                                                             Opacity="0"
+                                                             Visibility="Collapsed"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Top"
+                                                             Margin="0,4,0,0"
+                                                             IsHitTestVisible="False" />
+                                                    <Ellipse x:Name="ActivityDotRing"
+                                                             Width="10"
+                                                             Height="10"
+                                                             Fill="{DynamicResource SurfaceBrush}"
+                                                             Stroke="{DynamicResource BorderBrush}"
+                                                             StrokeThickness="1"
+                                                             Visibility="Collapsed"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Top"
+                                                             Margin="0,7,0,0"
+                                                             IsHitTestVisible="False" />
                                                     <Ellipse x:Name="ActivityDot"
                                                              Width="8"
                                                              Height="8"
@@ -991,6 +1012,15 @@
                                             <DataTrigger Binding="{Binding Kind}" Value="turnMarker">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />
                                                 <Setter TargetName="ActivityRow" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.38" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.2" />
+                                                <Setter TargetName="ActivityDotRing" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityDotRing" Property="StrokeThickness" Value="1.2" />
+                                                <Setter TargetName="ActivityDotRing" Property="Fill" Value="{DynamicResource SurfaceBrush}" />
                                                 <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
                                                 <Setter TargetName="ActivityChrome" Property="Background" Value="Transparent" />
                                                 <Setter TargetName="ActivityChrome" Property="BorderBrush" Value="Transparent" />
@@ -1002,6 +1032,102 @@
                                                 <Setter TargetName="ActivityDetailsChrome" Property="Background" Value="Transparent" />
                                                 <Setter TargetName="ActivityDetailsChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding StatusText}" Value="in_progress" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.46" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.28" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding StatusText}" Value="completed" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource SuccessBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.44" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.22" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource SuccessBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding StatusText}" Value="failed" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource DangerBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.44" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource DangerBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.22" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource DangerBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource DangerBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding StatusText}" Value="interrupted" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.44" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.22" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding StatusText}" Value="canceled" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.44" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.22" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding StatusText}" Value="aborted" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.44" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.22" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource WarningBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource WarningBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding BodyText}" Value="Turn started." />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.46" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource AccentGlowBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.28" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                            </MultiDataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="turnMarker" />
+                                                    <Condition Binding="{Binding BodyText}" Value="Turn completed." />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="ActivityLine" Property="Background" Value="{DynamicResource SuccessBrush}" />
+                                                <Setter TargetName="ActivityLine" Property="Opacity" Value="0.44" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                                <Setter TargetName="ActivityDotHalo" Property="Opacity" Value="0.22" />
+                                                <Setter TargetName="ActivityDotRing" Property="Stroke" Value="{DynamicResource SuccessBrush}" />
+                                                <Setter TargetName="ActivityDot" Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                            </MultiDataTrigger>
 
                                             <DataTrigger Binding="{Binding Kind}" Value="turnDiff">
                                                 <Setter TargetName="BubbleRow" Property="Visibility" Value="Collapsed" />

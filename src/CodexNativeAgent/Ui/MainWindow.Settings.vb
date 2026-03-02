@@ -130,6 +130,7 @@ Namespace CodexNativeAgent.Ui
             _settings.DisableThreadsPanelHints = _viewModel.SettingsPanel.DisableThreadsPanelHints
             _settings.ShowEventDotsInTranscript = _viewModel.SettingsPanel.ShowEventDotsInTranscript
             _settings.ShowSystemDotsInTranscript = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
+            _settings.ShowTurnLifecycleDotsInTranscript = _viewModel.SettingsPanel.ShowTurnLifecycleDotsInTranscript
             _settings.PlayUiSounds = _viewModel.SettingsPanel.PlayUiSounds
             _settings.UiSoundVolumePercent = _viewModel.SettingsPanel.UiSoundVolumePercent
             _settings.TranscriptScaleIndex = NormalizeTranscriptScaleIndex(_viewModel.SettingsPanel.TranscriptScaleIndex)
@@ -193,6 +194,7 @@ Namespace CodexNativeAgent.Ui
             _viewModel.SettingsPanel.DisableThreadsPanelHints = _settings.DisableThreadsPanelHints
             _viewModel.SettingsPanel.ShowEventDotsInTranscript = _settings.ShowEventDotsInTranscript
             _viewModel.SettingsPanel.ShowSystemDotsInTranscript = _settings.ShowSystemDotsInTranscript
+            _viewModel.SettingsPanel.ShowTurnLifecycleDotsInTranscript = _settings.ShowTurnLifecycleDotsInTranscript
             _viewModel.SettingsPanel.PlayUiSounds = _settings.PlayUiSounds
             _viewModel.SettingsPanel.UiSoundVolumePercent = _settings.UiSoundVolumePercent
             _suppressTranscriptScaleUiChange = True
@@ -230,6 +232,7 @@ Namespace CodexNativeAgent.Ui
 
             _viewModel.TranscriptPanel.ShowEventDotsInTranscript = _viewModel.SettingsPanel.ShowEventDotsInTranscript
             _viewModel.TranscriptPanel.ShowSystemDotsInTranscript = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
+            _viewModel.TranscriptPanel.ShowTurnLifecycleDotsInTranscript = _viewModel.SettingsPanel.ShowTurnLifecycleDotsInTranscript
             UpdateWorkspaceEmptyStateVisibility()
         End Sub
 

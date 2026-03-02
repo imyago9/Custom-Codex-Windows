@@ -23,10 +23,12 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _sidebarMainViewVisibility As Visibility = Visibility.Visible
         Private _sidebarSettingsViewVisibility As Visibility = Visibility.Collapsed
         Private _sidebarNewThreadNavTag As String = "Active"
+        Private _sidebarMetricsNavTag As String = String.Empty
         Private _sidebarAutomationsNavTag As String = String.Empty
         Private _sidebarSkillsNavTag As String = String.Empty
         Private _sidebarSettingsNavTag As String = String.Empty
         Private _isSidebarNewThreadEnabled As Boolean
+        Private _isSidebarMetricsEnabled As Boolean = True
         Private _isSidebarAutomationsEnabled As Boolean = True
         Private _isSidebarSkillsEnabled As Boolean = True
         Private _isSidebarSettingsEnabled As Boolean = True
@@ -131,6 +133,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Set
         End Property
 
+        Public Property SidebarMetricsNavTag As String
+            Get
+                Return _sidebarMetricsNavTag
+            End Get
+            Set(value As String)
+                SetProperty(_sidebarMetricsNavTag, If(value, String.Empty))
+            End Set
+        End Property
+
         Public Property SidebarAutomationsNavTag As String
             Get
                 Return _sidebarAutomationsNavTag
@@ -164,6 +175,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 SetProperty(_isSidebarNewThreadEnabled, value)
+            End Set
+        End Property
+
+        Public Property IsSidebarMetricsEnabled As Boolean
+            Get
+                Return _isSidebarMetricsEnabled
+            End Get
+            Set(value As Boolean)
+                SetProperty(_isSidebarMetricsEnabled, value)
             End Set
         End Property
 

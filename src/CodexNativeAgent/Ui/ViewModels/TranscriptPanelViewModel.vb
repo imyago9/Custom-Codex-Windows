@@ -104,6 +104,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _collapseCommandDetailsByDefault As Boolean
         Private _showEventDotsInTranscript As Boolean
         Private _showSystemDotsInTranscript As Boolean
+        Private _showTurnLifecycleDotsInTranscript As Boolean = True
         Private _transcriptContentScale As Double = 1.0R
         Private _tokenUsageText As String = String.Empty
         Private _tokenUsageVisibility As Visibility = Visibility.Collapsed
@@ -396,6 +397,17 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 If SetProperty(_showSystemDotsInTranscript, value) Then
+                    RefreshTimelineDotRowVisibility()
+                End If
+            End Set
+        End Property
+
+        Public Property ShowTurnLifecycleDotsInTranscript As Boolean
+            Get
+                Return _showTurnLifecycleDotsInTranscript
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_showTurnLifecycleDotsInTranscript, value) Then
                     RefreshTimelineDotRowVisibility()
                 End If
             End Set
@@ -2140,22 +2152,30 @@ Namespace CodexNativeAgent.Ui.ViewModels
                                                  Replace(" ", String.Empty, StringComparison.Ordinal).
                                                  ToLowerInvariant()
             Dim body As String
+            Dim lifecycleStatusToken As String
 
             Select Case compactStatus
                 Case "", "completed"
                     body = "Turn completed."
+                    lifecycleStatusToken = "completed"
                 Case "started"
                     body = "Turn started."
+                    lifecycleStatusToken = "in_progress"
                 Case "interrupted"
                     body = "Turn interrupted."
+                    lifecycleStatusToken = "interrupted"
                 Case "failed"
                     body = "Turn failed."
+                    lifecycleStatusToken = "failed"
                 Case "cancelled", "canceled"
                     body = "Turn canceled."
+                    lifecycleStatusToken = "canceled"
                 Case "aborted"
                     body = "Turn aborted."
+                    lifecycleStatusToken = "aborted"
                 Case Else
                     body = $"Turn ended ({If(String.IsNullOrWhiteSpace(normalizedStatus), "completed", normalizedStatus)})."
+                    lifecycleStatusToken = NormalizeStatusToken(normalizedStatus)
             End Select
 
             Return New TranscriptEntryDescriptor() With {
@@ -2163,6 +2183,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .TurnId = normalizedTurnId,
                 .TimestampText = If(timestampText, String.Empty),
                 .RoleText = "Turn",
+                .StatusText = lifecycleStatusToken,
                 .BodyText = body,
                 .IsMuted = True
             }
@@ -3709,6 +3730,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     Return _showEventDotsInTranscript
                 Case "system", "systemmarker"
                     Return _showSystemDotsInTranscript
+                Case "turnmarker"
+                    Return _showTurnLifecycleDotsInTranscript
                 Case Else
                     Return True
             End Select

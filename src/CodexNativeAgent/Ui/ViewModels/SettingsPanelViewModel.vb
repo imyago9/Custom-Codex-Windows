@@ -27,6 +27,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _disableThreadsPanelHints As Boolean
         Private _showEventDotsInTranscript As Boolean
         Private _showSystemDotsInTranscript As Boolean
+        Private _showTurnLifecycleDotsInTranscript As Boolean = True
         Private _playUiSounds As Boolean = True
         Private _uiSoundVolumePercent As Double = 100.0R
         Private _areConnectionFieldsEditable As Boolean = True
@@ -235,6 +236,15 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 SetProperty(_showSystemDotsInTranscript, value)
+            End Set
+        End Property
+
+        Public Property ShowTurnLifecycleDotsInTranscript As Boolean
+            Get
+                Return _showTurnLifecycleDotsInTranscript
+            End Get
+            Set(value As Boolean)
+                SetProperty(_showTurnLifecycleDotsInTranscript, value)
             End Set
         End Property
 

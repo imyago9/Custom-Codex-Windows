@@ -1,0 +1,557 @@
+<UserControl x:Class="CodexNativeAgent.Ui.MetricsPaneControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent">
+    <UserControl.Resources>
+        <Style x:Key="MetricsPaneSidebarActionButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource ButtonBaseStyle}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SidebarButtonHoverNeutralBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SidebarPressedBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.55" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="MetricsPaneSectionGroupStyle"
+               TargetType="GroupBox"
+               BasedOn="{StaticResource {x:Type GroupBox}}">
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupBox">
+                        <Border Background="{DynamicResource SidebarBackgroundBrush}"
+                                BorderBrush="Transparent"
+                                BorderThickness="0"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="{TemplateBinding Header}"
+                                           FontSize="12.8"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           Margin="0,0,0,8" />
+                                <ContentPresenter Grid.Row="1" />
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MetricsPaneListViewStyle" TargetType="ListView">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+
+        <Style x:Key="MetricsPaneGridViewHeaderStyle" TargetType="GridViewColumnHeader">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        </Style>
+
+        <Style x:Key="MetricsPaneListViewItemStyle" TargetType="ListViewItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SidebarButtonHoverNeutralBrush}" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource ListItemSelectedBorderBrush}" />
+                    <Setter Property="BorderThickness" Value="1" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="MetricsCalendarTooltipStyle" TargetType="ToolTip">
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="10,8"
+                                Effect="{DynamicResource FloatingShadowEffect}">
+                            <ContentPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MetricsCalendarDayCellStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SidebarBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Padding" Value="6,4" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SidebarButtonHoverNeutralBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                    <Setter Property="BorderThickness" Value="1" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IntensityLevel}" Value="1">
+                    <Setter Property="Background" Value="#1A5BA17A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IntensityLevel}" Value="2">
+                    <Setter Property="Background" Value="#2E5BA17A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IntensityLevel}" Value="3">
+                    <Setter Property="Background" Value="#4A5BA17A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IntensityLevel}" Value="4">
+                    <Setter Property="Background" Value="#685BA17A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsOutsideCurrentMonth}" Value="True">
+                    <Setter Property="Opacity" Value="0.35" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsToday}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                    <Setter Property="BorderThickness" Value="2" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Border x:Name="MetricsInspectorPanel"
+            MinWidth="320"
+            MaxWidth="920"
+            Margin="0"
+            Padding="{DynamicResource SidebarShellPadding}"
+            CornerRadius="12"
+            Background="Transparent"
+            BorderBrush="Transparent"
+            BorderThickness="0"
+            Visibility="Collapsed">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,8">
+                <StackPanel DockPanel.Dock="Left">
+                    <TextBlock Text="Metrics"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock x:Name="LblMetricsPanelState"
+                               Text="Open Metrics to inspect Codex usage."
+                               Margin="0,2,0,0"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               FontSize="11" />
+                </StackPanel>
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="BtnMetricsPanelRefresh"
+                            Style="{StaticResource MetricsPaneSidebarActionButtonStyle}"
+                            Content="Refresh"
+                            Height="28"
+                            Padding="10,3"
+                            Margin="0,0,6,0" />
+                    <Button x:Name="BtnMetricsPanelClose"
+                            Style="{StaticResource MetricsPaneSidebarActionButtonStyle}"
+                            Width="28"
+                            Height="28"
+                            Padding="0"
+                            ToolTip="Close Metrics panel">
+                        <TextBlock Text="&#xE711;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="12"
+                                   TextAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" />
+                    </Button>
+                </StackPanel>
+            </DockPanel>
+
+            <Border Grid.Row="1"
+                    Margin="0,0,0,8"
+                    Padding="10,8"
+                    CornerRadius="10"
+                    Background="{DynamicResource SidebarBackgroundBrush}"
+                    BorderBrush="Transparent"
+                    BorderThickness="0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="4,0,4,0">
+                        <TextBlock Text="Sessions"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                        <TextBlock x:Name="LblMetricsSummarySessions"
+                                   Text="0"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="4,0,4,0">
+                        <TextBlock Text="Prompts"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                        <TextBlock x:Name="LblMetricsSummaryPrompts"
+                                   Text="0"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Margin="4,0,4,0">
+                        <TextBlock Text="Projects"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                        <TextBlock x:Name="LblMetricsSummaryProjects"
+                                   Text="0"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="3" Margin="4,0,4,0">
+                        <TextBlock Text="Input/Output Tokens"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                        <TextBlock x:Name="LblMetricsSummaryTokens"
+                                   Text="0"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="4" Margin="4,0,4,0">
+                        <TextBlock Text="Tool Calls"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                        <TextBlock x:Name="LblMetricsSummaryToolCalls"
+                                   Text="0"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="2">
+                <Grid x:Name="MetricsPanelLoadingOverlay"
+                      Panel.ZIndex="20"
+                      Visibility="Collapsed"
+                      Background="#44000000">
+                    <Border Width="320"
+                            MaxWidth="420"
+                            Padding="12,10"
+                            CornerRadius="10"
+                            Background="{DynamicResource SidebarBackgroundBrush}"
+                            BorderBrush="Transparent"
+                            BorderThickness="0"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                        <StackPanel>
+                            <ProgressBar Height="6"
+                                         IsIndeterminate="True"
+                                         Foreground="{DynamicResource AccentBrush}"
+                                         Background="{DynamicResource SurfaceContrastBrush}" />
+                            <TextBlock x:Name="LblMetricsPanelLoading"
+                                       Text="Loading metrics..."
+                                       Margin="0,8,0,0"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       TextAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <GroupBox Header="Activity Window"
+                                  Style="{StaticResource MetricsPaneSectionGroupStyle}">
+                            <StackPanel>
+                                <TextBlock x:Name="LblMetricsActivityRange"
+                                           Text="No activity loaded."
+                                           Margin="0,0,0,4" />
+                                <TextBlock x:Name="LblMetricsDataSources"
+                                           Text=""
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Daily Calendar"
+                                  Style="{StaticResource MetricsPaneSectionGroupStyle}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,6"
+                                           LastChildFill="False">
+                                    <StackPanel DockPanel.Dock="Left"
+                                                Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="BtnMetricsMonthPrev"
+                                                Style="{StaticResource MetricsPaneSidebarActionButtonStyle}"
+                                                Width="28"
+                                                Height="26"
+                                                Padding="0"
+                                                ToolTip="Previous month">
+                                            <TextBlock Text="&#xE76B;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="12"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Button>
+                                        <TextBlock x:Name="LblMetricsCalendarMonth"
+                                                   Text="Calendar"
+                                                   FontWeight="SemiBold"
+                                                   Margin="8,0,8,0"
+                                                   VerticalAlignment="Center" />
+                                        <Button x:Name="BtnMetricsMonthNext"
+                                                Style="{StaticResource MetricsPaneSidebarActionButtonStyle}"
+                                                Width="28"
+                                                Height="26"
+                                                Padding="0"
+                                                ToolTip="Next month">
+                                            <TextBlock Text="&#xE76C;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="12"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Button>
+                                        <Button x:Name="BtnMetricsMonthToday"
+                                                Style="{StaticResource MetricsPaneSidebarActionButtonStyle}"
+                                                Content="Today"
+                                                Height="26"
+                                                Padding="10,2"
+                                                Margin="8,0,0,0"
+                                                ToolTip="Jump to current month" />
+                                    </StackPanel>
+
+                                    <StackPanel DockPanel.Dock="Right"
+                                                Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+                                        <ComboBox x:Name="CmbMetricsFilterMode"
+                                                  Width="118"
+                                                  Height="26"
+                                                  Margin="0,0,6,0"
+                                                  SelectedIndex="0">
+                                            <ComboBoxItem Content="All Activity"
+                                                          Tag="all" />
+                                            <ComboBoxItem Content="Single Day"
+                                                          Tag="day" />
+                                            <ComboBoxItem Content="Last N Days"
+                                                          Tag="days" />
+                                        </ComboBox>
+                                        <DatePicker x:Name="DpMetricsFilterDay"
+                                                    Width="130"
+                                                    Height="26"
+                                                    Margin="0,0,6,0" />
+                                        <TextBox x:Name="TxtMetricsFilterDays"
+                                                 Width="60"
+                                                 Height="26"
+                                                 Margin="0,0,6,0"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="Number of recent days"
+                                                 Text="30" />
+                                        <Button x:Name="BtnMetricsApplyFilter"
+                                                Style="{StaticResource MetricsPaneSidebarActionButtonStyle}"
+                                                Content="Apply"
+                                                Height="26"
+                                                Padding="10,2" />
+                                    </StackPanel>
+                                </DockPanel>
+
+                                <TextBlock x:Name="LblMetricsFilterHint"
+                                           Text="Showing all activity."
+                                           FontSize="10"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           Margin="0,0,0,6" />
+
+                                <UniformGrid Columns="7"
+                                             Margin="0,0,0,3">
+                                    <TextBlock Text="Sun" HorizontalAlignment="Center" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Text="Mon" HorizontalAlignment="Center" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Text="Tue" HorizontalAlignment="Center" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Text="Wed" HorizontalAlignment="Center" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Text="Thu" HorizontalAlignment="Center" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Text="Fri" HorizontalAlignment="Center" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}" />
+                                    <TextBlock Text="Sat" HorizontalAlignment="Center" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}" />
+                                </UniformGrid>
+                                <ItemsControl x:Name="LstMetricsCalendarDays">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="7" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource MetricsCalendarDayCellStyle}"
+                                                    ToolTipService.ShowDuration="60000">
+                                                <Border.ToolTip>
+                                                    <ToolTip Style="{StaticResource MetricsCalendarTooltipStyle}"
+                                                             Placement="Mouse">
+                                                        <StackPanel Width="220">
+                                                            <TextBlock Text="{Binding TooltipTitle}"
+                                                                       FontWeight="SemiBold"
+                                                                       Margin="0,0,0,4" />
+                                                            <TextBlock Text="{Binding TooltipBody}"
+                                                                       TextWrapping="Wrap"
+                                                                       FontSize="11"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Border.ToolTip>
+                                                <Grid>
+                                                    <TextBlock Text="{Binding DayNumberText}"
+                                                               HorizontalAlignment="Left"
+                                                               VerticalAlignment="Top"
+                                                               FontWeight="SemiBold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsOutsideCurrentMonth}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IntensityLevel}" Value="3">
+                                                                        <Setter Property="Foreground" Value="White" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IntensityLevel}" Value="4">
+                                                                        <Setter Property="Foreground" Value="White" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <Ellipse Width="6"
+                                                             Height="6"
+                                                             HorizontalAlignment="Right"
+                                                             VerticalAlignment="Bottom"
+                                                             Fill="{DynamicResource AccentBrush}"
+                                                             Opacity="{Binding ActivityDotOpacity}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Project Breakdown"
+                                  Style="{StaticResource MetricsPaneSectionGroupStyle}">
+                            <ListView x:Name="LstMetricsProjects"
+                                      Style="{StaticResource MetricsPaneListViewStyle}"
+                                      ItemContainerStyle="{StaticResource MetricsPaneListViewItemStyle}"
+                                      Height="260">
+                                <ListView.View>
+                                    <GridView ColumnHeaderContainerStyle="{StaticResource MetricsPaneGridViewHeaderStyle}">
+                                        <GridViewColumn Header="Project"
+                                                        DisplayMemberBinding="{Binding ProjectText}"
+                                                        Width="260" />
+                                        <GridViewColumn Header="Sessions"
+                                                        DisplayMemberBinding="{Binding SessionCountText}"
+                                                        Width="80" />
+                                        <GridViewColumn Header="Prompts"
+                                                        DisplayMemberBinding="{Binding PromptCountText}"
+                                                        Width="80" />
+                                        <GridViewColumn Header="Input"
+                                                        DisplayMemberBinding="{Binding InputTokensText}"
+                                                        Width="110" />
+                                        <GridViewColumn Header="Output"
+                                                        DisplayMemberBinding="{Binding OutputTokensText}"
+                                                        Width="110" />
+                                        <GridViewColumn Header="Tools"
+                                                        DisplayMemberBinding="{Binding ToolCallCountText}"
+                                                        Width="70" />
+                                        <GridViewColumn Header="Last Active"
+                                                        DisplayMemberBinding="{Binding LastActiveText}"
+                                                        Width="130" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </GroupBox>
+
+                        <GroupBox Header="Model Usage"
+                                  Style="{StaticResource MetricsPaneSectionGroupStyle}">
+                            <ListView x:Name="LstMetricsModels"
+                                      Style="{StaticResource MetricsPaneListViewStyle}"
+                                      ItemContainerStyle="{StaticResource MetricsPaneListViewItemStyle}"
+                                      Height="190">
+                                <ListView.View>
+                                    <GridView ColumnHeaderContainerStyle="{StaticResource MetricsPaneGridViewHeaderStyle}">
+                                        <GridViewColumn Header="Model"
+                                                        DisplayMemberBinding="{Binding ModelText}"
+                                                        Width="220" />
+                                        <GridViewColumn Header="Turn Contexts"
+                                                        DisplayMemberBinding="{Binding TurnCountText}"
+                                                        Width="95" />
+                                        <GridViewColumn Header="Sessions"
+                                                        DisplayMemberBinding="{Binding SessionCountText}"
+                                                        Width="80" />
+                                        <GridViewColumn Header="Input"
+                                                        DisplayMemberBinding="{Binding InputTokensText}"
+                                                        Width="95" />
+                                        <GridViewColumn Header="Output"
+                                                        DisplayMemberBinding="{Binding OutputTokensText}"
+                                                        Width="95" />
+                                        <GridViewColumn Header="Tools"
+                                                        DisplayMemberBinding="{Binding ToolCallCountText}"
+                                                        Width="70" />
+                                        <GridViewColumn Header="Turn Share"
+                                                        DisplayMemberBinding="{Binding TurnShareText}"
+                                                        Width="85" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

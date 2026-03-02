@@ -53,23 +53,13 @@
                                 </Grid>
                             </Button>
 
-                            <Button x:Name="BtnSidebarAutomations"
+                            <Button x:Name="BtnSidebarMetrics"
                                     Style="{StaticResource SidebarButtonStyle}"
-                                    IsEnabled="{Binding IsSidebarAutomationsEnabled}"
-                                    Tag="{Binding SidebarAutomationsNavTag}">
+                                    IsEnabled="{Binding IsSidebarMetricsEnabled}"
+                                    Tag="{Binding SidebarMetricsNavTag}">
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE7C1;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Automations" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-
-                            <Button x:Name="BtnSidebarSkills"
-                                    Style="{StaticResource SidebarButtonStyle}"
-                                    IsEnabled="{Binding IsSidebarSkillsEnabled}"
-                                    Tag="{Binding SidebarSkillsNavTag}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE7BE;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Skills" VerticalAlignment="Center" />
+                                    <TextBlock Text="&#xE9D2;" FontFamily="Segoe MDL2 Assets" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Metrics" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
 
@@ -305,7 +295,7 @@
                                                 Padding="0">
                                             <Border.Style>
                                                 <Style TargetType="Border">
-                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="Background" Value="{DynamicResource SidebarButtonHoverNeutralBrush}" />
                                                     <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=TxtThreadSearch}" Value="True">
@@ -857,6 +847,10 @@
                                                 <CheckBox x:Name="ChkShowSystemDotsInTranscript"
                                                           Content="Show System dots in dialogue flow"
                                                           IsChecked="{Binding SettingsPanel.ShowSystemDotsInTranscript, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkShowTurnLifecycleDotsInTranscript"
+                                                          Margin="0,6,0,0"
+                                                          Content="Show Turn lifecycle dots in dialogue flow"
+                                                          IsChecked="{Binding SettingsPanel.ShowTurnLifecycleDotsInTranscript, Mode=TwoWay}" />
                                                 <CheckBox x:Name="ChkPlayUiSounds"
                                                           Margin="0,8,0,0"
                                                           Content="Play UI sounds"

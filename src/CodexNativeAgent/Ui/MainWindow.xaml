@@ -124,11 +124,15 @@
                 <Border IsHitTestVisible="False"
                         CornerRadius="18"
                         Background="{DynamicResource SidebarBackgroundBrush}"
-                        Opacity="0.28"
+                        Opacity="0.34"
                         BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1" />
 
-                <ui:GitPaneControl x:Name="GitPaneHost" />
+                <Grid>
+                    <ui:GitPaneControl x:Name="GitPaneHost" />
+                    <ui:MetricsPaneControl x:Name="MetricsPaneHost"
+                                           IsHitTestVisible="False" />
+                </Grid>
             </Grid>
 
             <Border x:Name="ToastOverlay"
