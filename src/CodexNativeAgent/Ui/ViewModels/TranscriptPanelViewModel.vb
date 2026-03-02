@@ -101,10 +101,14 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _loadingText As String = "Loading thread..."
         Private _loadingOverlayVisibility As Visibility = Visibility.Collapsed
         Private _headerLoadingSheenVisibility As Visibility = Visibility.Collapsed
+        Private _activeTurnSpinnerVisibility As Visibility = Visibility.Collapsed
+        Private _activeTurnElapsedText As String = "00:00"
+        Private _activeTurnStatusText As String = "Working..."
         Private _collapseCommandDetailsByDefault As Boolean
         Private _showEventDotsInTranscript As Boolean
         Private _showSystemDotsInTranscript As Boolean
         Private _showTurnLifecycleDotsInTranscript As Boolean = True
+        Private _showReasoningBubblesInTranscript As Boolean = True
         Private _transcriptContentScale As Double = 1.0R
         Private _tokenUsageText As String = String.Empty
         Private _tokenUsageVisibility As Visibility = Visibility.Collapsed
@@ -193,6 +197,71 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 SetProperty(_headerLoadingSheenVisibility, value)
             End Set
         End Property
+
+        Public Property ActiveTurnSpinnerVisibility As Visibility
+            Get
+                Return _activeTurnSpinnerVisibility
+            End Get
+            Set(value As Visibility)
+                SetProperty(_activeTurnSpinnerVisibility, value)
+            End Set
+        End Property
+
+        Public Property ActiveTurnElapsedText As String
+            Get
+                Return _activeTurnElapsedText
+            End Get
+            Set(value As String)
+                SetProperty(_activeTurnElapsedText, If(value, "00:00"))
+            End Set
+        End Property
+
+        Public Property ActiveTurnStatusText As String
+            Get
+                Return _activeTurnStatusText
+            End Get
+            Set(value As String)
+                SetProperty(_activeTurnStatusText, If(value, String.Empty))
+            End Set
+        End Property
+
+        Public Function GetLatestReasoningCardStatusText(turnId As String) As String
+            Dim normalizedTurnId = NormalizeTurnId(turnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return String.Empty
+            End If
+
+            For i = _items.Count - 1 To 0 Step -1
+                Dim candidate = _items(i)
+                If candidate Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.OrdinalIgnoreCase.Equals(candidate.Kind, "reasoningCard") Then
+                    Continue For
+                End If
+
+                If Not StringComparer.Ordinal.Equals(NormalizeTurnId(candidate.TurnId), normalizedTurnId) Then
+                    Continue For
+                End If
+
+                Dim text = NormalizeActiveTurnStatusText(candidate.BodyText)
+                If StringComparer.Ordinal.Equals(text, "Summary pending...") OrElse
+                   StringComparer.Ordinal.Equals(text, "Thinking...") Then
+                    text = String.Empty
+                End If
+
+                If String.IsNullOrWhiteSpace(text) Then
+                    text = NormalizeActiveTurnStatusText(candidate.DetailsText)
+                End If
+
+                If Not String.IsNullOrWhiteSpace(text) Then
+                    Return text
+                End If
+            Next
+
+            Return String.Empty
+        End Function
 
         Public ReadOnly Property Items As ObservableCollection(Of TranscriptEntryViewModel)
             Get
@@ -408,6 +477,17 @@ Namespace CodexNativeAgent.Ui.ViewModels
             End Get
             Set(value As Boolean)
                 If SetProperty(_showTurnLifecycleDotsInTranscript, value) Then
+                    RefreshTimelineDotRowVisibility()
+                End If
+            End Set
+        End Property
+
+        Public Property ShowReasoningBubblesInTranscript As Boolean
+            Get
+                Return _showReasoningBubblesInTranscript
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_showReasoningBubblesInTranscript, value) Then
                     RefreshTimelineDotRowVisibility()
                 End If
             End Set
@@ -3732,6 +3812,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     Return _showSystemDotsInTranscript
                 Case "turnmarker"
                     Return _showTurnLifecycleDotsInTranscript
+                Case "reasoning", "reasoningcard"
+                    Return _showReasoningBubblesInTranscript
                 Case Else
                     Return True
             End Select
@@ -3830,6 +3912,41 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Case Else
                     Return text.ToLowerInvariant()
             End Select
+        End Function
+
+        Private Shared Function NormalizeActiveTurnStatusText(value As String) As String
+            Dim source = If(value, String.Empty)
+            If String.IsNullOrWhiteSpace(source) Then
+                Return String.Empty
+            End If
+
+            Dim normalized = source.Replace(vbCrLf, vbLf).
+                                    Replace(vbCr, vbLf).
+                                    Replace(vbTab, " ").Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return String.Empty
+            End If
+
+            Dim lines = normalized.Split({vbLf}, StringSplitOptions.RemoveEmptyEntries)
+            For Each line In lines
+                Dim candidate = line.Trim()
+                If String.IsNullOrWhiteSpace(candidate) Then
+                    Continue For
+                End If
+
+                Do While candidate.Contains("  ", StringComparison.Ordinal)
+                    candidate = candidate.Replace("  ", " ", StringComparison.Ordinal)
+                Loop
+
+                Const maxLength As Integer = 180
+                If candidate.Length > maxLength Then
+                    Return candidate.Substring(0, maxLength - 3) & "..."
+                End If
+
+                Return candidate
+            Next
+
+            Return String.Empty
         End Function
 
         Private Shared Function SanitizeReasoningCardDisplayText(value As String) As String

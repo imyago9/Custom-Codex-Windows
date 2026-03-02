@@ -245,14 +245,19 @@
                     <Border Grid.Row="2"
                             Background="Transparent"
                             BorderThickness="0"
-                            Padding="10"
-                            Margin="0,0,0,12">
+                            Padding="10,10,10,2"
+                            Margin="0,0,0,2">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
                             <Grid Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
                                 <Image x:Name="ImgTimeToBuildEmptyState"
                                        Source="{DynamicResource WorkspaceTimeToBuildEmptyStateImageSource}"
                                        Visibility="Collapsed"
@@ -307,6 +312,7 @@
                                 </Border>
 
                                 <ListBox x:Name="LstTranscript"
+                                     Grid.Row="0"
                                      ItemsSource="{Binding TranscriptPanel.Items}"
                                      Background="Transparent"
                                      BorderThickness="0"
@@ -1200,8 +1206,86 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
 
+                            <Border x:Name="ActiveTurnSpinnerRow"
+                                    Grid.Row="1"
+                                    Margin="4,2,0,0"
+                                    Visibility="{Binding TranscriptPanel.ActiveTurnSpinnerVisibility}"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Bottom"
+                                    Background="Transparent"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    IsHitTestVisible="False">
+                                <Border.Triggers>
+                                    <EventTrigger RoutedEvent="Border.Loaded">
+                                        <BeginStoryboard x:Name="BeginActiveTurnSpinnerStoryboard">
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <DoubleAnimation Storyboard.TargetName="ActiveTurnSpinnerRotateTransform"
+                                                                 Storyboard.TargetProperty="Angle"
+                                                                 From="0"
+                                                                 To="360"
+                                                                 Duration="0:0:0.82" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Border.Triggers>
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Center"
+                                            MinHeight="22">
+                                    <Grid Width="22" Height="22">
+                                        <Ellipse Width="22"
+                                                 Height="22"
+                                                 Stroke="{DynamicResource BorderBrush}"
+                                                 StrokeThickness="2"
+                                                 Fill="Transparent"
+                                                 Opacity="0.45" />
+                                        <Path Data="M 11,2 A 9,9 0 1 1 10.99,2"
+                                              StrokeThickness="2.5"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              Fill="Transparent">
+                                            <Path.Stroke>
+                                                <LinearGradientBrush StartPoint="0,0"
+                                                                     EndPoint="1,1">
+                                                    <GradientStop Color="#D4D8DD" Offset="0" />
+                                                    <GradientStop Color="#A7AEB6" Offset="0.5" />
+                                                    <GradientStop Color="#646D76" Offset="1" />
+                                                </LinearGradientBrush>
+                                            </Path.Stroke>
+                                            <Path.RenderTransform>
+                                                <RotateTransform x:Name="ActiveTurnSpinnerRotateTransform"
+                                                                 CenterX="11"
+                                                                 CenterY="11" />
+                                            </Path.RenderTransform>
+                                        </Path>
+                                    </Grid>
+                                    <TextBlock Margin="9,0,0,0"
+                                               Text="{Binding TranscriptPanel.ActiveTurnElapsedText}"
+                                               VerticalAlignment="Center"
+                                               FontFamily="Cascadia Code"
+                                               FontSize="13.3"
+                                               FontWeight="SemiBold"
+                                               LineStackingStrategy="BlockLineHeight"
+                                               LineHeight="16"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBlock Margin="10,0,0,0"
+                                               Text="{Binding TranscriptPanel.ActiveTurnStatusText}"
+                                               VerticalAlignment="Center"
+                                               FontFamily="Cascadia Code"
+                                               FontSize="13.3"
+                                               LineStackingStrategy="BlockLineHeight"
+                                               LineHeight="16"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               TextWrapping="NoWrap"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxWidth="620" />
+                                </StackPanel>
+                            </Border>
+
                             <!-- Hidden raw transcript buffer is retained for diagnostics/export and compatibility paths. -->
                             <TextBox x:Name="TxtTranscript"
+                                     Grid.Row="0"
                                      Grid.Column="0"
                                      Visibility="Collapsed"
                                      IsReadOnly="True"
@@ -1216,6 +1300,7 @@
 
                             <!-- Hidden protocol buffer is retained for logging/export and the protocol dialog. -->
                             <TextBox x:Name="TxtProtocol"
+                                     Grid.Row="0"
                                      Grid.Column="0"
                                      Visibility="Collapsed"
                                      IsReadOnly="True"
@@ -1229,6 +1314,7 @@
                                      FontFamily="Cascadia Code" />
 
                             <Border x:Name="TranscriptLoadingOverlay"
+                                    Grid.Row="0"
                                     Grid.Column="0"
                                     Panel.ZIndex="10"
                                     Visibility="Collapsed"

@@ -532,6 +532,7 @@ Namespace CodexNativeAgent.Ui
             Public Property ShowEventDotsInTranscript As Boolean
             Public Property ShowSystemDotsInTranscript As Boolean
             Public Property ShowTurnLifecycleDotsInTranscript As Boolean = True
+            Public Property ShowReasoningBubblesInTranscript As Boolean = True
             Public Property PlayUiSounds As Boolean = True
             Public Property UiSoundVolumePercent As Double = 100.0R
             Public Property FilterThreadsByWorkingDir As Boolean
@@ -646,6 +647,9 @@ Namespace CodexNativeAgent.Ui
         Private _gitDiffCtrlDragSelecting As Boolean
         Private _gitDiffCtrlDragAnchorIndex As Integer = -1
         Private _gitDiffCtrlDragLastIndex As Integer = -1
+        Private _activeTurnProgressTurnId As String = String.Empty
+        Private _activeTurnProgressStartedAtUtc As DateTimeOffset?
+        Private _activeTurnProgressWorkingDotsPhase As Integer
         Private _protocolDialogWindow As Window
         Private _isStatusBarExpanded As Boolean
         Private _settings As New AppSettings()
@@ -902,6 +906,16 @@ Namespace CodexNativeAgent.Ui
                     ApplyTranscriptTimelineDotVisibilitySettings()
                 End Sub
             AddHandler SidebarPaneHost.ChkShowTurnLifecycleDotsInTranscript.Unchecked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowReasoningBubblesInTranscript.Checked,
+                Sub(sender, e)
+                    SaveSettings()
+                    ApplyTranscriptTimelineDotVisibilitySettings()
+                End Sub
+            AddHandler SidebarPaneHost.ChkShowReasoningBubblesInTranscript.Unchecked,
                 Sub(sender, e)
                     SaveSettings()
                     ApplyTranscriptTimelineDotVisibilitySettings()
@@ -4637,11 +4651,9 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            Dim hasActiveTurn = HasActiveRuntimeTurnForCurrentThread()
-            If Not hasActiveTurn AndAlso session.HasCurrentTurn AndAlso Not RuntimeHasTurnHistoryForCurrentThread() Then
-                hasActiveTurn = True
-            End If
+            Dim hasActiveTurn = DetermineHasActiveTurn(session)
             _viewModel.TranscriptPanel.SetActiveTurnRetentionEnabled(hasActiveTurn)
+            UpdateActiveTurnProgressIndicatorUi(hasActiveTurn, advanceWorkingDots:=False)
             Dim authenticatedAndInteractive = authenticated AndAlso
                                              Not _logoutUiTransitionInProgress AndAlso
                                              Not _disconnectUiTransitionInProgress
@@ -4676,6 +4688,108 @@ Namespace CodexNativeAgent.Ui
 
             _viewModel.TranscriptPanel.CollapseCommandDetailsByDefault = hasActiveTurn OrElse hasLiveOverlayHistoryForCurrentThread
         End Sub
+
+        Private Function DetermineHasActiveTurn(session As SessionStateViewModel) As Boolean
+            Dim hasActiveTurn = HasActiveRuntimeTurnForCurrentThread()
+            If Not hasActiveTurn AndAlso session IsNot Nothing AndAlso session.HasCurrentTurn AndAlso
+               Not RuntimeHasTurnHistoryForCurrentThread() Then
+                hasActiveTurn = True
+            End If
+
+            Return hasActiveTurn
+        End Function
+
+        Private Sub UpdateActiveTurnProgressIndicatorUi(hasActiveTurn As Boolean,
+                                                        Optional advanceWorkingDots As Boolean = False)
+            If _viewModel Is Nothing OrElse _viewModel.TranscriptPanel Is Nothing Then
+                Return
+            End If
+
+            Dim transcriptPanel = _viewModel.TranscriptPanel
+            If Not hasActiveTurn Then
+                transcriptPanel.ActiveTurnSpinnerVisibility = Visibility.Collapsed
+                transcriptPanel.ActiveTurnElapsedText = "00:00"
+                transcriptPanel.ActiveTurnStatusText = "Working..."
+                _activeTurnProgressTurnId = String.Empty
+                _activeTurnProgressStartedAtUtc = Nothing
+                _activeTurnProgressWorkingDotsPhase = 0
+                Return
+            End If
+
+            transcriptPanel.ActiveTurnSpinnerVisibility = Visibility.Visible
+
+            Dim threadId = GetVisibleThreadId()
+            Dim turnId = GetVisibleTurnId()
+            Dim activeTurnId = GetActiveTurnIdForThread(threadId, turnId)
+            If String.IsNullOrWhiteSpace(activeTurnId) Then
+                activeTurnId = turnId
+            End If
+
+            If Not StringComparer.Ordinal.Equals(_activeTurnProgressTurnId, activeTurnId) Then
+                _activeTurnProgressTurnId = If(activeTurnId, String.Empty).Trim()
+                _activeTurnProgressStartedAtUtc = Nothing
+                _activeTurnProgressWorkingDotsPhase = 3
+            End If
+
+            Dim resolvedStartUtc = ResolveActiveTurnStartedAtUtc(threadId, activeTurnId)
+            If resolvedStartUtc.HasValue Then
+                _activeTurnProgressStartedAtUtc = resolvedStartUtc
+            ElseIf Not _activeTurnProgressStartedAtUtc.HasValue Then
+                _activeTurnProgressStartedAtUtc = DateTimeOffset.UtcNow
+            End If
+
+            Dim elapsed = DateTimeOffset.UtcNow - _activeTurnProgressStartedAtUtc.Value
+            transcriptPanel.ActiveTurnElapsedText = FormatActiveTurnElapsed(elapsed)
+
+            Dim reasoningText = transcriptPanel.GetLatestReasoningCardStatusText(activeTurnId)
+            transcriptPanel.ActiveTurnStatusText = BuildActiveTurnStatusText(reasoningText, advanceWorkingDots)
+        End Sub
+
+        Private Function ResolveActiveTurnStartedAtUtc(threadId As String, turnId As String) As DateTimeOffset?
+            Dim normalizedThreadId = If(threadId, String.Empty).Trim()
+            Dim normalizedTurnId = If(turnId, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalizedThreadId) OrElse String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return Nothing
+            End If
+
+            Dim runtimeStore = _sessionNotificationCoordinator?.RuntimeStore
+            If runtimeStore Is Nothing Then
+                Return Nothing
+            End If
+
+            Dim turnState = runtimeStore.GetTurnState(normalizedThreadId, normalizedTurnId)
+            If turnState Is Nothing OrElse Not turnState.StartedAt.HasValue Then
+                Return Nothing
+            End If
+
+            Return turnState.StartedAt.Value
+        End Function
+
+        Private Shared Function FormatActiveTurnElapsed(elapsed As TimeSpan) As String
+            Dim totalSeconds = Math.Max(0, CInt(Math.Floor(elapsed.TotalSeconds)))
+            Dim minutes = totalSeconds \ 60
+            Dim seconds = totalSeconds Mod 60
+            Return $"{minutes:00}:{seconds:00}"
+        End Function
+
+        Private Function BuildActiveTurnStatusText(reasoningText As String, advanceWorkingDots As Boolean) As String
+            Dim normalizedReasoning = If(reasoningText, String.Empty).Trim()
+
+            If _activeTurnProgressWorkingDotsPhase < 1 OrElse _activeTurnProgressWorkingDotsPhase > 3 Then
+                _activeTurnProgressWorkingDotsPhase = 3
+            End If
+
+            If advanceWorkingDots Then
+                _activeTurnProgressWorkingDotsPhase = (_activeTurnProgressWorkingDotsPhase Mod 3) + 1
+            End If
+
+            Dim animatedDots = New String("."c, _activeTurnProgressWorkingDotsPhase)
+            If Not String.IsNullOrWhiteSpace(normalizedReasoning) Then
+                Return normalizedReasoning & animatedDots
+            End If
+
+            Return "Working" & animatedDots
+        End Function
 
         Private Sub RefreshApprovalControlState(authenticated As Boolean)
             Dim visibleThreadId = GetVisibleThreadId()
@@ -4807,6 +4921,7 @@ Namespace CodexNativeAgent.Ui
             settingsObject("showEventDotsInTranscript") = _viewModel.SettingsPanel.ShowEventDotsInTranscript
             settingsObject("showSystemDotsInTranscript") = _viewModel.SettingsPanel.ShowSystemDotsInTranscript
             settingsObject("showTurnLifecycleDotsInTranscript") = _viewModel.SettingsPanel.ShowTurnLifecycleDotsInTranscript
+            settingsObject("showReasoningBubblesInTranscript") = _viewModel.SettingsPanel.ShowReasoningBubblesInTranscript
             settingsObject("playUiSounds") = _viewModel.SettingsPanel.PlayUiSounds
             settingsObject("uiSoundVolumePercent") = _viewModel.SettingsPanel.UiSoundVolumePercent
             settingsObject("theme") = _currentTheme

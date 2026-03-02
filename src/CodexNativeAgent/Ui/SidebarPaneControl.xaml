@@ -851,6 +851,10 @@
                                                           Margin="0,6,0,0"
                                                           Content="Show Turn lifecycle dots in dialogue flow"
                                                           IsChecked="{Binding SettingsPanel.ShowTurnLifecycleDotsInTranscript, Mode=TwoWay}" />
+                                                <CheckBox x:Name="ChkShowReasoningBubblesInTranscript"
+                                                          Margin="0,6,0,0"
+                                                          Content="Show Reasoning bubbles in dialogue flow"
+                                                          IsChecked="{Binding SettingsPanel.ShowReasoningBubblesInTranscript, Mode=TwoWay}" />
                                                 <CheckBox x:Name="ChkPlayUiSounds"
                                                           Margin="0,8,0,0"
                                                           Content="Play UI sounds"

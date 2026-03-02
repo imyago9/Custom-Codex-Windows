@@ -60,6 +60,7 @@ Namespace CodexNativeAgent.Ui
         Private Const TranscriptTabChipSpacingReservedWidth As Double = 4.0R
         Private Const TranscriptTabCaptionMinChars As Integer = 6
         Private Const TranscriptTabCaptionMaxChars As Integer = 48
+        Private Const TranscriptTabDragDataFormat As String = "CodexNativeAgent.Ui.TranscriptTabId"
         Private _transcriptSurfaceHostPanel As Panel
         Private _transcriptTabStripBorder As Border
         Private _transcriptTabStripBorderBrush As SolidColorBrush
@@ -72,6 +73,14 @@ Namespace CodexNativeAgent.Ui
         Private _primaryTranscriptSurfaceResetDeferredNeeded As Boolean
         Private _deferredBlankCloseFinalizeVersion As Integer
         Private _transcriptTabInteractionEnabled As Boolean = True
+        Private _transcriptTabDragPointerDown As Boolean
+        Private _transcriptTabDragInProgress As Boolean
+        Private _transcriptTabDragSourceThreadId As String = String.Empty
+        Private _transcriptTabDragSourceBorder As Border
+        Private _transcriptTabDragStartPoint As Point
+        Private _transcriptTabDragSuppressClickTabId As String = String.Empty
+        Private _transcriptTabDragSuppressClickSetUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _transcriptTabDropIndicator As Border
         Private Const TranscriptTabDormantSurfacePoolMax As Integer = 4
 
         Private Function CurrentTranscriptListControl() As ListBox
@@ -259,8 +268,11 @@ Namespace CodexNativeAgent.Ui
             If _transcriptTabStripPanel Is Nothing Then
                 _transcriptTabStripPanel = New StackPanel() With {
                     .Orientation = Orientation.Horizontal,
-                    .FlowDirection = FlowDirection.LeftToRight
+                    .FlowDirection = FlowDirection.LeftToRight,
+                    .AllowDrop = True
                 }
+                AddHandler _transcriptTabStripPanel.DragOver, AddressOf OnTranscriptTabStripPanelDragOver
+                AddHandler _transcriptTabStripPanel.Drop, AddressOf OnTranscriptTabStripPanelDrop
 
                 _transcriptTabStripScrollViewer = New ScrollViewer() With {
                     .HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
@@ -700,11 +712,17 @@ Namespace CodexNativeAgent.Ui
                 .CornerRadius = New CornerRadius(6, 6, 0, 0),
                 .BorderThickness = New Thickness(0),
                 .Margin = New Thickness(0, 0, 4, 0),
+                .AllowDrop = True,
                 .Child = contentGrid
             }
 
             AddHandler chipBorder.MouseEnter, AddressOf OnTranscriptTabChipMouseEnter
             AddHandler chipBorder.MouseLeave, AddressOf OnTranscriptTabChipMouseLeave
+            AddHandler chipBorder.PreviewMouseLeftButtonDown, AddressOf OnTranscriptTabChipPreviewMouseLeftButtonDown
+            AddHandler chipBorder.PreviewMouseMove, AddressOf OnTranscriptTabChipPreviewMouseMove
+            AddHandler chipBorder.PreviewMouseLeftButtonUp, AddressOf OnTranscriptTabChipPreviewMouseLeftButtonUp
+            AddHandler chipBorder.DragOver, AddressOf OnTranscriptTabChipDragOver
+            AddHandler chipBorder.Drop, AddressOf OnTranscriptTabChipDrop
 
             Return chipBorder
         End Function
@@ -719,7 +737,22 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
-            Await ActivateTranscriptTabAsync(TryCast(button.Tag, String)).ConfigureAwait(True)
+            Dim normalizedThreadId = If(TryCast(button.Tag, String), String.Empty).Trim()
+            If Not String.IsNullOrWhiteSpace(_transcriptTabDragSuppressClickTabId) Then
+                Dim suppressionAge = DateTimeOffset.UtcNow - _transcriptTabDragSuppressClickSetUtc
+                Dim suppressionIsFresh = suppressionAge <= TimeSpan.FromSeconds(1.2R)
+                If suppressionIsFresh AndAlso
+                   StringComparer.Ordinal.Equals(_transcriptTabDragSuppressClickTabId, normalizedThreadId) Then
+                    _transcriptTabDragSuppressClickTabId = String.Empty
+                    _transcriptTabDragSuppressClickSetUtc = DateTimeOffset.MinValue
+                    Return
+                End If
+
+                _transcriptTabDragSuppressClickTabId = String.Empty
+                _transcriptTabDragSuppressClickSetUtc = DateTimeOffset.MinValue
+            End If
+
+            Await ActivateTranscriptTabAsync(normalizedThreadId).ConfigureAwait(True)
         End Sub
 
         Private Async Function ActivateTranscriptTabAsync(threadId As String) As Task
@@ -775,6 +808,454 @@ Namespace CodexNativeAgent.Ui
             UpdateTranscriptTabButtonVisual(handle,
                                             StringComparer.Ordinal.Equals(handle.ThreadId, _activeTranscriptSurfaceThreadId))
         End Sub
+
+        Private Function CanReorderTranscriptTabs() As Boolean
+            Return _transcriptTabInteractionEnabled AndAlso
+                   _transcriptTabStripPanel IsNot Nothing AndAlso
+                   _transcriptTabSurfacesByThreadId.Count > 1
+        End Function
+
+        Private Shared Function TryGetDraggedTranscriptTabId(data As IDataObject) As String
+            If data Is Nothing OrElse Not data.GetDataPresent(TranscriptTabDragDataFormat) Then
+                Return String.Empty
+            End If
+
+            Return If(TryCast(data.GetData(TranscriptTabDragDataFormat), String), String.Empty).Trim()
+        End Function
+
+        Private Sub ResetTranscriptTabDragState(Optional clearSuppressedClick As Boolean = False)
+            _transcriptTabDragPointerDown = False
+            _transcriptTabDragInProgress = False
+            _transcriptTabDragSourceThreadId = String.Empty
+            _transcriptTabDragSourceBorder = Nothing
+            _transcriptTabDragStartPoint = New Point()
+            ClearTranscriptTabDropIndicator()
+
+            If clearSuppressedClick Then
+                _transcriptTabDragSuppressClickTabId = String.Empty
+                _transcriptTabDragSuppressClickSetUtc = DateTimeOffset.MinValue
+            End If
+        End Sub
+
+        Private Function IsTranscriptTabChipElement(element As UIElement) As Boolean
+            Dim border = TryCast(element, Border)
+            If border Is Nothing OrElse ReferenceEquals(border, _transcriptTabDropIndicator) Then
+                Return False
+            End If
+
+            Dim threadId = If(TryCast(border.Tag, String), String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(threadId) Then
+                Return False
+            End If
+
+            Return _transcriptTabSurfacesByThreadId.ContainsKey(threadId)
+        End Function
+
+        Private Sub EnsureTranscriptTabDropIndicatorCreated()
+            If _transcriptTabDropIndicator IsNot Nothing Then
+                Return
+            End If
+
+            _transcriptTabDropIndicator = New Border() With {
+                .Width = 2.0R,
+                .VerticalAlignment = VerticalAlignment.Stretch,
+                .Margin = New Thickness(2, 4, 2, 4),
+                .CornerRadius = New CornerRadius(1),
+                .IsHitTestVisible = False
+            }
+        End Sub
+
+        Private Sub RefreshTranscriptTabDropIndicatorVisual()
+            If _transcriptTabDropIndicator Is Nothing Then
+                Return
+            End If
+
+            Dim indicatorColor As Color = ResolveTabStripColor("AccentBrush", Color.FromRgb(&H62, &H8A, &HFF))
+            Dim brush As New SolidColorBrush(indicatorColor) With {
+                .Opacity = 0.96R
+            }
+            _transcriptTabDropIndicator.Background = brush
+        End Sub
+
+        Private Sub ClearTranscriptTabDropIndicator()
+            If _transcriptTabStripPanel Is Nothing OrElse _transcriptTabDropIndicator Is Nothing Then
+                Return
+            End If
+
+            _transcriptTabStripPanel.Children.Remove(_transcriptTabDropIndicator)
+        End Sub
+
+        Private Sub ShowTranscriptTabDropIndicatorAtIndex(insertionIndex As Integer)
+            If _transcriptTabStripPanel Is Nothing Then
+                Return
+            End If
+
+            EnsureTranscriptTabDropIndicatorCreated()
+            RefreshTranscriptTabDropIndicatorVisual()
+            _transcriptTabStripPanel.Children.Remove(_transcriptTabDropIndicator)
+
+            Dim clampedIndex = Math.Max(0, Math.Min(_transcriptTabStripPanel.Children.Count, insertionIndex))
+            _transcriptTabStripPanel.Children.Insert(clampedIndex, _transcriptTabDropIndicator)
+        End Sub
+
+        Private Function ResolveTranscriptTabStripInsertionIndex(pointerX As Double) As Integer
+            If _transcriptTabStripPanel Is Nothing Then
+                Return 0
+            End If
+
+            Dim runningX As Double = 0R
+            For childIndex As Integer = 0 To _transcriptTabStripPanel.Children.Count - 1
+                Dim child = _transcriptTabStripPanel.Children(childIndex)
+                If Not IsTranscriptTabChipElement(child) Then
+                    Continue For
+                End If
+
+                Dim frameworkChild = TryCast(child, FrameworkElement)
+                Dim childWidth As Double = 0R
+                If frameworkChild IsNot Nothing Then
+                    childWidth = frameworkChild.ActualWidth
+                End If
+
+                Dim midpoint = runningX + (childWidth / 2.0R)
+                If pointerX <= midpoint Then
+                    Return childIndex
+                End If
+
+                runningX += childWidth
+            Next
+
+            Return _transcriptTabStripPanel.Children.Count
+        End Function
+
+        Private Sub ReportTranscriptTabDragException(operationName As String, ex As Exception)
+            Dim safeOperationName = If(operationName, String.Empty)
+            Dim message = String.Empty
+            If ex IsNot Nothing Then
+                message = ex.Message
+            End If
+
+            Try
+                AppendProtocol("debug", $"transcript_tab_drag_error operation={safeOperationName} message={message}")
+            Catch
+            End Try
+        End Sub
+
+        Private Sub RecoverFromTranscriptTabDragException(operationName As String,
+                                                          ex As Exception,
+                                                          Optional dragEventArgs As DragEventArgs = Nothing)
+            ReportTranscriptTabDragException(operationName, ex)
+
+            If dragEventArgs IsNot Nothing Then
+                dragEventArgs.Effects = DragDropEffects.None
+                dragEventArgs.Handled = True
+            End If
+
+            If _transcriptTabDragSourceBorder IsNot Nothing Then
+                _transcriptTabDragSourceBorder.Opacity = 1.0R
+            End If
+
+            ResetTranscriptTabDragState(clearSuppressedClick:=False)
+
+            Try
+                UpdateTranscriptTabButtonVisuals()
+            Catch
+            End Try
+        End Sub
+
+        Private Function IsTranscriptTabCloseButtonSource(chipBorder As Border, source As DependencyObject) As Boolean
+            If chipBorder Is Nothing OrElse source Is Nothing Then
+                Return False
+            End If
+
+            Dim handle = FindTranscriptTabSurfaceHandleByThreadId(TryCast(chipBorder.Tag, String))
+            If handle Is Nothing OrElse handle.TabCloseButton Is Nothing Then
+                Return False
+            End If
+
+            Dim sourceButton = FindVisualAncestor(Of Button)(source)
+            Return sourceButton IsNot Nothing AndAlso ReferenceEquals(sourceButton, handle.TabCloseButton)
+        End Function
+
+        Private Sub OnTranscriptTabChipPreviewMouseLeftButtonDown(sender As Object, e As MouseButtonEventArgs)
+            Try
+                If e Is Nothing OrElse e.ChangedButton <> MouseButton.Left Then
+                    Return
+                End If
+
+                If Not CanReorderTranscriptTabs() Then
+                    ResetTranscriptTabDragState(clearSuppressedClick:=True)
+                    Return
+                End If
+
+                Dim chipBorder = TryCast(sender, Border)
+                If chipBorder Is Nothing Then
+                    ResetTranscriptTabDragState(clearSuppressedClick:=True)
+                    Return
+                End If
+
+                If IsTranscriptTabCloseButtonSource(chipBorder, TryCast(e.OriginalSource, DependencyObject)) Then
+                    ResetTranscriptTabDragState(clearSuppressedClick:=False)
+                    Return
+                End If
+
+                Dim threadId = If(TryCast(chipBorder.Tag, String), String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(threadId) Then
+                    ResetTranscriptTabDragState(clearSuppressedClick:=True)
+                    Return
+                End If
+
+                _transcriptTabDragPointerDown = True
+                _transcriptTabDragInProgress = False
+                _transcriptTabDragSourceThreadId = threadId
+                _transcriptTabDragSourceBorder = chipBorder
+                Dim startPositionHost As IInputElement = chipBorder
+                If _transcriptTabStripPanel IsNot Nothing Then
+                    startPositionHost = _transcriptTabStripPanel
+                End If
+                _transcriptTabDragStartPoint = e.GetPosition(startPositionHost)
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("chip_mouse_left_button_down", ex)
+            End Try
+        End Sub
+
+        Private Sub OnTranscriptTabChipPreviewMouseMove(sender As Object, e As MouseEventArgs)
+            Try
+                If e Is Nothing OrElse Not _transcriptTabDragPointerDown Then
+                    Return
+                End If
+
+                If e.LeftButton <> MouseButtonState.Pressed Then
+                    ResetTranscriptTabDragState(clearSuppressedClick:=False)
+                    Return
+                End If
+
+                If Not CanReorderTranscriptTabs() OrElse _transcriptTabDragInProgress Then
+                    Return
+                End If
+
+                Dim dragBorder = _transcriptTabDragSourceBorder
+                If dragBorder Is Nothing OrElse
+                   String.IsNullOrWhiteSpace(_transcriptTabDragSourceThreadId) Then
+                    ResetTranscriptTabDragState(clearSuppressedClick:=False)
+                    Return
+                End If
+
+                Dim currentPositionHost As IInputElement = dragBorder
+                If _transcriptTabStripPanel IsNot Nothing Then
+                    currentPositionHost = _transcriptTabStripPanel
+                End If
+                Dim currentPoint = e.GetPosition(currentPositionHost)
+                Dim deltaX = Math.Abs(currentPoint.X - _transcriptTabDragStartPoint.X)
+                Dim deltaY = Math.Abs(currentPoint.Y - _transcriptTabDragStartPoint.Y)
+                If deltaX < SystemParameters.MinimumHorizontalDragDistance AndAlso
+                   deltaY < SystemParameters.MinimumVerticalDragDistance Then
+                    Return
+                End If
+
+                _transcriptTabDragInProgress = True
+                Dim originalOpacity = dragBorder.Opacity
+                dragBorder.Opacity = 0.55R
+
+                Try
+                    Dim data As New DataObject(TranscriptTabDragDataFormat, _transcriptTabDragSourceThreadId)
+                    Dim effect = DragDrop.DoDragDrop(dragBorder, data, DragDropEffects.Move)
+                    If effect = DragDropEffects.Move Then
+                        _transcriptTabDragSuppressClickTabId = _transcriptTabDragSourceThreadId
+                        _transcriptTabDragSuppressClickSetUtc = DateTimeOffset.UtcNow
+                    End If
+                Finally
+                    dragBorder.Opacity = originalOpacity
+                    ResetTranscriptTabDragState(clearSuppressedClick:=False)
+                    UpdateTranscriptTabButtonVisuals()
+                End Try
+
+                e.Handled = True
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("chip_mouse_move", ex)
+            End Try
+        End Sub
+
+        Private Sub OnTranscriptTabChipPreviewMouseLeftButtonUp(sender As Object, e As MouseButtonEventArgs)
+            Try
+                If e Is Nothing OrElse e.ChangedButton <> MouseButton.Left Then
+                    Return
+                End If
+
+                ResetTranscriptTabDragState(clearSuppressedClick:=False)
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("chip_mouse_left_button_up", ex)
+            End Try
+        End Sub
+
+        Private Sub OnTranscriptTabChipDragOver(sender As Object, e As DragEventArgs)
+            Try
+                If e Is Nothing Then
+                    Return
+                End If
+
+                Dim draggedThreadId = TryGetDraggedTranscriptTabId(e.Data)
+                Dim targetBorder = TryCast(sender, Border)
+                Dim rawTargetTag As Object = Nothing
+                If targetBorder IsNot Nothing Then
+                    rawTargetTag = targetBorder.Tag
+                End If
+                Dim targetThreadId = If(TryCast(rawTargetTag, String), String.Empty).Trim()
+                Dim canDrop = CanReorderTranscriptTabs() AndAlso
+                              Not String.IsNullOrWhiteSpace(draggedThreadId) AndAlso
+                              Not String.IsNullOrWhiteSpace(targetThreadId)
+
+                ClearTranscriptTabDropIndicator()
+                If canDrop AndAlso targetBorder IsNot Nothing AndAlso _transcriptTabStripPanel IsNot Nothing Then
+                    Dim targetIndex = _transcriptTabStripPanel.Children.IndexOf(targetBorder)
+                    If targetIndex >= 0 Then
+                        Dim dropPoint = e.GetPosition(targetBorder)
+                        Dim insertAfterTarget = dropPoint.X > (targetBorder.ActualWidth / 2.0R)
+                        Dim insertionIndex = targetIndex + If(insertAfterTarget, 1, 0)
+                        ShowTranscriptTabDropIndicatorAtIndex(insertionIndex)
+                    End If
+                End If
+
+                e.Effects = If(canDrop, DragDropEffects.Move, DragDropEffects.None)
+                e.Handled = True
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("chip_drag_over", ex, e)
+            End Try
+        End Sub
+
+        Private Sub OnTranscriptTabChipDrop(sender As Object, e As DragEventArgs)
+            Try
+                If e Is Nothing Then
+                    Return
+                End If
+
+                ClearTranscriptTabDropIndicator()
+                Dim targetBorder = TryCast(sender, Border)
+                Dim draggedThreadId = TryGetDraggedTranscriptTabId(e.Data)
+                If Not CanReorderTranscriptTabs() OrElse targetBorder Is Nothing OrElse String.IsNullOrWhiteSpace(draggedThreadId) Then
+                    e.Effects = DragDropEffects.None
+                    e.Handled = True
+                    Return
+                End If
+
+                Dim targetIndex = _transcriptTabStripPanel.Children.IndexOf(targetBorder)
+                If targetIndex < 0 Then
+                    e.Effects = DragDropEffects.None
+                    e.Handled = True
+                    Return
+                End If
+
+                Dim dropPoint = e.GetPosition(targetBorder)
+                Dim insertAfterTarget = dropPoint.X > (targetBorder.ActualWidth / 2.0R)
+                Dim insertionIndex = targetIndex + If(insertAfterTarget, 1, 0)
+                Dim moved = MoveTranscriptTabChipToIndex(draggedThreadId, insertionIndex)
+                If moved Then
+                    _transcriptTabDragSuppressClickTabId = draggedThreadId
+                    _transcriptTabDragSuppressClickSetUtc = DateTimeOffset.UtcNow
+                End If
+
+                e.Effects = If(moved, DragDropEffects.Move, DragDropEffects.None)
+                e.Handled = True
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("chip_drop", ex, e)
+            End Try
+        End Sub
+
+        Private Sub OnTranscriptTabStripPanelDragOver(sender As Object, e As DragEventArgs)
+            Try
+                If e Is Nothing Then
+                    Return
+                End If
+
+                Dim draggedThreadId = TryGetDraggedTranscriptTabId(e.Data)
+                Dim canDrop = CanReorderTranscriptTabs() AndAlso Not String.IsNullOrWhiteSpace(draggedThreadId)
+                If canDrop AndAlso _transcriptTabStripPanel IsNot Nothing Then
+                    Dim stripPoint = e.GetPosition(_transcriptTabStripPanel)
+                    Dim insertionIndex = ResolveTranscriptTabStripInsertionIndex(stripPoint.X)
+                    ShowTranscriptTabDropIndicatorAtIndex(insertionIndex)
+                Else
+                    ClearTranscriptTabDropIndicator()
+                End If
+
+                e.Effects = If(canDrop, DragDropEffects.Move, DragDropEffects.None)
+                e.Handled = True
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("strip_drag_over", ex, e)
+            End Try
+        End Sub
+
+        Private Sub OnTranscriptTabStripPanelDrop(sender As Object, e As DragEventArgs)
+            Try
+                If e Is Nothing Then
+                    Return
+                End If
+
+                ClearTranscriptTabDropIndicator()
+                Dim draggedThreadId = TryGetDraggedTranscriptTabId(e.Data)
+                If Not CanReorderTranscriptTabs() OrElse String.IsNullOrWhiteSpace(draggedThreadId) Then
+                    e.Effects = DragDropEffects.None
+                    e.Handled = True
+                    Return
+                End If
+
+                Dim moved = MoveTranscriptTabChipToIndex(draggedThreadId, _transcriptTabStripPanel.Children.Count)
+                If moved Then
+                    _transcriptTabDragSuppressClickTabId = draggedThreadId
+                    _transcriptTabDragSuppressClickSetUtc = DateTimeOffset.UtcNow
+                End If
+
+                e.Effects = If(moved, DragDropEffects.Move, DragDropEffects.None)
+                e.Handled = True
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("strip_drop", ex, e)
+            End Try
+        End Sub
+
+        Private Function MoveTranscriptTabChipToIndex(draggedThreadId As String, insertionIndex As Integer) As Boolean
+            Try
+                If _transcriptTabStripPanel Is Nothing Then
+                    Return False
+                End If
+
+                Dim normalizedThreadId = If(draggedThreadId, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(normalizedThreadId) Then
+                    Return False
+                End If
+
+                Dim handle = FindTranscriptTabSurfaceHandleByThreadId(normalizedThreadId)
+                If handle Is Nothing OrElse handle.TabChipBorder Is Nothing Then
+                    Return False
+                End If
+
+                Dim tabChip = handle.TabChipBorder
+                Dim currentIndex = _transcriptTabStripPanel.Children.IndexOf(tabChip)
+                If currentIndex < 0 Then
+                    Return False
+                End If
+
+                Dim maxInsertionIndex = _transcriptTabStripPanel.Children.Count
+                Dim requestedInsertionIndex = Math.Max(0, Math.Min(maxInsertionIndex, insertionIndex))
+                If currentIndex < requestedInsertionIndex Then
+                    requestedInsertionIndex -= 1
+                End If
+
+                If requestedInsertionIndex = currentIndex Then
+                    Return False
+                End If
+
+                _transcriptTabStripPanel.Children.RemoveAt(currentIndex)
+                requestedInsertionIndex = Math.Max(0, Math.Min(_transcriptTabStripPanel.Children.Count, requestedInsertionIndex))
+                _transcriptTabStripPanel.Children.Insert(requestedInsertionIndex, tabChip)
+                ApplyTranscriptTabResponsiveLayout()
+                UpdateTranscriptTabButtonVisuals()
+
+                AppendProtocol("debug",
+                               $"transcript_tab_perf event=tab_reorder thread={normalizedThreadId} from={currentIndex} to={requestedInsertionIndex} openTabs={_transcriptTabSurfacesByThreadId.Count}")
+                Return True
+            Catch ex As Exception
+                RecoverFromTranscriptTabDragException("move_tab_chip_to_index", ex)
+                Return False
+            End Try
+        End Function
 
         Private Sub OnTranscriptTabCloseButtonMouseStateChanged(sender As Object, e As MouseEventArgs)
             Dim closeButton = TryCast(sender, Button)
@@ -991,23 +1472,56 @@ Namespace CodexNativeAgent.Ui
         Private Function FindFirstVisibleTranscriptTabEntryExcluding(threadId As String) As ThreadListEntry
             Dim excludedThreadId = If(threadId, String.Empty).Trim()
 
-            For Each kvp In _transcriptTabSurfacesByThreadId
-                Dim candidateHandle = kvp.Value
-                If candidateHandle Is Nothing OrElse String.IsNullOrWhiteSpace(candidateHandle.ThreadId) Then
+            For Each candidateThreadId In EnumerateTranscriptTabThreadIdsInVisualOrder()
+                If String.IsNullOrWhiteSpace(candidateThreadId) Then
                     Continue For
                 End If
 
-                If StringComparer.Ordinal.Equals(candidateHandle.ThreadId, excludedThreadId) Then
+                If StringComparer.Ordinal.Equals(candidateThreadId, excludedThreadId) Then
                     Continue For
                 End If
 
-                Dim entry = FindVisibleThreadListEntryById(candidateHandle.ThreadId)
+                Dim entry = FindVisibleThreadListEntryById(candidateThreadId)
                 If entry IsNot Nothing Then
                     Return entry
                 End If
             Next
 
             Return Nothing
+        End Function
+
+        Private Function EnumerateTranscriptTabThreadIdsInVisualOrder() As List(Of String)
+            Dim orderedTabIds As New List(Of String)()
+            Dim seen As New HashSet(Of String)(StringComparer.Ordinal)
+
+            If _transcriptTabStripPanel IsNot Nothing Then
+                For Each child As UIElement In _transcriptTabStripPanel.Children
+                    Dim tabChip = TryCast(child, Border)
+                    If tabChip Is Nothing Then
+                        Continue For
+                    End If
+
+                    Dim tabId = If(TryCast(tabChip.Tag, String), String.Empty).Trim()
+                    If String.IsNullOrWhiteSpace(tabId) OrElse Not seen.Add(tabId) Then
+                        Continue For
+                    End If
+
+                    If _transcriptTabSurfacesByThreadId.ContainsKey(tabId) Then
+                        orderedTabIds.Add(tabId)
+                    End If
+                Next
+            End If
+
+            For Each kvp In _transcriptTabSurfacesByThreadId
+                Dim tabId = If(kvp.Key, String.Empty).Trim()
+                If String.IsNullOrWhiteSpace(tabId) OrElse Not seen.Add(tabId) Then
+                    Continue For
+                End If
+
+                orderedTabIds.Add(tabId)
+            Next
+
+            Return orderedTabIds
         End Function
 
         Private Function FindTranscriptTabSurfaceHandleByThreadId(threadId As String) As TranscriptTabSurfaceHandle

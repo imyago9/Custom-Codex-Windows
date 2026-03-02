@@ -2941,6 +2941,8 @@ Namespace CodexNativeAgent.Ui
 
         Private Sub OnReconnectUiTimerTick(sender As Object, e As EventArgs)
             UpdateReconnectCountdownUi()
+            Dim hasActiveTurn = DetermineHasActiveTurn(_viewModel?.SessionState)
+            UpdateActiveTurnProgressIndicatorUi(hasActiveTurn, advanceWorkingDots:=True)
         End Sub
 
         Private Sub UpdateReconnectCountdownUi()
