@@ -311,6 +311,7 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
         Private _roleText As String = String.Empty
         Private _bodyText As String = String.Empty
         Private _statusText As String = String.Empty
+        Private _hasFailedTurnOutcome As Boolean
         Private _secondaryText As String = String.Empty
         Private _detailsText As String = String.Empty
         Private _rowOpacity As Double = 1.0R
@@ -452,6 +453,15 @@ Namespace CodexNativeAgent.Ui.ViewModels.Transcript
             End Get
             Set(value As String)
                 SetProperty(_statusText, If(value, String.Empty))
+            End Set
+        End Property
+
+        Public Property HasFailedTurnOutcome As Boolean
+            Get
+                Return _hasFailedTurnOutcome
+            End Get
+            Set(value As Boolean)
+                SetProperty(_hasFailedTurnOutcome, value)
             End Set
         End Property
 

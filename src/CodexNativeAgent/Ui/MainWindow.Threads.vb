@@ -2179,7 +2179,7 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If ShouldSkipCompletedTurnSnapshotDuplicatedOverlayItem(item) Then
+                If ShouldSkipCompletedTurnSnapshotReconciliationItem(item) Then
                     Continue For
                 End If
 
@@ -2864,6 +2864,21 @@ Namespace CodexNativeAgent.Ui
             End Select
         End Function
 
+        Private Shared Function ShouldSkipCompletedTurnSnapshotReconciliationItem(item As TurnItemRuntimeState) As Boolean
+            If item Is Nothing Then
+                Return False
+            End If
+
+            Select Case If(item.ItemType, String.Empty).Trim().ToLowerInvariant()
+                Case "usermessage"
+                    ' Prompt rows can be present in historical snapshots without stable runtime keys.
+                    ' Do not keep overlay turns alive solely for missing prompt keys; this can duplicate prompts.
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
+
         Private Shared Sub AssignTurnItemOrderIndexes(items As IReadOnlyList(Of TurnItemRuntimeState))
             If items Is Nothing Then
                 Return
@@ -3203,6 +3218,7 @@ Namespace CodexNativeAgent.Ui
             SyncCurrentTurnFromRuntimeStore(keepExistingWhenRuntimeIsIdle:=False)
             UpdateThreadTurnLabels()
             RefreshControlStates()
+            FireAndForget(EnsureSkillAndAppCatalogFreshForTurnAsync(GetVisibleThreadId()))
         End Sub
 
         Private Sub EnsureThreadSelected()

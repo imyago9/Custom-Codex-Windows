@@ -39,6 +39,53 @@ Namespace CodexNativeAgent.Services
         Public Property TurnId As String = String.Empty
     End Class
 
+    Public NotInheritable Class SkillSummary
+        Public Property Cwd As String = String.Empty
+        Public Property Name As String = String.Empty
+        Public Property Description As String = String.Empty
+        Public Property Path As String = String.Empty
+        Public Property Enabled As Boolean = True
+    End Class
+
+    Public NotInheritable Class AppSummary
+        Public Property Id As String = String.Empty
+        Public Property Name As String = String.Empty
+        Public Property Description As String = String.Empty
+        Public Property InstallUrl As String = String.Empty
+        Public Property IsAccessible As Boolean
+        Public Property IsEnabled As Boolean
+    End Class
+
+    Public NotInheritable Class TurnInputItem
+        Public Property Type As String = "text"
+        Public Property Text As String = String.Empty
+        Public Property Name As String = String.Empty
+        Public Property Path As String = String.Empty
+
+        Public Shared Function TextItem(value As String) As TurnInputItem
+            Return New TurnInputItem() With {
+                .Type = "text",
+                .Text = If(value, String.Empty)
+            }
+        End Function
+
+        Public Shared Function SkillItem(name As String, path As String) As TurnInputItem
+            Return New TurnInputItem() With {
+                .Type = "skill",
+                .Name = If(name, String.Empty),
+                .Path = If(path, String.Empty)
+            }
+        End Function
+
+        Public Shared Function MentionItem(name As String, path As String) As TurnInputItem
+            Return New TurnInputItem() With {
+                .Type = "mention",
+                .Name = If(name, String.Empty),
+                .Path = If(path, String.Empty)
+            }
+        End Function
+    End Class
+
     Public NotInheritable Class PendingApprovalInfo
         Public Property RequestId As JsonNode
         Public Property MethodName As String = String.Empty

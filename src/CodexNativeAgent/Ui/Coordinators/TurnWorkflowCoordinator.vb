@@ -161,6 +161,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                                                 effort As String,
                                                 approvalPolicy As String,
                                                 ensureThreadSelected As Action,
+                                                buildInputItems As Func(Of String, IReadOnlyList(Of TurnInputItem)),
                                                 beforeSubmitInput As Action(Of String),
                                                 afterTurnStarted As Action(Of String)) As Task
             If ensureThreadSelected Is Nothing Then Throw New ArgumentNullException(NameOf(ensureThreadSelected))
@@ -174,10 +175,11 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 Throw New InvalidOperationException("Enter turn input before sending.")
             End If
 
+            Dim inputItems = ResolveInputItems(buildInputItems, inputText)
             beforeSubmitInput(inputText)
 
             Dim result = Await _turnService.StartTurnAsync(currentThreadId,
-                                                           inputText,
+                                                           inputItems,
                                                            modelId,
                                                            effort,
                                                            approvalPolicy,
@@ -190,6 +192,7 @@ Namespace CodexNativeAgent.Ui.Coordinators
                                                 currentTurnId As String,
                                                 rawInputText As String,
                                                 ensureThreadSelected As Action,
+                                                buildInputItems As Func(Of String, IReadOnlyList(Of TurnInputItem)),
                                                 beforeSubmitInput As Action(Of String),
                                                 afterTurnSteered As Action(Of String)) As Task
             If ensureThreadSelected Is Nothing Then Throw New ArgumentNullException(NameOf(ensureThreadSelected))
@@ -207,14 +210,31 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 Throw New InvalidOperationException("Enter steer input before sending.")
             End If
 
+            Dim inputItems = ResolveInputItems(buildInputItems, steerText)
             beforeSubmitInput(steerText)
 
             Dim returnedTurnId = Await _turnService.SteerTurnAsync(currentThreadId,
                                                                    currentTurnId,
-                                                                   steerText,
+                                                                   inputItems,
                                                                    CancellationToken.None).ConfigureAwait(True)
 
             afterTurnSteered(If(returnedTurnId, String.Empty))
+        End Function
+
+        Private Shared Function ResolveInputItems(buildInputItems As Func(Of String, IReadOnlyList(Of TurnInputItem)),
+                                                  inputText As String) As IReadOnlyList(Of TurnInputItem)
+            Dim resolved As IReadOnlyList(Of TurnInputItem) = Nothing
+            If buildInputItems IsNot Nothing Then
+                resolved = buildInputItems(inputText)
+            End If
+
+            If resolved Is Nothing OrElse resolved.Count = 0 Then
+                Return New List(Of TurnInputItem) From {
+                    TurnInputItem.TextItem(inputText)
+                }
+            End If
+
+            Return resolved
         End Function
 
         Public Async Function RunInterruptTurnAsync(currentThreadId As String,

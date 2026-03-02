@@ -1197,6 +1197,15 @@
                                                 <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="Transparent" />
                                             </DataTrigger>
 
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Kind}" Value="user" />
+                                                    <Condition Binding="{Binding HasFailedTurnOutcome}" Value="True" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+                                                <Setter TargetName="BubbleChrome" Property="BorderThickness" Value="0,0,0,2" />
+                                            </MultiDataTrigger>
+
                                             <DataTrigger Binding="{Binding Kind}" Value="error">
                                                 <Setter TargetName="BubbleChrome" Property="Background" Value="{DynamicResource TranscriptBubbleGlassErrorBrush}" />
                                                 <Setter TargetName="BubbleChrome" Property="BorderBrush" Value="Transparent" />
@@ -1669,6 +1678,173 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
+
+                                <Popup x:Name="TurnComposerTokenSuggestionsPopup"
+                                       Placement="Top"
+                                       PlacementTarget="{Binding ElementName=TurnComposerHostContainer}"
+                                       HorizontalOffset="0"
+                                       VerticalOffset="-8"
+                                       AllowsTransparency="True"
+                                       StaysOpen="False"
+                                       IsOpen="False">
+                                    <Border Width="{Binding ElementName=TurnComposerHostContainer, Path=ActualWidth}"
+                                            MaxHeight="288"
+                                            CornerRadius="12"
+                                            Padding="9,9,9,8"
+                                            Background="{DynamicResource SidebarBackgroundBrush}"
+                                            BorderBrush="Transparent"
+                                            BorderThickness="0"
+                                            SnapsToDevicePixels="True">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+
+                                            <Border Grid.Row="0"
+                                                    Margin="0,0,0,8"
+                                                    Padding="10,7"
+                                                    CornerRadius="8"
+                                                    Background="{DynamicResource SurfaceContrastBrush}"
+                                                    BorderBrush="Transparent"
+                                                    BorderThickness="0">
+                                                <DockPanel LastChildFill="False">
+                                                    <TextBlock Text="Apps and skills"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                    <TextBlock Text="Enter to insert"
+                                                               DockPanel.Dock="Right"
+                                                               Margin="12,0,0,0"
+                                                               FontSize="10.5"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                </DockPanel>
+                                            </Border>
+
+                                            <ListBox x:Name="LstTurnComposerTokenSuggestions"
+                                                     Grid.Row="1"
+                                                     MaxHeight="242"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     HorizontalContentAlignment="Stretch"
+                                                     ScrollViewer.CanContentScroll="True"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                                <ListBox.ItemContainerStyle>
+                                                    <Style TargetType="ListBoxItem">
+                                                        <Setter Property="Padding" Value="0" />
+                                                        <Setter Property="Margin" Value="0,0,0,2" />
+                                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                                        <Setter Property="BorderThickness" Value="0" />
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="ListBoxItem">
+                                                                    <Grid>
+                                                                        <Border x:Name="SuggestionItemChrome"
+                                                                                Background="Transparent"
+                                                                                BorderBrush="Transparent"
+                                                                                BorderThickness="0"
+                                                                                CornerRadius="9"
+                                                                                Padding="8,7,8,7">
+                                                                            <ContentPresenter HorizontalAlignment="Stretch"
+                                                                                              VerticalAlignment="Center" />
+                                                                        </Border>
+                                                                        <Border x:Name="SuggestionSelectionAccent"
+                                                                                Width="3"
+                                                                                Margin="3,7,0,7"
+                                                                                CornerRadius="2"
+                                                                                Background="{DynamicResource AccentBrush}"
+                                                                                HorizontalAlignment="Left"
+                                                                                VerticalAlignment="Stretch"
+                                                                                Opacity="0" />
+                                                                    </Grid>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter TargetName="SuggestionItemChrome"
+                                                                                    Property="Background"
+                                                                                    Value="{DynamicResource SidebarButtonHoverNeutralBrush}" />
+                                                                        </Trigger>
+                                                                        <Trigger Property="IsSelected" Value="True">
+                                                                            <Setter TargetName="SuggestionItemChrome"
+                                                                                    Property="Background"
+                                                                                    Value="{DynamicResource AccentSubtleBrush}" />
+                                                                            <Setter TargetName="SuggestionSelectionAccent"
+                                                                                    Property="Opacity"
+                                                                                    Value="1" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </ListBox.ItemContainerStyle>
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid ClipToBounds="True">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border Grid.Column="0"
+                                                                    Margin="0,0,10,0"
+                                                                    Padding="6,2"
+                                                                    CornerRadius="7"
+                                                                    Background="{DynamicResource TranscriptBubbleGlassStrongBrush}"
+                                                                    VerticalAlignment="Top"
+                                                                    MinWidth="36">
+                                                                <TextBlock Text="{Binding KindLabel}"
+                                                                           FontSize="9.8"
+                                                                           FontWeight="SemiBold"
+                                                                           HorizontalAlignment="Center"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                            </Border>
+                                                            <StackPanel Grid.Column="1"
+                                                                        ClipToBounds="True">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0"
+                                                                               FontSize="12.4"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                               Text="{Binding DisplayName}"
+                                                                               TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock x:Name="SuggestionMetaText"
+                                                                               Grid.Column="1"
+                                                                               Margin="10,0,0,0"
+                                                                               VerticalAlignment="Center"
+                                                                               FontSize="10.6"
+                                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                               MaxWidth="210"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               Text="{Binding MetaText}" />
+                                                                </Grid>
+                                                                <TextBlock x:Name="SuggestionDescriptionText"
+                                                                           Text="{Binding Description}"
+                                                                           Margin="0,2,0,0"
+                                                                           FontSize="10.8"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                           TextTrimming="CharacterEllipsis" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <DataTemplate.Triggers>
+                                                            <DataTrigger Binding="{Binding MetaText}" Value="">
+                                                                <Setter TargetName="SuggestionMetaText" Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Description}" Value="">
+                                                                <Setter TargetName="SuggestionDescriptionText" Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </DataTemplate.Triggers>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                        </Grid>
+                                    </Border>
+                                </Popup>
                             </Grid>
 
                             <Grid x:Name="TurnComposerControlsHost"

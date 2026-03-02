@@ -670,6 +670,7 @@ Namespace CodexNativeAgent.Ui
             _approvalService = New CodexApprovalService()
             _threadService = New CodexThreadService(Function() CurrentClient())
             _turnService = New CodexTurnService(Function() CurrentClient())
+            _skillsAppsService = New CodexSkillsAppsService(Function() CurrentClient())
             _sessionCoordinator = New SessionCoordinator(
                 _viewModel,
                 Function(operation) RunUiActionAsync(operation),
@@ -980,6 +981,16 @@ Namespace CodexNativeAgent.Ui
             AddHandler WorkspacePaneHost.BtnQuickOpenGit.Click, Sub(sender, e) ToggleGitPanel()
             AddHandler WorkspacePaneHost.BtnQuickOpenTerminal.Click, Sub(sender, e) OpenWorkspaceInPowerShell()
             AddHandler WorkspacePaneHost.BtnTurnComposerPickersToggle.Click, Sub(sender, e) ToggleTurnComposerPickersCollapsed()
+            AddHandler WorkspacePaneHost.TxtTurnInput.TextChanged, AddressOf OnTurnInputTextChangedForSuggestions
+            AddHandler WorkspacePaneHost.TxtTurnInput.SelectionChanged, AddressOf OnTurnInputSelectionChangedForSuggestions
+            AddHandler WorkspacePaneHost.TxtTurnInput.PreviewKeyDown, AddressOf OnTurnInputPreviewKeyDownForSuggestions
+            AddHandler WorkspacePaneHost.TxtTurnInput.LostKeyboardFocus, AddressOf OnTurnInputLostKeyboardFocusForSuggestions
+            AddHandler WorkspacePaneHost.LstTurnComposerTokenSuggestions.PreviewMouseLeftButtonUp, AddressOf OnTurnComposerTokenSuggestionsPreviewMouseLeftButtonUp
+            AddHandler WorkspacePaneHost.LstTurnComposerTokenSuggestions.PreviewKeyDown, AddressOf OnTurnComposerTokenSuggestionsPreviewKeyDown
+            AddHandler WorkspacePaneHost.TurnComposerTokenSuggestionsPopup.Closed,
+                Sub(sender, e)
+                    ClearTurnComposerTokenSuggestionTracking()
+                End Sub
             AddHandler GitPaneHost.BtnGitPanelRefresh.Click, Sub(sender, e) FireAndForget(RefreshGitPanelAsync())
             AddHandler GitPaneHost.BtnGitPanelClose.Click, Sub(sender, e) CloseGitPanel()
             AddHandler GitPaneHost.BtnGitTabChanges.Click, Sub(sender, e) ShowGitPanelTab("changes")
@@ -1964,6 +1975,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 ShowStatus(ResolveGitCommandSummary(pushResult, $"Pushed {branchName}."), displayToast:=True)
+                PlayGitPushSoundIfEnabled()
                 Await RefreshGitPanelAsync().ConfigureAwait(True)
             Finally
                 SetGitPanelCommandBusyState(False)
@@ -2040,6 +2052,7 @@ Namespace CodexNativeAgent.Ui
                 End If
 
                 ShowStatus(ResolveGitCommandSummary(result, If(isAmendMode, "Commit amended.", "Commit created.")), displayToast:=True)
+                PlayGitCommitSoundIfEnabled()
                 Await RefreshGitPanelAsync().ConfigureAwait(True)
             Finally
                 Try
@@ -4568,10 +4581,17 @@ Namespace CodexNativeAgent.Ui
         Private Sub ShowStatus(message As String,
                                Optional isError As Boolean = False,
                                Optional displayToast As Boolean = False)
-            _viewModel.StatusText = message
+            Dim normalizedStatusMessage = If(message, String.Empty).Trim()
+            _viewModel.StatusText = normalizedStatusMessage
             StatusBarPaneHost.LblStatus.Foreground = If(isError,
                                       ResolveBrush("DangerBrush", Brushes.DarkRed),
                                       ResolveBrush("TextPrimaryBrush", Brushes.Black))
+
+            If IsApprovalNeededStatusMessage(normalizedStatusMessage) Then
+                PlayApprovalNeededSoundIfEnabled(normalizedStatusMessage)
+            ElseIf ShouldPlayGeneralErrorStatusSound(normalizedStatusMessage, isError) Then
+                PlayGeneralErrorSoundIfEnabled(normalizedStatusMessage)
+            End If
 
             Dim suppressHintToast = displayToast AndAlso
                                     Not isError AndAlso
@@ -4580,7 +4600,7 @@ Namespace CodexNativeAgent.Ui
                                     _viewModel.SettingsPanel.DisableConnectionInitializedToast
 
             If displayToast AndAlso Not suppressHintToast Then
-                ShowToast(message, isError)
+                ShowToast(normalizedStatusMessage, isError)
             End If
         End Sub
 
@@ -4670,6 +4690,12 @@ Namespace CodexNativeAgent.Ui
             _viewModel.TurnComposer.IsReasoningEnabled = authenticatedAndInteractive
             _viewModel.TurnComposer.IsApprovalPolicyEnabled = authenticatedAndInteractive
             _viewModel.TurnComposer.IsSandboxEnabled = authenticatedAndInteractive
+            If Not authenticatedAndInteractive Then
+                HideTurnComposerTokenSuggestionsPopup()
+            ElseIf WorkspacePaneHost IsNot Nothing AndAlso WorkspacePaneHost.TxtTurnInput IsNot Nothing AndAlso
+                   WorkspacePaneHost.TxtTurnInput.IsKeyboardFocusWithin Then
+                RefreshTurnComposerTokenSuggestionsPopup(triggerCatalogWarmup:=False)
+            End If
 
             _viewModel.IsSidebarNewThreadEnabled = authenticatedAndInteractive AndAlso Not _threadContentLoading
             _viewModel.IsSidebarMetricsEnabled = True

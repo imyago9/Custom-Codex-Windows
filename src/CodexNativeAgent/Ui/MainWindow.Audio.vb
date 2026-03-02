@@ -6,10 +6,23 @@ Imports System.Windows.Threading
 Namespace CodexNativeAgent.Ui
     Public NotInheritable Partial Class MainWindow
         Private Const TurnDoneSoundDuplicateSuppressWindowMs As Integer = 1200
+        Private Const TurnFailedSoundDuplicateSuppressWindowMs As Integer = 1500
+        Private Const GitCommitSoundDuplicateSuppressWindowMs As Integer = 900
+        Private Const GitPushSoundDuplicateSuppressWindowMs As Integer = 900
+        Private Const ApprovalNeededSoundDuplicateSuppressWindowMs As Integer = 1400
+        Private Const GeneralErrorSoundDuplicateSuppressWindowMs As Integer = 900
 
         Private ReadOnly _activeUiSoundPlayers As New List(Of MediaPlayer)()
         Private _lastTurnDoneSoundKey As String = String.Empty
         Private _lastTurnDoneSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _lastTurnFailedSoundKey As String = String.Empty
+        Private _lastTurnFailedSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _lastGitCommitSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _lastGitPushSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _lastApprovalNeededSoundKey As String = String.Empty
+        Private _lastApprovalNeededSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
+        Private _lastGeneralErrorSoundKey As String = String.Empty
+        Private _lastGeneralErrorSoundPlayedUtc As DateTimeOffset = DateTimeOffset.MinValue
 
         Private Sub PlayLoadThreadSoundIfEnabled()
             PlayUiSoundIfEnabled("load-thread.mp3")
@@ -31,6 +44,137 @@ Namespace CodexNativeAgent.Ui
                 _lastTurnDoneSoundPlayedUtc = DateTimeOffset.UtcNow
             End If
         End Sub
+
+        Private Sub PlayTurnFailedSoundIfEnabled(threadId As String, turnId As String, status As String)
+            Dim normalizedStatus = NormalizeStatusSoundToken(status)
+            Dim soundKey = $"{If(threadId, String.Empty).Trim()}:{If(turnId, String.Empty).Trim()}:{normalizedStatus}"
+            If StringComparer.Ordinal.Equals(soundKey, _lastTurnFailedSoundKey) AndAlso
+               (DateTimeOffset.UtcNow - _lastTurnFailedSoundPlayedUtc).TotalMilliseconds < TurnFailedSoundDuplicateSuppressWindowMs Then
+                Return
+            End If
+
+            If PlayUiSoundIfEnabled("turn-failed.mp3") Then
+                _lastTurnFailedSoundKey = soundKey
+                _lastTurnFailedSoundPlayedUtc = DateTimeOffset.UtcNow
+            End If
+        End Sub
+
+        Private Sub PlayGitCommitSoundIfEnabled()
+            If (DateTimeOffset.UtcNow - _lastGitCommitSoundPlayedUtc).TotalMilliseconds < GitCommitSoundDuplicateSuppressWindowMs Then
+                Return
+            End If
+
+            If PlayUiSoundIfEnabled("git-commit.mp3") Then
+                _lastGitCommitSoundPlayedUtc = DateTimeOffset.UtcNow
+            End If
+        End Sub
+
+        Private Sub PlayGitPushSoundIfEnabled()
+            If (DateTimeOffset.UtcNow - _lastGitPushSoundPlayedUtc).TotalMilliseconds < GitPushSoundDuplicateSuppressWindowMs Then
+                Return
+            End If
+
+            If PlayUiSoundIfEnabled("git-push.mp3") Then
+                _lastGitPushSoundPlayedUtc = DateTimeOffset.UtcNow
+            End If
+        End Sub
+
+        Private Sub PlayApprovalNeededSoundIfEnabled(statusMessage As String)
+            Dim soundKey = BuildStatusSoundKey(statusMessage)
+            If StringComparer.Ordinal.Equals(soundKey, _lastApprovalNeededSoundKey) AndAlso
+               (DateTimeOffset.UtcNow - _lastApprovalNeededSoundPlayedUtc).TotalMilliseconds < ApprovalNeededSoundDuplicateSuppressWindowMs Then
+                Return
+            End If
+
+            If PlayUiSoundIfEnabled("approval-needed.mp3") Then
+                _lastApprovalNeededSoundKey = soundKey
+                _lastApprovalNeededSoundPlayedUtc = DateTimeOffset.UtcNow
+            End If
+        End Sub
+
+        Private Sub PlayGeneralErrorSoundIfEnabled(statusMessage As String)
+            Dim soundKey = BuildStatusSoundKey(statusMessage)
+            If StringComparer.Ordinal.Equals(soundKey, _lastGeneralErrorSoundKey) AndAlso
+               (DateTimeOffset.UtcNow - _lastGeneralErrorSoundPlayedUtc).TotalMilliseconds < GeneralErrorSoundDuplicateSuppressWindowMs Then
+                Return
+            End If
+
+            If PlayUiSoundIfEnabled("general-error.mp3") Then
+                _lastGeneralErrorSoundKey = soundKey
+                _lastGeneralErrorSoundPlayedUtc = DateTimeOffset.UtcNow
+            End If
+        End Sub
+
+        Private Shared Function IsApprovalNeededStatusMessage(message As String) As Boolean
+            Dim normalized = If(message, String.Empty).Trim()
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return False
+            End If
+
+            If normalized.StartsWith("Approval queued:", StringComparison.OrdinalIgnoreCase) Then
+                Return True
+            End If
+
+            Return normalized.IndexOf("approval required", StringComparison.OrdinalIgnoreCase) >= 0
+        End Function
+
+        Private Shared Function IsTurnFailureStatusMessage(message As String) As Boolean
+            Dim normalized = NormalizeStatusSoundToken(message)
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return False
+            End If
+
+            Return normalized.StartsWith("turn failed", StringComparison.Ordinal) OrElse
+                   normalized.StartsWith("turn interrupted", StringComparison.Ordinal) OrElse
+                   normalized.StartsWith("turn canceled", StringComparison.Ordinal) OrElse
+                   normalized.StartsWith("turn cancelled", StringComparison.Ordinal) OrElse
+                   normalized.StartsWith("turn aborted", StringComparison.Ordinal)
+        End Function
+
+        Private Shared Function ShouldPlayGeneralErrorStatusSound(message As String, isError As Boolean) As Boolean
+            If isError Then
+                Return True
+            End If
+
+            Dim normalized = NormalizeStatusSoundToken(message)
+            If String.IsNullOrWhiteSpace(normalized) Then
+                Return False
+            End If
+
+            If IsTurnFailureStatusMessage(normalized) Then
+                Return False
+            End If
+
+            If normalized.StartsWith("warning", StringComparison.Ordinal) OrElse
+               normalized.StartsWith("warn:", StringComparison.Ordinal) OrElse
+               normalized.IndexOf("warning", StringComparison.Ordinal) >= 0 Then
+                Return True
+            End If
+
+            If normalized.StartsWith("error", StringComparison.Ordinal) OrElse
+               normalized.Contains(" error", StringComparison.Ordinal) OrElse
+               normalized.StartsWith("failed", StringComparison.Ordinal) OrElse
+               normalized.Contains(" failed", StringComparison.Ordinal) OrElse
+               normalized.Contains("could not", StringComparison.Ordinal) OrElse
+               normalized.Contains("unable to", StringComparison.Ordinal) Then
+                Return True
+            End If
+
+            Return False
+        End Function
+
+        Private Shared Function BuildStatusSoundKey(message As String) As String
+            Dim normalized = NormalizeStatusSoundToken(message)
+            If normalized.Length > 220 Then
+                normalized = normalized.Substring(0, 220)
+            End If
+
+            Return normalized
+        End Function
+
+        Private Shared Function NormalizeStatusSoundToken(value As String) As String
+            Return If(value, String.Empty).Trim().ToLowerInvariant()
+        End Function
 
         Private Function PlayUiSoundIfEnabled(soundFileName As String) As Boolean
             If Not Dispatcher.CheckAccess() Then

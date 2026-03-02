@@ -862,7 +862,17 @@ Namespace CodexNativeAgent.Ui.Coordinators
                 Return appsArray.Count
             End If
 
+            appsArray = ReadArray(paramsObject, "data")
+            If appsArray IsNot Nothing Then
+                Return appsArray.Count
+            End If
+
             appsArray = ReadNestedArray(paramsObject, New String() {"result", "apps"})
+            If appsArray IsNot Nothing Then
+                Return appsArray.Count
+            End If
+
+            appsArray = ReadNestedArray(paramsObject, New String() {"result", "data"})
             If appsArray IsNot Nothing Then
                 Return appsArray.Count
             End If

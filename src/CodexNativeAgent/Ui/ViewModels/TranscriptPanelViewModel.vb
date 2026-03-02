@@ -33,6 +33,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             Public Property AssistantReasoningChainStreamIds As New HashSet(Of String)(StringComparer.Ordinal)
             Public Property ActiveReasoningStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
             Public Property ActiveReasoningStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Public Property FailedTurnPromptTurnIds As New HashSet(Of String)(StringComparer.Ordinal)
             Public Property LastClearTranscriptTelemetry As New TranscriptClearTelemetrySnapshot()
         End Class
 
@@ -124,6 +125,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
         Private _assistantReasoningChainStreamIds As New HashSet(Of String)(StringComparer.Ordinal)
         Private _activeReasoningStreams As New Dictionary(Of String, TranscriptEntryViewModel)(StringComparer.Ordinal)
         Private _activeReasoningStreamBuffers As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Private _failedTurnPromptTurnIds As New HashSet(Of String)(StringComparer.Ordinal)
         Private _lastClearTranscriptTelemetry As New TranscriptClearTelemetrySnapshot()
         Private _retainExpandedWindowDuringActiveTurn As Boolean
 
@@ -312,6 +314,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 .AssistantReasoningChainStreamIds = _assistantReasoningChainStreamIds,
                 .ActiveReasoningStreams = _activeReasoningStreams,
                 .ActiveReasoningStreamBuffers = _activeReasoningStreamBuffers,
+                .FailedTurnPromptTurnIds = _failedTurnPromptTurnIds,
                 .LastClearTranscriptTelemetry = _lastClearTranscriptTelemetry
             }
         End Function
@@ -337,6 +340,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             _assistantReasoningChainStreamIds = nextState.AssistantReasoningChainStreamIds
             _activeReasoningStreams = nextState.ActiveReasoningStreams
             _activeReasoningStreamBuffers = nextState.ActiveReasoningStreamBuffers
+            _failedTurnPromptTurnIds = nextState.FailedTurnPromptTurnIds
             _lastClearTranscriptTelemetry = nextState.LastClearTranscriptTelemetry
 
             AttachTranscriptItemsCollectionChangedForwarder(_items)
@@ -349,6 +353,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             RaisePropertyChanged(NameOf(LastClearTranscriptTelemetry))
 
             RefreshTimelineDotRowVisibility()
+            ReapplyFailedTurnPromptHighlights()
             RaiseTranscriptItemsReset()
         End Sub
 
@@ -404,6 +409,10 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             If normalized.ActiveReasoningStreamBuffers Is Nothing Then
                 normalized.ActiveReasoningStreamBuffers = New Dictionary(Of String, String)(StringComparer.Ordinal)
+            End If
+
+            If normalized.FailedTurnPromptTurnIds Is Nothing Then
+                normalized.FailedTurnPromptTurnIds = New HashSet(Of String)(StringComparer.Ordinal)
             End If
 
             If normalized.LastClearTranscriptTelemetry Is Nothing Then
@@ -619,6 +628,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
             _activeReasoningStreamBuffers.Clear()
             telemetry.ActiveReasoningStreamBuffersClearMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
 
+            _failedTurnPromptTurnIds.Clear()
+
             stepStartMs = perf.ElapsedMilliseconds
             TokenUsageText = String.Empty
             telemetry.SetTokenUsageTextMs = Math.Max(0, perf.ElapsedMilliseconds - stepStartMs)
@@ -649,6 +660,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
             _assistantReasoningChainStreamIds.Clear()
             _activeReasoningStreams.Clear()
             _activeReasoningStreamBuffers.Clear()
+            _failedTurnPromptTurnIds.Clear()
 
             If entries Is Nothing Then
                 Return
@@ -668,6 +680,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 _runtimeEntriesByKey(runtimeKey) = entry
             Next
 
+            ReapplyFailedTurnPromptHighlights()
         End Sub
 
         Public Function PrependTranscriptDisplayChunk(entries As IEnumerable(Of TranscriptEntryDescriptor)) As Integer
@@ -728,6 +741,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 _runtimeEntriesByKey(runtimeKey) = preparedEntries(i)
             Next
 
+            ReapplyFailedTurnPromptHighlights()
             TrimEntriesIfNeeded(onlyHardCap:=True)
             Return preparedEntries.Count
         End Function
@@ -1554,6 +1568,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
                 Return
             End If
 
+            RegisterFailedTurnLifecycleOutcome(descriptor)
+
             Dim existing As TranscriptEntryViewModel = Nothing
             If _runtimeEntriesByKey.TryGetValue(normalizedKey, existing) AndAlso existing IsNot Nothing Then
                 Dim index = _items.IndexOf(existing)
@@ -1667,6 +1683,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
             entry.StreamingIndicatorVisibility = Visibility.Collapsed
             entry.StreamingIndicatorText = String.Empty
+            ApplyFailedTurnPromptHighlight(entry)
         End Sub
 
         Private Shared Function IsAssistantDescriptorKind(kind As String) As Boolean
@@ -2035,6 +2052,79 @@ Namespace CodexNativeAgent.Ui.ViewModels
 
         Private Shared Function NormalizeTurnId(turnId As String) As String
             Return If(turnId, String.Empty).Trim()
+        End Function
+
+        Private Sub RegisterFailedTurnLifecycleOutcome(descriptor As TranscriptEntryDescriptor)
+            If descriptor Is Nothing Then
+                Return
+            End If
+
+            If Not StringComparer.OrdinalIgnoreCase.Equals(If(descriptor.Kind, String.Empty), "turnMarker") Then
+                Return
+            End If
+
+            Dim normalizedTurnId = NormalizeTurnId(descriptor.TurnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return
+            End If
+
+            If Not IsFailedTurnLifecycleStatus(descriptor.StatusText) Then
+                Return
+            End If
+
+            _failedTurnPromptTurnIds.Add(normalizedTurnId)
+            ApplyFailedTurnPromptHighlightForTurn(normalizedTurnId)
+        End Sub
+
+        Private Sub ApplyFailedTurnPromptHighlight(entry As TranscriptEntryViewModel)
+            If entry Is Nothing Then
+                Return
+            End If
+
+            If Not StringComparer.OrdinalIgnoreCase.Equals(If(entry.Kind, String.Empty), "user") Then
+                entry.HasFailedTurnOutcome = False
+                Return
+            End If
+
+            Dim normalizedTurnId = NormalizeTurnId(entry.TurnId)
+            entry.HasFailedTurnOutcome = Not String.IsNullOrWhiteSpace(normalizedTurnId) AndAlso
+                                        _failedTurnPromptTurnIds.Contains(normalizedTurnId)
+        End Sub
+
+        Private Sub ApplyFailedTurnPromptHighlightForTurn(turnId As String)
+            Dim normalizedTurnId = NormalizeTurnId(turnId)
+            If String.IsNullOrWhiteSpace(normalizedTurnId) Then
+                Return
+            End If
+
+            For Each entry In _items
+                If entry Is Nothing Then
+                    Continue For
+                End If
+
+                If Not StringComparer.OrdinalIgnoreCase.Equals(If(entry.Kind, String.Empty), "user") Then
+                    Continue For
+                End If
+
+                If StringComparer.Ordinal.Equals(NormalizeTurnId(entry.TurnId), normalizedTurnId) Then
+                    entry.HasFailedTurnOutcome = True
+                End If
+            Next
+        End Sub
+
+        Private Sub ReapplyFailedTurnPromptHighlights()
+            For Each entry In _items
+                ApplyFailedTurnPromptHighlight(entry)
+            Next
+        End Sub
+
+        Private Shared Function IsFailedTurnLifecycleStatus(status As String) As Boolean
+            Select Case NormalizeStatusToken(status)
+                Case "failed", "error", "interrupted", "canceled", "cancelled", "aborted", "stopped"
+                    Return True
+                Case Else
+                    Return False
+            End Select
         End Function
 
         Private Function BuildRuntimeItemDescriptor(itemState As TurnItemRuntimeState) As TranscriptEntryDescriptor
@@ -3664,6 +3754,8 @@ Namespace CodexNativeAgent.Ui.ViewModels
         End Function
 
         Private Function CreateEntryFromDescriptor(descriptor As TranscriptEntryDescriptor) As TranscriptEntryViewModel
+            RegisterFailedTurnLifecycleOutcome(descriptor)
+
             Dim entry As New TranscriptEntryViewModel() With {
                 .Kind = If(descriptor.Kind, String.Empty),
                 .RuntimeKey = If(descriptor.RuntimeKey, String.Empty),
@@ -3785,6 +3877,7 @@ Namespace CodexNativeAgent.Ui.ViewModels
                     entry.RoleBadgeForeground = New SolidColorBrush(Color.FromRgb(88, 88, 88))
             End Select
 
+            ApplyFailedTurnPromptHighlight(entry)
             Return entry
         End Function
 

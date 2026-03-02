@@ -775,6 +775,7 @@ Namespace CodexNativeAgent.Ui
         Private Sub ResetWorkspaceTransientStateCore(clearModelPicker As Boolean)
             ActivateFreshTranscriptDocument("workspace_reset")
             ClearCachedTranscriptDocuments()
+            ClearSkillsAndAppsCatalogCache()
             ClearVisibleSelection()
             SetPendingNewThreadFirstPromptSelectionActive(False, clearThreadSelection:=False)
             _notificationRuntimeThreadId = String.Empty
@@ -1798,6 +1799,13 @@ Namespace CodexNativeAgent.Ui
                 Return
             End If
 
+            If StringComparer.Ordinal.Equals(If(dispatch.MethodName, String.Empty).Trim(), "app/list/updated") Then
+                FireAndForget(RefreshAppsCatalogAsync(preferredThreadId:=GetVisibleThreadId(),
+                                                      forceRefetch:=False,
+                                                      quietErrors:=True,
+                                                      forceRefresh:=False))
+            End If
+
             UpdateNotificationRuntimeContextFromDispatch(dispatch)
             Dim visibleThreadIdBeforeDispatch = GetVisibleThreadId()
             ApplyProtocolDispatchMessages(dispatch.ProtocolMessages)
@@ -1879,7 +1887,10 @@ Namespace CodexNativeAgent.Ui
                     Continue For
                 End If
 
-                If IsTurnLifecycleCompletionStatus(lifecycleMessage.Status) Then
+                Dim normalizedLifecycleStatus = NormalizeTurnLifecycleStatusToken(lifecycleMessage.Status)
+                If IsTurnLifecycleFailureStatus(normalizedLifecycleStatus) Then
+                    PlayTurnFailedSoundIfEnabled(resolvedThreadId, resolvedTurnId, normalizedLifecycleStatus)
+                ElseIf IsTurnLifecycleCompletionStatus(normalizedLifecycleStatus) Then
                     PlayTurnDoneSoundIfEnabled(resolvedThreadId, resolvedTurnId)
                 End If
 
@@ -1983,12 +1994,25 @@ Namespace CodexNativeAgent.Ui
         End Sub
 
         Private Shared Function IsTurnLifecycleCompletionStatus(status As String) As Boolean
-            Select Case If(status, String.Empty).Trim().ToLowerInvariant()
+            Select Case NormalizeTurnLifecycleStatusToken(status)
                 Case "", "completed", "complete", "succeeded", "success", "ok", "done", "failed", "error", "canceled", "cancelled", "interrupted", "aborted", "stopped"
                     Return True
                 Case Else
                     Return False
             End Select
+        End Function
+
+        Private Shared Function IsTurnLifecycleFailureStatus(status As String) As Boolean
+            Select Case NormalizeTurnLifecycleStatusToken(status)
+                Case "failed", "error", "canceled", "cancelled", "interrupted", "aborted", "stopped"
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
+
+        Private Shared Function NormalizeTurnLifecycleStatusToken(status As String) As String
+            Return If(status, String.Empty).Trim().ToLowerInvariant()
         End Function
 
         Private Sub UpdateNotificationRuntimeContextFromDispatch(dispatch As SessionNotificationCoordinator.NotificationDispatchResult)
@@ -2681,6 +2705,7 @@ Namespace CodexNativeAgent.Ui
             Try
                 Await RefreshModelsAsync()
                 Await RefreshThreadsAsync()
+                Await EnsureSkillAndAppCatalogFreshForTurnAsync(GetVisibleThreadId(), forceRefresh:=True)
                 InitializeStartupDraftNewThreadUi()
                 ShowStatus("Connected and authenticated.")
             Finally

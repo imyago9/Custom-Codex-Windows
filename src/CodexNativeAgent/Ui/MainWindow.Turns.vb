@@ -323,6 +323,7 @@ Namespace CodexNativeAgent.Ui
 
             Dim startedFromDraftNewThread = Await EnsureThreadReadyForTurnSubmissionAsync()
             Dim visibleThreadIdAtDispatch = GetVisibleThreadId()
+            Await EnsureSkillAndAppCatalogFreshForTurnAsync(visibleThreadIdAtDispatch)
             SyncTurnComposerStateForCurrentSelection()
             Dim composerState = ResolveTurnComposerStateForThread(visibleThreadIdAtDispatch, allowDraftWhenNoThread:=True)
             If String.IsNullOrWhiteSpace(composerState.InputText) Then
@@ -336,6 +337,9 @@ Namespace CodexNativeAgent.Ui
                 composerState.ReasoningEffort,
                 composerState.ApprovalPolicy,
                 AddressOf EnsureThreadSelected,
+                Function(inputText)
+                    Return BuildTurnInputItemsForSubmission(inputText)
+                End Function,
                 Sub(inputText)
                     submittedInputText = If(inputText, String.Empty)
                     AppendTranscript("user", inputText)
@@ -399,6 +403,7 @@ Namespace CodexNativeAgent.Ui
         Private Async Function SteerTurnAsync() As Task
             Dim visibleThreadId = GetVisibleThreadId()
             Dim visibleTurnId = GetVisibleTurnId()
+            Await EnsureSkillAndAppCatalogFreshForTurnAsync(visibleThreadId)
             SyncTurnComposerStateForCurrentSelection()
             Dim composerState = ResolveTurnComposerStateForThread(visibleThreadId, allowDraftWhenNoThread:=True)
             Await _turnWorkflowCoordinator.RunSteerTurnAsync(
@@ -406,6 +411,9 @@ Namespace CodexNativeAgent.Ui
                 visibleTurnId,
                 composerState.InputText,
                 AddressOf EnsureThreadSelected,
+                Function(inputText)
+                    Return BuildTurnInputItemsForSubmission(inputText)
+                End Function,
                 Sub(steerText)
                     AppendTranscript("user (steer)", steerText)
                     TrackPendingUserEcho(steerText)
